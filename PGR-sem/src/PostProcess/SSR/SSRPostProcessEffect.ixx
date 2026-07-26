@@ -21,7 +21,7 @@ public:
 
     ~SSRPostProcessEffect() = default;
 
-    bool Init(int width, int height) {
+    bool Init(int width, int height) override {
         if (!shader.Init(width, height)) return false;
 
         shader.Use();

@@ -3,8 +3,8 @@ module;
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
-#include <vector>;
-#include <random>;
+#include <vector>
+#include <random>
 
 export module ssao.postprocesseffect;
 
@@ -39,7 +39,7 @@ public:
         deleteBuffers();
     }
 
-    bool Init(int width, int height) {
+    bool Init(int width, int height) override {
         width_ = width;
         height_ = height;
 

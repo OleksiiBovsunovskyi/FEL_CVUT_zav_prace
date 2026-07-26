@@ -6,7 +6,8 @@
 #include <string>
 #include <cstdio>
 
-#include "AntTweakBar.h"
+#include "imgui.h"
+
 import Camera;
 import QuadBeizer;
 import Scene;
@@ -73,7 +74,6 @@ struct SavedCamera
 };
 
 std::vector<SavedCamera> savedCameras;
-int cameraMenuId = -1;
 
 void loadCameraTransforms()
 {
@@ -84,44 +84,17 @@ void loadCameraTransforms()
         savedCameras.push_back(sc);
 }
 
-void cameraMenuCB(int value)
+void startSplineAnimation();
+
+/// Jump the camera to a saved transform (was the GLUT right-click submenu).
+void applySavedCamera(int index)
 {
-    if (value < 0 || value >= static_cast<int>(savedCameras.size())) return;
-    const auto& sc = savedCameras[value];
+    if (index < 0 || index >= static_cast<int>(savedCameras.size())) return;
+    const auto& sc = savedCameras[index];
     yaw = sc.yaw;
     pitch = sc.pitch;
     camera.setPosition(sc.pos);
     camera.setTarget(sc.pos + glm::normalize(calculateCameraDirection(yaw, pitch)));
-}
-
-static constexpr int MENU_ANIMATE = 10000;
-
-void startSplineAnimation();
-
-void rootMenuCB(int value)
-{
-    if (value == MENU_ANIMATE) startSplineAnimation();
-}
-
-void buildCameraMenu()
-{
-    if (cameraMenuId != -1) glutDestroyMenu(cameraMenuId);
-    loadCameraTransforms();
-
-    int posSubMenu = glutCreateMenu(cameraMenuCB);
-    for (int i = 0; i < (int)savedCameras.size(); ++i)
-    {
-        const auto& sc = savedCameras[i];
-        char label[128];
-        std::snprintf(label, sizeof(label), "position_camera %d  (%.1f, %.1f, %.1f)",
-                      sc.idx, sc.pos.x, sc.pos.y, sc.pos.z);
-        glutAddMenuEntry(label, i);
-    }
-
-    cameraMenuId = glutCreateMenu(rootMenuCB);
-    glutAddSubMenu("position_camera", posSubMenu);
-    glutAddMenuEntry("animateAlongCurve", MENU_ANIMATE);
-    glutAttachMenu(GLUT_RIGHT_BUTTON);
 }
 
 void saveCameraTransform()
@@ -132,7 +105,7 @@ void saveCameraTransform()
     const glm::vec3 pos = camera.getPosition();
     f << nextIdx << " " << yaw << " " << pitch << " "
         << pos.x << " " << pos.y << " " << pos.z << "\n";
-    buildCameraMenu();
+    loadCameraTransforms();
 }
 
 
@@ -175,7 +148,7 @@ void startSplineAnimation()
 
     splineTime = 0.0f;
     splineActive = true;
-    prevTime = glutGet(GLUT_ELAPSED_TIME);
+    prevTime = window.getElapsedMs();
 
     yaw = splinePoints[0].yaw;
     pitch = splinePoints[0].pitch;
@@ -284,13 +257,12 @@ void init()
     camera.setFov(1000.0f);
 
     ppManager.init(scene, camera);
-    ppManager.initUI();
 }
 
 
 void draw()
 {
-    const int currentTime = glutGet(GLUT_ELAPSED_TIME);
+    const int currentTime = window.getElapsedMs();
     const float dt = (currentTime - prevTime) / 1000.0f;
     prevTime = currentTime;
 
@@ -305,10 +277,48 @@ void draw()
     ppManager.updateMatrices(camera);
 
     scene.draw(camera);
+}
 
-    TwDraw();
 
-    glutSwapBuffers();
+/// ImGui panel. Built each frame between scene rendering and the buffer swap.
+void drawUI()
+{
+    ImGui::SetNextWindowSize(ImVec2(320.0f, 0.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_FirstUseEver);
+
+    if (ImGui::Begin("PGR"))
+    {
+        ImGui::Text("Hello, world!");
+        ImGui::Separator();
+
+        ImGui::Text("%.1f FPS  (%.2f ms)", ppManager.displayFPS, ppManager.displayFrameMs);
+        ImGui::Text("%d x %d", window.getWidth(), window.getHeight());
+        ImGui::TextUnformatted(window.isUIMode() ? "UI mode  (Tab to fly)"
+                                                 : "Fly mode (Tab for UI)");
+
+        ImGui::Separator();
+        if (ImGui::Button("Animate along curve"))
+            startSplineAnimation();
+
+        // Replaces the old right-click GLUT menu, which GLFW has no equivalent for.
+        if (ImGui::CollapsingHeader("Saved cameras"))
+        {
+            if (savedCameras.empty())
+                ImGui::TextDisabled("none saved (press C)");
+
+            for (int i = 0; i < static_cast<int>(savedCameras.size()); ++i)
+            {
+                const auto& sc = savedCameras[i];
+                ImGui::PushID(i);
+                if (ImGui::Button("go"))
+                    applySavedCamera(i);
+                ImGui::SameLine();
+                ImGui::Text("#%d  (%.1f, %.1f, %.1f)", sc.idx, sc.pos.x, sc.pos.y, sc.pos.z);
+                ImGui::PopID();
+            }
+        }
+    }
+    ImGui::End();
 }
 
 int main(int argc, char** argv)
@@ -317,6 +327,7 @@ int main(int argc, char** argv)
         pgr::dieWithError("pgr init failed");
 
     window.setDrawCallback(draw);
+    window.setUICallback(drawUI);
     window.setResizeCallback([](int w, int h)
     {
         camera.setAspect(static_cast<float>(w) / static_cast<float>(h));
@@ -344,10 +355,10 @@ int main(int argc, char** argv)
     });
     
     init();
-    buildCameraMenu();
+    loadCameraTransforms();
 
     initCameraAngles();
-    prevTime = glutGet(GLUT_ELAPSED_TIME);
+    prevTime = window.getElapsedMs();
 
     window.mainLoop();
     return 0;

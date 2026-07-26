@@ -30,12 +30,6 @@
 #  include <GL/glew.h>
 #endif
 
-#ifdef __APPLE__
-#  include <GLUT/glut.h>
-#else
-#  include <GL/freeglut.h>
-#endif
-
 #include <IL/il.h>
 
 #include <string>
@@ -50,8 +44,6 @@
 #include <assimp/Importer.hpp>
 
 #include "Shader.h"  // createShaderFromSource, createProgram, deleteProgramAndShaders
-#include "Image.h" // createTexture
-#include "MeshData.h" // some built-in meshes (cube, teapot, ...)
 #include "gldebug.h" // debugging helpers, opengl error catching
 
 #ifndef M_PI
