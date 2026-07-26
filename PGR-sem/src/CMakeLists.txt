@@ -68,6 +68,15 @@ target_include_directories(imgui PUBLIC
 target_link_libraries(imgui PUBLIC glfw)
 set_property(TARGET imgui PROPERTY CXX_STANDARD 20)
 
+# The Vulkan target.
+find_package(Vulkan QUIET)
+if(Vulkan_FOUND)
+  add_subdirectory(vk)
+else()
+  message(STATUS "Vulkan SDK not found - skipping the pgr-vk target. "
+                 "Install https://vulkan.lunarg.com/ and reconfigure to enable it.")
+endif()
+
 
 
 add_executable(${PROJECT_NAME}
