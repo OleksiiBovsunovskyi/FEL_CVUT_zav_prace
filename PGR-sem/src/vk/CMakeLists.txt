@@ -29,6 +29,18 @@ FetchContent_Declare(vma
 FetchContent_MakeAvailable(vk-bootstrap vma)
 
 # ---------------------------------------------------------------------------
+# Dear ImGui, Vulkan renderer backend. The `imgui` target from the parent
+# CMakeLists already carries the core sources and the GLFW platform backend
+# (which is API-agnostic); only the renderer backend differs, so it is added
+# here instead of being forced on the OpenGL target.
+# ---------------------------------------------------------------------------
+add_library(imgui-vk STATIC
+        "${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp"
+)
+target_link_libraries(imgui-vk PUBLIC imgui Vulkan::Vulkan)
+set_property(TARGET imgui-vk PROPERTY CXX_STANDARD 20)
+
+# ---------------------------------------------------------------------------
 # GLSL -> SPIR-V. Shaders are compiled at build time and dropped next to the
 # executable; nothing is compiled at runtime.
 # ---------------------------------------------------------------------------
@@ -72,6 +84,21 @@ add_custom_target(pgr-vk-shaders DEPENDS ${VK_SPV_FILES})
 add_executable(pgr-vk
         main.cpp
         vma_impl.cpp
+        VK_Window/AppWindow.cpp
+)
+
+# Logger.ixx is shared verbatim with the OpenGL target; it only uses the std
+# library, so it is compiled into this target as well rather than being linked.
+# A file set takes a single, non-nested base directory, hence src/ rather than
+# src/vk/ - both module sources live under it.
+get_filename_component(PGR_SRC_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." ABSOLUTE)
+
+target_sources(pgr-vk PRIVATE
+        FILE_SET CXX_MODULES
+        BASE_DIRS "${PGR_SRC_ROOT}"
+        FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/VK_Window/AppWindow.ixx"
+        "${PGR_SRC_ROOT}/Logging/Logger.ixx"
 )
 
 add_dependencies(pgr-vk pgr-vk-shaders)
@@ -81,6 +108,7 @@ target_link_libraries(pgr-vk PRIVATE
         vk-bootstrap::vk-bootstrap
         GPUOpen::VulkanMemoryAllocator
         glfw
+        imgui-vk
 )
 
 target_compile_definitions(pgr-vk PRIVATE

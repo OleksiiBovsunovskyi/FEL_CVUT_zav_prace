@@ -1,13 +1,17 @@
 /**
  * vertex-buffer-less triangle, drawn with dynamic rendering.
+ *
+ * Windowing, input and the ImGui frame are owned by AppWindow (VkWindow module);
+ * this file supplies the Vulkan half: the ImGui renderer backend and the draw
+ * callback that records and submits the frame.
  */
 
 #include <VkBootstrap.h>
 
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
-
 #include <vk_mem_alloc.h>
+
+#include "imgui.h"
+#include "imgui_impl_vulkan.h"
 
 #include <array>
 #include <cstdio>
@@ -16,6 +20,8 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+import VkWindow;
 
 namespace {
 
@@ -44,14 +50,25 @@ std::vector<char> readFile(const std::string& path) {
 class VulkanApp {
 public:
     void run() {
-        initWindow();
+        if (!window_.init(WIN_WIDTH, WIN_HEIGHT, WIN_TITLE))
+            throw std::runtime_error("AppWindow::init failed");
+        window_.setUIMode(true);   // start with a usable cursor; Tab toggles
+
         initVulkan();
-        mainLoop();
+        initImGuiVulkan();
+
+        window_.setResizeCallback([this](int, int) { framebufferResized_ = true; });
+        window_.setUICallback([this] { drawUI(); });
+        window_.setDrawCallback([this] { drawFrame(); });
+
+        window_.mainLoop();
+
         cleanup();
+        window_.shutdown();
     }
 
 private:
-    GLFWwindow* window_ = nullptr;
+    AppWindow window_;
 
     vkb::Instance       vkbInstance_{};
     vkb::Device         vkbDevice_{};
@@ -68,6 +85,8 @@ private:
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline       pipeline_       = VK_NULL_HANDLE;
 
+    VkDescriptorPool imguiPool_ = VK_NULL_HANDLE;
+
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
     std::array<VkCommandBuffer, FRAMES_IN_FLIGHT> commandBuffers_{};
     std::array<VkFence,         FRAMES_IN_FLIGHT> inFlightFences_{};
@@ -75,28 +94,9 @@ private:
 
     std::vector<VkSemaphore> renderFinished_;
 
-    uint32_t currentFrame_ = 0;
-    bool     framebufferResized_ = false;
-
-    void initWindow() {
-        if (!glfwInit())
-            throw std::runtime_error("glfwInit failed");
-
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);   // no GL context wanted
-        window_ = glfwCreateWindow(WIN_WIDTH, WIN_HEIGHT, WIN_TITLE, nullptr, nullptr);
-        if (!window_)
-            throw std::runtime_error("glfwCreateWindow failed");
-
-        glfwSetWindowUserPointer(window_, this);
-        glfwSetFramebufferSizeCallback(window_, [](GLFWwindow* w, int, int) {
-            static_cast<VulkanApp*>(glfwGetWindowUserPointer(w))->framebufferResized_ = true;
-        });
-        glfwSetKeyCallback(window_, [](GLFWwindow* w, int key, int, int action, int) {
-            if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
-                glfwSetWindowShouldClose(w, GLFW_TRUE);
-        });
-    }
-
+    uint32_t    currentFrame_ = 0;
+    bool        framebufferResized_ = false;
+    std::string gpuName_;
 
     void initVulkan() {
         createInstanceAndDevice();
@@ -120,8 +120,8 @@ private:
             throw std::runtime_error("vkb instance: " + instRet.error().message());
         vkbInstance_ = instRet.value();
 
-        check(glfwCreateWindowSurface(vkbInstance_.instance, window_, nullptr, &surface_),
-              "glfwCreateWindowSurface");
+        if (!window_.createSurface(vkbInstance_.instance, &surface_))
+            throw std::runtime_error("createSurface failed");
 
 
         VkPhysicalDeviceVulkan13Features features13{};
@@ -147,7 +147,8 @@ private:
         if (!physRet)
             throw std::runtime_error("vkb physical device: " + physRet.error().message());
 
-        std::printf("GPU: %s\n", physRet.value().properties.deviceName);
+        gpuName_ = physRet.value().properties.deviceName;
+        std::printf("GPU: %s\n", gpuName_.c_str());
 
         auto devRet = vkb::DeviceBuilder{physRet.value()}.build();
         if (!devRet)
@@ -176,7 +177,7 @@ private:
 
     void createSwapchain() {
         int w = 0, h = 0;
-        glfwGetFramebufferSize(window_, &w, &h);
+        window_.getFramebufferSize(w, h);
 
         vkb::SwapchainBuilder builder{vkbDevice_};
         auto ret = builder
@@ -203,12 +204,7 @@ private:
     }
 
     void recreateSwapchain() {
-        int w = 0, h = 0;
-        glfwGetFramebufferSize(window_, &w, &h);
-        while (w == 0 || h == 0) {
-            glfwGetFramebufferSize(window_, &w, &h);
-            glfwWaitEvents();
-        }
+        window_.waitWhileMinimized();
 
         vkDeviceWaitIdle(device_);
         destroySwapchain();
@@ -256,6 +252,61 @@ private:
         semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         for (auto& s : renderFinished_)
             check(vkCreateSemaphore(device_, &semInfo, nullptr, &s), "vkCreateSemaphore");
+    }
+
+    /// Renderer half of the ImGui setup; AppWindow already created the context
+    /// and the GLFW platform backend.
+    void initImGuiVulkan() {
+        // One combined image sampler per registered texture; only the font atlas
+        // is registered here, the rest is headroom for user textures.
+        const VkDescriptorPoolSize poolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16 };
+
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        poolInfo.maxSets       = 16;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes    = &poolSize;
+        check(vkCreateDescriptorPool(device_, &poolInfo, nullptr, &imguiPool_),
+              "vkCreateDescriptorPool (ImGui)");
+
+        const VkFormat colorFormat = vkbSwapchain_.image_format;
+        VkPipelineRenderingCreateInfo renderingInfo{};
+        renderingInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+        renderingInfo.colorAttachmentCount    = 1;
+        renderingInfo.pColorAttachmentFormats = &colorFormat;
+
+        ImGui_ImplVulkan_InitInfo info{};
+        info.Instance        = vkbInstance_.instance;
+        info.PhysicalDevice  = vkbDevice_.physical_device;
+        info.Device          = device_;
+        info.QueueFamily     = graphicsQueueFamily_;
+        info.Queue           = graphicsQueue_;
+        info.DescriptorPool  = imguiPool_;
+        info.MinImageCount   = vkbSwapchain_.requested_min_image_count;
+        info.ImageCount      = vkbSwapchain_.image_count;
+        info.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
+        info.UseDynamicRendering       = true;
+        info.PipelineRenderingCreateInfo = renderingInfo;
+        info.CheckVkResultFn = [](VkResult r) { check(r, "ImGui Vulkan backend"); };
+
+        if (!ImGui_ImplVulkan_Init(&info))
+            throw std::runtime_error("ImGui_ImplVulkan_Init failed");
+    }
+
+    void drawUI() {
+        ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("pgr-vk")) {
+            ImGui::Text("GPU: %s", gpuName_.c_str());
+            ImGui::Text("%d x %d", window_.getWidth(), window_.getHeight());
+            ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
+                        1000.0f / ImGui::GetIO().Framerate);
+            ImGui::Separator();
+            ImGui::TextUnformatted(window_.isUIMode() ? "UI mode  (Tab to capture the mouse)"
+                                                      : "Mouse captured  (Tab for UI)");
+            ImGui::TextUnformatted("Esc quits");
+        }
+        ImGui::End();
     }
 
     VkShaderModule loadShader(const std::string& path) {
@@ -429,6 +480,8 @@ private:
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
         vkCmdDraw(cmd, 3, 1, 0, 0);
 
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+
         vkCmdEndRendering(cmd);
 
         transitionImage(cmd, swapImages_[imageIndex],
@@ -493,15 +546,12 @@ private:
         currentFrame_ = (currentFrame_ + 1) % FRAMES_IN_FLIGHT;
     }
 
-    void mainLoop() {
-        while (!glfwWindowShouldClose(window_)) {
-            glfwPollEvents();
-            drawFrame();
-        }
-        vkDeviceWaitIdle(device_);
-    }
-
     void cleanup() {
+        vkDeviceWaitIdle(device_);
+
+        ImGui_ImplVulkan_Shutdown();
+        vkDestroyDescriptorPool(device_, imguiPool_, nullptr);
+
         for (VkSemaphore s : renderFinished_)
             vkDestroySemaphore(device_, s, nullptr);
         for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
@@ -520,9 +570,6 @@ private:
         vkb::destroy_device(vkbDevice_);
         vkb::destroy_surface(vkbInstance_, surface_);
         vkb::destroy_instance(vkbInstance_);
-
-        if (window_) glfwDestroyWindow(window_);
-        glfwTerminate();
     }
 };
 
