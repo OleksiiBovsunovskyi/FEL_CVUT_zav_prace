@@ -1,0 +1,96 @@
+module;
+#include <vulkan/vulkan.h>
+
+#include <cstring>
+
+module VK_Material;
+
+GPUMaterial Material::gpuData() const {
+    GPUMaterial result{};
+
+    result.albedo[0] = albedo_.r;
+    result.albedo[1] = albedo_.g;
+    result.albedo[2] = albedo_.b;
+    result.albedo[3] = albedo_.a;
+
+    result.emissive[0] = emissiveColor_.r;
+    result.emissive[1] = emissiveColor_.g;
+    result.emissive[2] = emissiveColor_.b;
+    result.emissive[3] = emissiveIntensity_;
+
+    result.surface[0] = specularIntensity_;
+    result.surface[1] = shininess_;
+    result.surface[2] = metallic_;
+    result.surface[3] = roughness_;
+
+    result.textures[0] = albedoTexture_;
+    result.textures[1] = normalTexture_;
+    result.textures[2] = ormTexture_;
+    result.textures[3] = emissiveTexture_;
+
+    result.alphaThreshold = alphaThreshold_;
+    if (emissive_) result.flags |= MATERIAL_EMISSIVE;
+    if (transparent_) result.flags |= MATERIAL_ALPHA_BLEND;
+    if (alphaThreshold_ > 0.0f) result.flags |= MATERIAL_ALPHA_MASK;
+
+    return result;
+}
+
+uint32_t Material::gpuIndex() const {
+    if (!gpuRecord_) return 0;
+    return gpuRecord_.slice().elementIndex;
+}
+
+bool Material::stage(VK_buffers& buffers, BufferSlice& outStaging) {
+    if (!gpuRecord_) {
+        gpuRecord_ = buffers.allocateStatic(StaticBufferKind::Materials, 1);
+        if (!gpuRecord_) return false;
+    }
+
+    const BufferSlice staging =
+        buffers.allocateUpload(sizeof(GPUMaterial), alignof(GPUMaterial));
+    if (!staging || !staging.mapped) return false;
+
+    const GPUMaterial data = gpuData();
+    std::memcpy(staging.mapped, &data, sizeof(data));
+
+    outStaging = staging;
+    return true;
+}
+
+void Material::record(VkCommandBuffer commandBuffer,
+                      const BufferSlice& staging) const {
+    const VkBufferCopy copy{
+        .srcOffset = staging.offset,
+        .dstOffset = gpuRecord_.slice().offset,
+        .size      = sizeof(GPUMaterial),
+    };
+    vkCmdCopyBuffer(commandBuffer, staging.buffer,
+                    gpuRecord_.slice().buffer, 1, &copy);
+
+    const VkBufferMemoryBarrier2 barrier{
+        .sType         = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
+        .srcStageMask  = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
+        .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
+        .dstStageMask  = VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+        .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
+        .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+        .buffer = gpuRecord_.slice().buffer,
+        .offset = gpuRecord_.slice().offset,
+        .size   = gpuRecord_.slice().size,
+    };
+    const VkDependencyInfo dependency{
+        .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
+        .bufferMemoryBarrierCount = 1,
+        .pBufferMemoryBarriers    = &barrier,
+    };
+    vkCmdPipelineBarrier2(commandBuffer, &dependency);
+}
+
+bool Material::upload(VK_buffers& buffers, VkCommandBuffer commandBuffer) {
+    BufferSlice staging{};
+    if (!stage(buffers, staging)) return false;
+    record(commandBuffer, staging);
+    return true;
+}

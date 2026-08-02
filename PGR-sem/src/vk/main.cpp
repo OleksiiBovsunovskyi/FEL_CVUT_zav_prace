@@ -1,264 +1,176 @@
-/**
- * vertex-buffer-less triangle, drawn with dynamic rendering.
- *
- * Windowing, input and the ImGui frame are owned by AppWindow (VkWindow module);
- * this file supplies the Vulkan half: the ImGui renderer backend and the draw
- * callback that records and submits the frame.
- */
-
-#include <VkBootstrap.h>
-
-#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.h>
 
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <fstream>
+#include <filesystem>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 import VkWindow;
+import VulkanContext;
+import VkSwapchain;
+import FrameRunner;
+import VkUtil;
+import Pipeline;
+import ShadersLoader;
+import VK_Buffers;
+import UploadBatch;
+import GltfLoader;
+import Logger;
 
 namespace {
 
 constexpr int  WIN_WIDTH  = 1280;
 constexpr int  WIN_HEIGHT = 720;
 constexpr char WIN_TITLE[] = "PGR_VK";
-constexpr uint32_t FRAMES_IN_FLIGHT = 2;
 
 void check(VkResult r, const char* what) {
     if (r != VK_SUCCESS)
         throw std::runtime_error(std::string(what) + " failed: VkResult " + std::to_string(r));
 }
 
-std::vector<char> readFile(const std::string& path) {
-    std::ifstream f(path, std::ios::ate | std::ios::binary);
-    if (!f.is_open())
-        throw std::runtime_error("cannot open " + path);
-    const auto size = static_cast<size_t>(f.tellg());
-    std::vector<char> buffer(size);
-    f.seekg(0);
-    f.read(buffer.data(), static_cast<std::streamsize>(size));
-    return buffer;
-}
+constexpr char SHADER_DIR[] = "Shaders/src";
 
+/**
+ * Must match the push_constant block in shaders/gpu_types.glsl field for field.
+ * Nothing checks it at build time.
+ */
+struct DrawPush {
+    glm::mat4       viewProj;               // offset 0, model already folded in
+    VkDeviceAddress vertices             = 0;   // 64
+    VkDeviceAddress meshlets             = 0;   // 72
+    VkDeviceAddress meshletVertexIndices = 0;   // 80
+    VkDeviceAddress meshletTriangles     = 0;   // 88
+    VkDeviceAddress meshes               = 0;   // 96
+    VkDeviceAddress materials            = 0;   // 104
+    uint32_t        meshIndex            = 0;   // 112
+};
+
+/* Guaranteed minimum maxPushConstantsSize. */
+static_assert(sizeof(DrawPush) <= 128);
 
 class VulkanApp {
 public:
+    /**
+     * @param modelPath .gltf/.glb to load, or empty for an empty scene.
+     * @param maxFrames close after this many frames, or 0 to run until closed.
+     *        A frame budget lets a script wait for a clean exit, which flushes
+     *        stdout; killing the process loses it.
+     */
+    VulkanApp(std::filesystem::path modelPath, uint32_t maxFrames)
+        : modelPath_(std::move(modelPath)), maxFrames_(maxFrames) {}
+
     void run() {
         if (!window_.init(WIN_WIDTH, WIN_HEIGHT, WIN_TITLE))
             throw std::runtime_error("AppWindow::init failed");
-        window_.setUIMode(true);   // start with a usable cursor; Tab toggles
+        window_.setUIMode(true);
 
-        initVulkan();
+        if (!ctx_.init(window_, WIN_TITLE))
+            throw std::runtime_error("VulkanContext::init failed");
+        device_ = ctx_.device();
+
+        if (!swapchain_.init(ctx_, window_))
+            throw std::runtime_error("Swapchain::init failed");
+
+        if (!frames_.init(ctx_, swapchain_))
+            throw std::runtime_error("FrameRunner::init failed");
+
+        drawMeshTasks_ = ctx_.cmdDrawMeshTasks();
+
+        shaders_.init(device_);
+        shaders_.addIncludeDir(SHADER_DIR);
+
+        if (!buffers_.init(ctx_))
+            throw std::runtime_error("VK_buffers::init failed");
+        if (!uploads_.init(ctx_, buffers_))
+            throw std::runtime_error("UploadBatch::init failed");
+
+        loadModel();
+
+        createPipeline();
         initImGuiVulkan();
 
-        window_.setResizeCallback([this](int, int) { framebufferResized_ = true; });
+        //Swapchains need recreation only on format change
+        frames_.setSwapchainRecreatedCallback([this](VkExtent2D, VkFormat format) {
+            if (format != pipelineFormat_) {
+                vkDestroyPipeline(device_, pipeline_, nullptr);
+                vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
+                pipeline_       = VK_NULL_HANDLE;
+                pipelineLayout_ = VK_NULL_HANDLE;
+                createPipeline();
+            }
+        });
+
+        window_.setResizeCallback([this](int, int) { frames_.notifyResized(); });
         window_.setUICallback([this] { drawUI(); });
-        window_.setDrawCallback([this] { drawFrame(); });
+        window_.setDrawCallback([this] {
+            frames_.drawFrame([this](VkCommandBuffer cmd, const RenderTarget& target) {
+                recordFrame(cmd, target);
+            });
+            //Lost device is not recoverable
+            if (frames_.deviceLost()) window_.requestClose();
+
+            if (maxFrames_ != 0 && ++framesDrawn_ >= maxFrames_)
+                window_.requestClose();
+        });
 
         window_.mainLoop();
+    }
 
+    ~VulkanApp() {
+        /**
+         * run() can throw: FrameRunner throws mid-frame, and a failed model
+         * load throws before the loop starts.
+         */
         cleanup();
         window_.shutdown();
     }
 
 private:
-    AppWindow window_;
+    AppWindow     window_;
+    VulkanContext ctx_;
+    Swapchain     swapchain_;
+    FrameRunner   frames_;
+    ShaderLoader  shaders_;
+    VK_buffers    buffers_;
+    UploadBatch   uploads_;
 
-    vkb::Instance       vkbInstance_{};
-    vkb::Device         vkbDevice_{};
-    vkb::Swapchain      vkbSwapchain_{};
-    VkSurfaceKHR        surface_ = VK_NULL_HANDLE;
-    VkDevice            device_  = VK_NULL_HANDLE;
-    VkQueue             graphicsQueue_ = VK_NULL_HANDLE;
-    uint32_t            graphicsQueueFamily_ = 0;
-    VmaAllocator        allocator_ = nullptr;
+    std::filesystem::path  modelPath_;
+    uint32_t               maxFrames_   = 0;
+    uint32_t               framesDrawn_ = 0;
+    std::vector<MultiMesh> scene_;
+    glm::vec3              sceneCenter_{0.0f};
+    float                  sceneRadius_ = 1.0f;
 
-    std::vector<VkImage>     swapImages_;
-    std::vector<VkImageView> swapImageViews_;
+    PFN_vkCmdDrawMeshTasksEXT drawMeshTasks_ = nullptr;
+
+    VkDevice device_ = VK_NULL_HANDLE;
 
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline       pipeline_       = VK_NULL_HANDLE;
+    /// The format pipeline_ was built against; a swapchain rebuild compares it.
+    VkFormat         pipelineFormat_ = VK_FORMAT_UNDEFINED;
 
     VkDescriptorPool imguiPool_ = VK_NULL_HANDLE;
+    bool             imguiVulkanInitialized_ = false;
 
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
-    std::array<VkCommandBuffer, FRAMES_IN_FLIGHT> commandBuffers_{};
-    std::array<VkFence,         FRAMES_IN_FLIGHT> inFlightFences_{};
-    std::array<VkSemaphore,     FRAMES_IN_FLIGHT> imageAvailable_{};
-
-    std::vector<VkSemaphore> renderFinished_;
-
-    uint32_t    currentFrame_ = 0;
-    bool        framebufferResized_ = false;
-    std::string gpuName_;
-
-    void initVulkan() {
-        createInstanceAndDevice();
-        createAllocator();
-        createSwapchain();
-        createCommandObjects();
-        createSyncObjects();
-        createPipeline();
-    }
-
-    void createInstanceAndDevice() {
-        vkb::InstanceBuilder builder;
-        builder.set_app_name("PGR_VK")
-               .require_api_version(1, 3, 0);
-#ifndef NDEBUG
-        builder.request_validation_layers(true)
-               .use_default_debug_messenger();
-#endif
-        auto instRet = builder.build();
-        if (!instRet)
-            throw std::runtime_error("vkb instance: " + instRet.error().message());
-        vkbInstance_ = instRet.value();
-
-        if (!window_.createSurface(vkbInstance_.instance, &surface_))
-            throw std::runtime_error("createSurface failed");
-
-
-        VkPhysicalDeviceVulkan13Features features13{};
-        features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-        features13.dynamicRendering = VK_TRUE;
-        features13.synchronization2 = VK_TRUE;
-
-
-        VkPhysicalDeviceVulkan12Features features12{};
-        features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-        features12.bufferDeviceAddress                    = VK_TRUE;
-        features12.descriptorIndexing                     = VK_TRUE;
-        features12.runtimeDescriptorArray                 = VK_TRUE;
-        features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
-        features12.drawIndirectCount                      = VK_TRUE;
-
-        vkb::PhysicalDeviceSelector selector{vkbInstance_};
-        auto physRet = selector.set_surface(surface_)
-                               .set_minimum_version(1, 3)
-                               .set_required_features_13(features13)
-                               .set_required_features_12(features12)
-                               .select();
-        if (!physRet)
-            throw std::runtime_error("vkb physical device: " + physRet.error().message());
-
-        gpuName_ = physRet.value().properties.deviceName;
-        std::printf("GPU: %s\n", gpuName_.c_str());
-
-        auto devRet = vkb::DeviceBuilder{physRet.value()}.build();
-        if (!devRet)
-            throw std::runtime_error("vkb device: " + devRet.error().message());
-
-        vkbDevice_ = devRet.value();
-        device_    = vkbDevice_.device;
-
-        auto queueRet = vkbDevice_.get_queue(vkb::QueueType::graphics);
-        if (!queueRet)
-            throw std::runtime_error("no graphics queue: " + queueRet.error().message());
-        graphicsQueue_       = queueRet.value();
-        graphicsQueueFamily_ = vkbDevice_.get_queue_index(vkb::QueueType::graphics).value();
-    }
-
-    void createAllocator() {
-        VmaAllocatorCreateInfo info{};
-        info.physicalDevice = vkbDevice_.physical_device;
-        info.device         = device_;
-        info.instance       = vkbInstance_.instance;
-        info.vulkanApiVersion = VK_API_VERSION_1_3;
-
-        info.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-        check(vmaCreateAllocator(&info, &allocator_), "vmaCreateAllocator");
-    }
-
-    void createSwapchain() {
-        int w = 0, h = 0;
-        window_.getFramebufferSize(w, h);
-
-        vkb::SwapchainBuilder builder{vkbDevice_};
-        auto ret = builder
-            .set_desired_format(VkSurfaceFormatKHR{VK_FORMAT_B8G8R8A8_UNORM,
-                                                   VK_COLOR_SPACE_SRGB_NONLINEAR_KHR})
-            .set_desired_present_mode(VK_PRESENT_MODE_IMMEDIATE_KHR)
-            .set_desired_extent(static_cast<uint32_t>(w), static_cast<uint32_t>(h))
-            .add_image_usage_flags(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
-            .set_old_swapchain(vkbSwapchain_)
-            .build();
-        if (!ret)
-            throw std::runtime_error("vkb swapchain: " + ret.error().message());
-
-        vkb::destroy_swapchain(vkbSwapchain_);
-        vkbSwapchain_   = ret.value();
-        swapImages_     = vkbSwapchain_.get_images().value();
-        swapImageViews_ = vkbSwapchain_.get_image_views().value();
-    }
-
-    void destroySwapchain() {
-        vkbSwapchain_.destroy_image_views(swapImageViews_);
-        swapImageViews_.clear();
-        swapImages_.clear();
-    }
-
-    void recreateSwapchain() {
-        window_.waitWhileMinimized();
-
-        vkDeviceWaitIdle(device_);
-        destroySwapchain();
-        createSwapchain();
-        recreateRenderFinishedSemaphores();
-    }
-
-    void createCommandObjects() {
-        VkCommandPoolCreateInfo poolInfo{};
-        poolInfo.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        poolInfo.queueFamilyIndex = graphicsQueueFamily_;
-        check(vkCreateCommandPool(device_, &poolInfo, nullptr, &commandPool_), "vkCreateCommandPool");
-
-        VkCommandBufferAllocateInfo allocInfo{};
-        allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.commandPool        = commandPool_;
-        allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = FRAMES_IN_FLIGHT;
-        check(vkAllocateCommandBuffers(device_, &allocInfo, commandBuffers_.data()),
-              "vkAllocateCommandBuffers");
-    }
-
-    void createSyncObjects() {
-        VkSemaphoreCreateInfo semInfo{};
-        semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        VkFenceCreateInfo fenceInfo{};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;   // frame 0 must not block
-
-        for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
-            check(vkCreateSemaphore(device_, &semInfo, nullptr, &imageAvailable_[i]), "vkCreateSemaphore");
-            check(vkCreateFence(device_, &fenceInfo, nullptr, &inFlightFences_[i]), "vkCreateFence");
-        }
-        recreateRenderFinishedSemaphores();
-    }
-
-    void recreateRenderFinishedSemaphores() {
-        for (VkSemaphore s : renderFinished_)
-            vkDestroySemaphore(device_, s, nullptr);
-        renderFinished_.assign(swapImages_.size(), VK_NULL_HANDLE);
-
-        VkSemaphoreCreateInfo semInfo{};
-        semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-        for (auto& s : renderFinished_)
-            check(vkCreateSemaphore(device_, &semInfo, nullptr, &s), "vkCreateSemaphore");
-    }
-
-    /// Renderer half of the ImGui setup; AppWindow already created the context
-    /// and the GLFW platform backend.
+    /**
+     * Renderer half of the ImGui setup; AppWindow already created the context
+     * and the GLFW platform backend. !TODO:Move from here
+     */
     void initImGuiVulkan() {
-        // One combined image sampler per registered texture; only the font atlas
-        // is registered here, the rest is headroom for user textures.
+        /* One combined image sampler per texture; only the font atlas so far. */
         const VkDescriptorPoolSize poolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16 };
 
         VkDescriptorPoolCreateInfo poolInfo{};
@@ -270,21 +182,26 @@ private:
         check(vkCreateDescriptorPool(device_, &poolInfo, nullptr, &imguiPool_),
               "vkCreateDescriptorPool (ImGui)");
 
-        const VkFormat colorFormat = vkbSwapchain_.image_format;
+        const VkFormat colorFormat = swapchain_.format();
         VkPipelineRenderingCreateInfo renderingInfo{};
         renderingInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         renderingInfo.colorAttachmentCount    = 1;
         renderingInfo.pColorAttachmentFormats = &colorFormat;
+        /**
+         * ImGui does not depth test, but its pipeline must declare the same
+         * attachments as the VkRenderingInfo it is recorded into.
+         */
+        renderingInfo.depthAttachmentFormat   = DEPTH_FORMAT;
 
         ImGui_ImplVulkan_InitInfo info{};
-        info.Instance        = vkbInstance_.instance;
-        info.PhysicalDevice  = vkbDevice_.physical_device;
+        info.Instance        = ctx_.instance();
+        info.PhysicalDevice  = ctx_.physicalDevice();
         info.Device          = device_;
-        info.QueueFamily     = graphicsQueueFamily_;
-        info.Queue           = graphicsQueue_;
+        info.QueueFamily     = ctx_.graphicsQueueFamily();
+        info.Queue           = ctx_.graphicsQueue();
         info.DescriptorPool  = imguiPool_;
-        info.MinImageCount   = vkbSwapchain_.requested_min_image_count;
-        info.ImageCount      = vkbSwapchain_.image_count;
+        info.MinImageCount   = swapchain_.minImageCount();
+        info.ImageCount      = swapchain_.imageCount();
         info.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
         info.UseDynamicRendering       = true;
         info.PipelineRenderingCreateInfo = renderingInfo;
@@ -292,12 +209,13 @@ private:
 
         if (!ImGui_ImplVulkan_Init(&info))
             throw std::runtime_error("ImGui_ImplVulkan_Init failed");
+        imguiVulkanInitialized_ = true;
     }
 
     void drawUI() {
         ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("pgr-vk")) {
-            ImGui::Text("GPU: %s", gpuName_.c_str());
+            ImGui::Text("GPU: %s", ctx_.gpuName().c_str());
             ImGui::Text("%d x %d", window_.getWidth(), window_.getHeight());
             ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
                         1000.0f / ImGui::GetIO().Framerate);
@@ -309,276 +227,239 @@ private:
         ImGui::End();
     }
 
-    VkShaderModule loadShader(const std::string& path) {
-        const auto code = readFile(path);
-        VkShaderModuleCreateInfo info{};
-        info.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        info.codeSize = code.size();
-        info.pCode    = reinterpret_cast<const uint32_t*>(code.data());
+    void loadModel() {
+        if (modelPath_.empty()) {
+            logMessage("no model given; pass a .gltf/.glb path as the first argument");
+            return;
+        }
+        if (!loadGltf(modelPath_, buffers_, uploads_, scene_))
+            throw std::runtime_error("failed to load " + modelPath_.string());
+        frameScene();
+    }
 
-        VkShaderModule module = VK_NULL_HANDLE;
-        check(vkCreateShaderModule(device_, &info, nullptr, &module), "vkCreateShaderModule");
+    VkShaderModule loadShader(const std::string& name) {
+        VkShaderModule module = shaders_.load(std::string(SHADER_DIR) + "/" + name);
+        if (!module)
+            throw std::runtime_error("shader failed to compile: " + name);
         return module;
     }
 
     void createPipeline() {
-        VkShaderModule vert = loadShader("Shaders/triangle.vert.spv");
-        VkShaderModule frag = loadShader("Shaders/triangle.frag.spv");
+        VkShaderModule mesh = loadShader("mesh.mesh");
+        VkShaderModule frag = loadShader("mesh.frag");
 
-        VkPipelineShaderStageCreateInfo stages[2]{};
-        stages[0].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        stages[0].stage  = VK_SHADER_STAGE_VERTEX_BIT;
-        stages[0].module = vert;
-        stages[0].pName  = "main";
-        stages[1].sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-        stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
-        stages[1].module = frag;
-        stages[1].pName  = "main";
+        const std::array stages{
+            shaderStage(VK_SHADER_STAGE_MESH_BIT_EXT, mesh),
+            shaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, frag),
+        };
 
-        VkPipelineVertexInputStateCreateInfo vertexInput{};   // nothing bound yet
-        vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-
-        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-        inputAssembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-        VkPipelineViewportStateCreateInfo viewportState{};
-        viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewportState.viewportCount = 1;
-        viewportState.scissorCount  = 1;
-
-        const std::array<VkDynamicState, 2> dynamicStates{
-            VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-        VkPipelineDynamicStateCreateInfo dynamicState{};
-        dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-        dynamicState.pDynamicStates    = dynamicStates.data();
-
-        VkPipelineRasterizationStateCreateInfo raster{};
-        raster.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-        raster.polygonMode = VK_POLYGON_MODE_FILL;
-        raster.cullMode    = VK_CULL_MODE_NONE;   // enable once real geometry lands
-
-        raster.frontFace   = VK_FRONT_FACE_CLOCKWISE;
-        raster.lineWidth   = 1.0f;
-
-        VkPipelineMultisampleStateCreateInfo multisample{};
-        multisample.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-        VkPipelineColorBlendAttachmentState blendAttachment{};
-        blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        blendAttachment.blendEnable    = VK_FALSE;
-
-        VkPipelineColorBlendStateCreateInfo blend{};
-        blend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-        blend.attachmentCount = 1;
-        blend.pAttachments    = &blendAttachment;
+        /* Both stages read the block, so both must be named. */
+        const VkPushConstantRange pushRange{
+            VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0, sizeof(DrawPush),
+        };
 
         VkPipelineLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges    = &pushRange;
+        /* No descriptor sets: buffers are reached by device address. */
         check(vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_),
               "vkCreatePipelineLayout");
 
-        const VkFormat colorFormat = vkbSwapchain_.image_format;
-        VkPipelineRenderingCreateInfo renderingInfo{};
-        renderingInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        renderingInfo.colorAttachmentCount    = 1;
-        renderingInfo.pColorAttachmentFormats = &colorFormat;
+        pipelineFormat_ = swapchain_.format();
 
-        VkGraphicsPipelineCreateInfo pipelineInfo{};
-        pipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInfo.pNext               = &renderingInfo;
-        pipelineInfo.stageCount          = 2;
-        pipelineInfo.pStages             = stages;
-        pipelineInfo.pVertexInputState   = &vertexInput;
-        pipelineInfo.pInputAssemblyState = &inputAssembly;
-        pipelineInfo.pViewportState      = &viewportState;
-        pipelineInfo.pRasterizationState = &raster;
-        pipelineInfo.pMultisampleState   = &multisample;
-        pipelineInfo.pColorBlendState    = &blend;
-        pipelineInfo.pDynamicState       = &dynamicState;
-        pipelineInfo.layout              = pipelineLayout_;
-        pipelineInfo.renderPass          = VK_NULL_HANDLE;   // dynamic rendering
+        pipeline_ = createGraphicsPipeline(device_, GraphicsPipelineDesc{
+            .stages      = stages,
+            .layout      = pipelineLayout_,
+            .colorFormat = pipelineFormat_,
+        });
 
-        check(vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo,
-                                        nullptr, &pipeline_),
-              "vkCreateGraphicsPipelines");
+        // The pipeline holds everything it needs from them now.
+        shaders_.destroy(frag);
+        shaders_.destroy(mesh);
 
-        vkDestroyShaderModule(device_, frag, nullptr);
-        vkDestroyShaderModule(device_, vert, nullptr);
+        if (!pipeline_)
+            throw std::runtime_error("createGraphicsPipeline failed");
     }
 
-    /// synchronization2 image layout transition.
-    static void transitionImage(VkCommandBuffer cmd, VkImage image,
-                                VkImageLayout oldLayout, VkImageLayout newLayout,
-                                VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                                VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
-        VkImageMemoryBarrier2 barrier{};
-        barrier.sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
-        barrier.srcStageMask  = srcStage;
-        barrier.srcAccessMask = srcAccess;
-        barrier.dstStageMask  = dstStage;
-        barrier.dstAccessMask = dstAccess;
-        barrier.oldLayout     = oldLayout;
-        barrier.newLayout     = newLayout;
-        barrier.image         = image;
-        barrier.subresourceRange = VkImageSubresourceRange{
-            VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    /// Fits the camera to the loaded scene.
+    void frameScene() {
+        glm::vec3 min{ std::numeric_limits<float>::max() };
+        glm::vec3 max{ std::numeric_limits<float>::lowest() };
 
-        VkDependencyInfo dep{};
-        dep.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
-        dep.imageMemoryBarrierCount = 1;
-        dep.pImageMemoryBarriers    = &barrier;
+        for (const MultiMesh& object : scene_) {
+            for (const MultiMeshPart& part : object.parts()) {
+                const MeshBounds& bounds = part.mesh->bounds();
+                const glm::vec3 center =
+                    glm::vec3(part.localTransform * glm::vec4(bounds.center, 1.0f));
+                /* Largest axis scale; only used to place a camera. */
+                const float scale = std::max({
+                    glm::length(glm::vec3(part.localTransform[0])),
+                    glm::length(glm::vec3(part.localTransform[1])),
+                    glm::length(glm::vec3(part.localTransform[2])) });
+                const float radius = bounds.radius * scale;
 
-        vkCmdPipelineBarrier2(cmd, &dep);
+                min = glm::min(min, center - radius);
+                max = glm::max(max, center + radius);
+            }
+        }
+
+        if (min.x > max.x) { sceneCenter_ = glm::vec3{0.0f}; sceneRadius_ = 1.0f; return; }
+
+        sceneCenter_ = (min + max) * 0.5f;
+        sceneRadius_ = std::max(glm::length(max - min) * 0.5f, 1e-3f);
     }
 
-    void recordCommands(VkCommandBuffer cmd, uint32_t imageIndex) {
-        VkCommandBufferBeginInfo begin{};
-        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        check(vkBeginCommandBuffer(cmd, &begin), "vkBeginCommandBuffer");
+    [[nodiscard]] glm::mat4 viewProjection(VkExtent2D extent) const {
+        const float aspect = static_cast<float>(extent.width) /
+                             static_cast<float>(std::max(extent.height, 1u));
 
-        transitionImage(cmd, swapImages_[imageIndex],
-                        VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, 0,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+        const float angle    = static_cast<float>(window_.getElapsedMs()) * 0.0004f;
+        const float distance = sceneRadius_ * 2.5f;
+        const glm::vec3 eye = sceneCenter_ + distance * glm::vec3{
+            std::cos(angle), 0.45f, std::sin(angle) };
 
+        const glm::mat4 view =
+            glm::lookAt(eye, sceneCenter_, glm::vec3{0.0f, 1.0f, 0.0f});
+
+        /* Reverse-Z: near and far swapped. */
+        glm::mat4 projection = glm::perspective(
+            glm::radians(60.0f), aspect, sceneRadius_ * 20.0f, sceneRadius_ * 0.01f);
+
+        /* Vulkan clip space has +Y down. */
+        projection[1][1] *= -1.0f;
+
+        return projection * view;
+    }
+
+
+    void recordFrame(VkCommandBuffer cmd, const RenderTarget& target) {
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        colorAttachment.imageView   = swapImageViews_[imageIndex];
+        colorAttachment.imageView   = target.view;
         colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.clearValue.color = { { 0.2f, 0.1f, 0.3f, 1.0f } };  // same as the GL target
 
-        const VkExtent2D extent = vkbSwapchain_.extent;
+        VkRenderingAttachmentInfo depthAttachment{};
+        depthAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depthAttachment.imageView   = target.depthView;
+        depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depthAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        // Nothing reads depth back yet, so it need not survive the pass.
+        depthAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.clearValue.depthStencil.depth = DEPTH_CLEAR;
 
         VkRenderingInfo rendering{};
         rendering.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        rendering.renderArea           = VkRect2D{ {0, 0}, extent };
+        rendering.renderArea           = VkRect2D{ {0, 0}, target.extent };
         rendering.layerCount           = 1;
         rendering.colorAttachmentCount = 1;
         rendering.pColorAttachments    = &colorAttachment;
+        rendering.pDepthAttachment     = &depthAttachment;
 
         vkCmdBeginRendering(cmd, &rendering);
 
         VkViewport viewport{};
         viewport.x        = 0.0f;
         viewport.y        = 0.0f;
-        viewport.width    = static_cast<float>(extent.width);
-        viewport.height   = static_cast<float>(extent.height);
+        viewport.width    = static_cast<float>(target.extent.width);
+        viewport.height   = static_cast<float>(target.extent.height);
         viewport.minDepth = 0.0f;
         viewport.maxDepth = 1.0f;
         vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-        const VkRect2D scissor{ {0, 0}, extent };
+        const VkRect2D scissor{ {0, 0}, target.extent };
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-        vkCmdDraw(cmd, 3, 1, 0, 0);
+        drawScene(cmd, target.extent);
 
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 
         vkCmdEndRendering(cmd);
-
-        transitionImage(cmd, swapImages_[imageIndex],
-                        VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                        VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                        VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                        VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0);
-
-        check(vkEndCommandBuffer(cmd), "vkEndCommandBuffer");
     }
 
-    void drawFrame() {
-        VkFence fence = inFlightFences_[currentFrame_];
-        check(vkWaitForFences(device_, 1, &fence, VK_TRUE, UINT64_MAX), "vkWaitForFences");
+    /**
+     * One dispatch per part, one mesh workgroup per meshlet. Direct, not
+     * indirect: the GPU-driven path replaces only this function.
+     */
+    void drawScene(VkCommandBuffer cmd, VkExtent2D extent) {
+        if (scene_.empty()) return;
 
-        uint32_t imageIndex = 0;
-        VkResult acquire = vkAcquireNextImageKHR(device_, vkbSwapchain_.swapchain, UINT64_MAX,
-                                                 imageAvailable_[currentFrame_],
-                                                 VK_NULL_HANDLE, &imageIndex);
-        if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
-            recreateSwapchain();
-            return;
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
+
+        DrawPush push{};
+        push.vertices  = buffers_.staticBuffer(StaticBufferKind::Vertices).deviceAddress;
+        push.meshlets  = buffers_.staticBuffer(StaticBufferKind::Meshlets).deviceAddress;
+        push.meshletVertexIndices =
+            buffers_.staticBuffer(StaticBufferKind::MeshletVertexIndices).deviceAddress;
+        push.meshletTriangles =
+            buffers_.staticBuffer(StaticBufferKind::MeshletTriangleIndices).deviceAddress;
+        push.meshes    = buffers_.staticBuffer(StaticBufferKind::Meshes).deviceAddress;
+        push.materials = buffers_.staticBuffer(StaticBufferKind::Materials).deviceAddress;
+
+        const glm::mat4 viewProj = viewProjection(extent);
+
+        for (const MultiMesh& object : scene_) {
+            for (const MultiMeshPart& part : object.parts()) {
+                const Mesh& mesh = *part.mesh;
+                if (!mesh.uploaded() || mesh.meshletCount() == 0) continue;
+
+                /* Folded: a second mat4 would not fit in 128 bytes. */
+                push.viewProj  = viewProj * part.localTransform;
+                push.meshIndex = mesh.getGpuIndex();
+
+                vkCmdPushConstants(cmd, pipelineLayout_,
+                                   VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   0, sizeof(push), &push);
+
+                drawMeshTasks_(cmd, mesh.meshletCount(), 1, 1);
+            }
         }
-        if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR)
-            check(acquire, "vkAcquireNextImageKHR");
-
-        check(vkResetFences(device_, 1, &fence), "vkResetFences");
-
-        VkCommandBuffer cmd = commandBuffers_[currentFrame_];
-        check(vkResetCommandBuffer(cmd, 0), "vkResetCommandBuffer");
-        recordCommands(cmd, imageIndex);
-
-        const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        VkSubmitInfo submit{};
-        submit.sType                = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit.waitSemaphoreCount   = 1;
-        submit.pWaitSemaphores      = &imageAvailable_[currentFrame_];
-        submit.pWaitDstStageMask    = &waitStage;
-        submit.commandBufferCount   = 1;
-        submit.pCommandBuffers      = &cmd;
-        submit.signalSemaphoreCount = 1;
-        submit.pSignalSemaphores    = &renderFinished_[imageIndex];
-        check(vkQueueSubmit(graphicsQueue_, 1, &submit, fence), "vkQueueSubmit");
-
-        VkPresentInfoKHR present{};
-        present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        present.waitSemaphoreCount = 1;
-        present.pWaitSemaphores    = &renderFinished_[imageIndex];
-        present.swapchainCount     = 1;
-        present.pSwapchains        = &vkbSwapchain_.swapchain;
-        present.pImageIndices      = &imageIndex;
-
-        VkResult presentRes = vkQueuePresentKHR(graphicsQueue_, &present);
-        if (presentRes == VK_ERROR_OUT_OF_DATE_KHR || presentRes == VK_SUBOPTIMAL_KHR ||
-            framebufferResized_) {
-            framebufferResized_ = false;
-            recreateSwapchain();
-        } else {
-            check(presentRes, "vkQueuePresentKHR");
-        }
-
-        currentFrame_ = (currentFrame_ + 1) % FRAMES_IN_FLIGHT;
     }
 
     void cleanup() {
-        vkDeviceWaitIdle(device_);
+        /* Reachable from the destructor after a failed init. */
+        if (!device_) return;
 
-        ImGui_ImplVulkan_Shutdown();
-        vkDestroyDescriptorPool(device_, imguiPool_, nullptr);
+        ctx_.waitIdle();
 
-        for (VkSemaphore s : renderFinished_)
-            vkDestroySemaphore(device_, s, nullptr);
-        for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
-            vkDestroySemaphore(device_, imageAvailable_[i], nullptr);
-            vkDestroyFence(device_, inFlightFences_[i], nullptr);
+        if (imguiVulkanInitialized_) {
+            ImGui_ImplVulkan_Shutdown();
+            imguiVulkanInitialized_ = false;
         }
-        vkDestroyCommandPool(device_, commandPool_, nullptr);
+        if (imguiPool_) {
+            vkDestroyDescriptorPool(device_, imguiPool_, nullptr);
+            imguiPool_ = VK_NULL_HANDLE;
+        }
+
+        /* Meshes retire buffer ranges on destruction; must precede shutdown. */
+        scene_.clear();
+        uploads_.destroy();
+        buffers_.shutdown();
+
+        frames_.destroy();
+
         vkDestroyPipeline(device_, pipeline_, nullptr);
         vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
 
-        destroySwapchain();
-        vkb::destroy_swapchain(vkbSwapchain_);
-
-        if (allocator_) vmaDestroyAllocator(allocator_);
-
-        vkb::destroy_device(vkbDevice_);
-        vkb::destroy_surface(vkbInstance_, surface_);
-        vkb::destroy_instance(vkbInstance_);
+        swapchain_.destroy();
+        ctx_.shutdown();
     }
 };
 
 } // namespace
 
 
-int main() {
+int main(int argc, char** argv) {
     try {
-        VulkanApp app;
+        /* argv: <model> [frame budget] */
+        const std::filesystem::path defaultModelPath =
+            std::filesystem::path{__FILE__}.parent_path() / "Assets" / "scene.glb";
+        VulkanApp app{argc > 1 ? std::filesystem::path{argv[1]} : defaultModelPath,
+                      argc > 2 ? static_cast<uint32_t>(std::atoi(argv[2])) : 0u};
         app.run();
     } catch (const std::exception& e) {
         std::fprintf(stderr, "fatal: %s\n", e.what());

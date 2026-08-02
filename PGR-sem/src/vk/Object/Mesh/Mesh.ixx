@@ -1,0 +1,125 @@
+module;
+#include <vulkan/vulkan.h>
+
+#include <cstdint>
+#include <memory>
+#include <span>
+
+#include <glm/glm.hpp>
+
+export module Mesh;
+
+export import GPUTypes;
+export import VK_Material;
+import VK_Buffers;
+
+/// Local-space bounding sphere of an entire mesh.
+export struct MeshBounds {
+    glm::vec3 center{0.0f};
+    float radius = 0.0f;
+};
+
+/**
+ * Non-owning CPU view consumed by Mesh::upload(). The importer keeps every
+ * referenced array alive until upload() returns.
+ *
+ * Both CLOD modes share this format; hierarchical CLOD disabled produces one
+ * terminal cluster group at depth 0.
+ */
+export struct MeshUploadData {
+    /// Vertex data referenced by meshletVertexIndices.
+    std::span<const GPUVertex> vertices;
+    /// Every generated meshlet across all hierarchy levels.
+    std::span<const GPUMeshlet> meshlets;
+    /// Flattened global vertex indices used by meshlets.
+    std::span<const uint32_t> meshletVertexIndices;
+    /// One triangle per uint32: i0 | (i1 << 8) | (i2 << 16).
+    std::span<const uint32_t> meshletTriangles;
+    /// One DAG record per meshlet.
+    std::span<const GPUCluster> clusters;
+    /// CLOD groups; contains exactly one depth-0 group when CLOD is disabled.
+    std::span<const GPUClusterGroup> clusterGroups;
+    /// Local-space bounds of the complete mesh.
+    MeshBounds bounds{};
+};
+
+/**
+ * One geometry primitive using one material.
+ *
+ * Owns a persistent allocation in every static geometry mega-buffer; destroying
+ * or replacing it retires them through VK_buffers. Transforms, visibility and
+ * scene hierarchy live in render/transform components.
+ */
+export class Mesh {
+public:
+    /// Creates an empty, not-yet-uploaded mesh.
+    Mesh() = default;
+
+    /// GPU allocations are uniquely owned.
+    Mesh(const Mesh&) = delete;
+    Mesh& operator=(const Mesh&) = delete;
+
+    /// Transfers ownership of all GPU allocations.
+    Mesh(Mesh&&) noexcept = default;
+    Mesh& operator=(Mesh&&) noexcept = default;
+
+    /**
+     * Allocates static mega-buffer ranges and records staging copies.
+     *
+     * The command buffer must be recording and VK_buffers must be initialized.
+     * The material is uploaded automatically if needed.
+     * Calling it on an uploaded Mesh returns false.
+     *
+     * All-or-nothing: every allocation and host copy precedes the first vkCmd*
+     * call. A failed call still consumes staging space until the next
+     * VK_buffers::resetUpload().
+     *
+     * @return true when every allocation and copy was recorded.
+     */
+    bool upload(VK_buffers& buffers, VkCommandBuffer commandBuffer,
+                const MeshUploadData& data,
+                std::shared_ptr<Material> material);
+
+    /// @return true once the mesh is in the GPU record.
+    [[nodiscard]] bool uploaded() const {
+        return static_cast<bool>(gpuRecord_);
+    }
+
+    /**
+     * Call only after uploaded().
+     * @return element index of this mesh's GPUMesh record, or
+     *         INVALID_GPU_MESH_INDEX before upload.
+     */
+    [[nodiscard]] uint32_t getGpuIndex() const;
+
+    /// @return the mesh's local-space bounding sphere.
+    [[nodiscard]] const MeshBounds& bounds() const { return bounds_; }
+
+    /// Returns the number of vertices owned by this mesh.
+    [[nodiscard]] uint32_t vertexCount() const { return vertexCount_; }
+
+    /// @return meshlet count across every hierarchy depth.
+    [[nodiscard]] uint32_t meshletCount() const { return meshletCount_; }
+
+    /// Returns the mesh's material. Requires uploaded() == true.
+    [[nodiscard]] const Material& material() const { return *material_; }
+
+    /// Returns shared ownership of the material. Empty before upload.
+    [[nodiscard]] const std::shared_ptr<Material>& materialPtr() const {
+        return material_;
+    }
+
+private:
+    BufferAllocation vertices_{};
+    BufferAllocation meshlets_{};
+    BufferAllocation meshletVertexIndices_{};
+    BufferAllocation meshletTriangles_{};
+    BufferAllocation clusters_{};
+    BufferAllocation clusterGroups_{};
+    BufferAllocation gpuRecord_{};
+
+    std::shared_ptr<Material> material_;
+    MeshBounds bounds_{};
+    uint32_t vertexCount_  = 0;
+    uint32_t meshletCount_ = 0;
+};

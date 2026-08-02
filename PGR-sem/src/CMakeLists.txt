@@ -4,25 +4,26 @@ cmake_minimum_required(VERSION 4.2)
 
 project(pgr-template)
 
-#!TODO: remove pgr-framework dependency
-# Find pgr-framework
+# pgr-framework: needed by the OpenGL target only. Without it the build is
+# Vulkan-only rather than a configure failure.
 string(ASCII 27 Esc)
 set(RED "${Esc}[31;1m")
 set(RST "${Esc}[m")
 
-
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../framework")
-  message(FATAL_ERROR
-          "${RED}Failed to find ../framework${RST}, fetch the repo using\n"
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../framework")
+  set(PGR_FRAMEWORK_FOUND TRUE)
+  add_subdirectory(
+          "${CMAKE_CURRENT_SOURCE_DIR}/../framework"
+          "../framework"
+  )
+else()
+  set(PGR_FRAMEWORK_FOUND FALSE)
+  message(STATUS
+          "${RED}../framework not found${RST} - skipping the ${PROJECT_NAME} "
+          "(OpenGL) target. Fetch it with\n"
           "\tgit clone https://github.com/bi-pgr/framework\n"
-          "next to the folder containing this project.")
+          "next to the folder containing this project. pgr-vk does not need it.")
 endif()
-
-
-add_subdirectory(
-        "${CMAKE_CURRENT_SOURCE_DIR}/../framework"
-        "../framework"
-)
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +79,10 @@ else()
 endif()
 
 
+
+# The OpenGL target. Everything below needs the framework: pgr.h, pgr.lib, its
+# bundled GLM, and the Assimp/DevIL DLLs.
+if(PGR_FRAMEWORK_FOUND)
 
 add_executable(${PROJECT_NAME}
         Main/template-main.cpp
@@ -249,3 +254,5 @@ if(WIN32)
     )
   endforeach()
 endif()
+
+endif() # PGR_FRAMEWORK_FOUND

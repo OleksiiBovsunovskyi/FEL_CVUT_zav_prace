@@ -145,6 +145,10 @@ bool AppWindow::createSurface(VkInstance instance, VkSurfaceKHR* outSurface) con
     return true;
 }
 
+void AppWindow::requestClose() {
+    if (handle_) glfwSetWindowShouldClose(asWindow(handle_), GLFW_TRUE);
+}
+
 void AppWindow::getFramebufferSize(int& width, int& height) const {
     width = height = 0;
     if (handle_) glfwGetFramebufferSize(asWindow(handle_), &width, &height);

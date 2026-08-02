@@ -14,12 +14,16 @@ public:
 
     bool init(int width, int height, const char* title);
 
-    /// Polls, builds the ImGui frame and drives the draw callback until the
-    /// window is closed. Does not destroy anything; call shutdown() afterward.
+    /**
+     * Polls, builds the ImGui frame and drives the draw callback until the
+     * window is closed. Does not destroy anything; call shutdown() afterward.
+     */
     void mainLoop();
 
-    /// Destroys the ImGui context, the platform backend and the window.
-    /// Must run after the app has destroyed its Vulkan objects.
+    /**
+     * Destroys the ImGui context, the platform backend and the window.
+     * Must run after the app has destroyed its Vulkan objects.
+     */
     void shutdown();
 
     void setDrawCallback(std::function<void()> cb)                  { onDraw_        = std::move(cb); }
@@ -38,8 +42,13 @@ public:
 
     void getFramebufferSize(int& width, int& height) const;
 
-    /// Blocks on events while the window is minimised (zero-sized framebuffer),
-    /// so swapchain recreation never sees a 0x0 extent.
+    /// Ends mainLoop() after the current frame, as if the window were closed.
+    void requestClose();
+
+    /**
+     * Blocks on events while the window is minimised (zero-sized framebuffer),
+     * so swapchain recreation never sees a 0x0 extent.
+     */
     void waitWhileMinimized() const;
 
     // --- Input / state ------------------------------------------------------
