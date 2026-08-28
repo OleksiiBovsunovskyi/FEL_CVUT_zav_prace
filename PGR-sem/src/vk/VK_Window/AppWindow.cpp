@@ -96,6 +96,12 @@ bool AppWindow::initImGui() {
     }
     ImGui::StyleColorsDark();
 
+    constexpr float UI_SCALE = 3.0f;
+    ImFontConfig fontConfig;
+    fontConfig.SizePixels = 13.0f * UI_SCALE;
+    ImGui::GetIO().Fonts->AddFontDefault(&fontConfig);
+    ImGui::GetStyle().ScaleAllSizes(UI_SCALE);
+
     // Platform backend only; the renderer backend (ImGui_ImplVulkan_Init) needs
     // a device and a descriptor pool and is set up by the app.
     if (!ImGui_ImplGlfw_InitForVulkan(asWindow(handle_), true)) {
