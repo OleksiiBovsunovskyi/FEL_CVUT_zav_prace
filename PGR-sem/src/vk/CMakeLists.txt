@@ -96,6 +96,7 @@ set(VK_SHADER_SOURCES
         shaders/triangle.frag
         shaders/mesh.mesh
         shaders/mesh.frag
+        shaders/Core/build_draw_commands.comp
 )
 
 set(VK_SPV_FILES "")
@@ -132,6 +133,7 @@ add_executable(pgr-vk
         Core/VK_Buffers.cpp
         Core/UploadBatch.cpp
         Core/Pipeline.cpp
+        Core/BuildDrawCommands.cpp
         Object/Material/Material.cpp
         Object/Mesh/Mesh.cpp
         Object/Mesh/MeshLoader/ClusterLODGenerator.cpp
@@ -158,6 +160,7 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/VK_Buffers.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/UploadBatch.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Pipeline.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/BuildDrawCommands.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Object.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Material/Material.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/Mesh.ixx"
@@ -227,4 +230,13 @@ add_custom_command(TARGET pgr-vk POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:pgr-vk>/Shaders/src"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${VK_SHADER_FILES} "$<TARGET_FILE_DIR:pgr-vk>/Shaders/src"
+)
+
+# Preserve the nested path expected by BuildDrawCommands' runtime shader load.
+add_custom_command(TARGET pgr-vk POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_FILE_DIR:pgr-vk>/Shaders/src/Core"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Core/build_draw_commands.comp"
+                "$<TARGET_FILE_DIR:pgr-vk>/Shaders/src/Core/build_draw_commands.comp"
 )

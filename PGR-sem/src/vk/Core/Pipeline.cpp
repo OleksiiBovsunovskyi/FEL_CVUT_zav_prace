@@ -10,13 +10,39 @@ module Pipeline;
 import Logger;
 
 VkPipelineShaderStageCreateInfo shaderStage(VkShaderStageFlagBits stage,
-                                            VkShaderModule module) {
+                                             VkShaderModule module) {
     VkPipelineShaderStageCreateInfo info{};
     info.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     info.stage  = stage;
     info.module = module;
     info.pName  = "main";
     return info;
+}
+
+VkPipeline createComputePipeline(VkDevice device, VkPipelineLayout layout,
+                                 VkShaderModule shader) {
+    if (!device || !layout || !shader) {
+        logError("createComputePipeline: device, layout and shader are required");
+        return VK_NULL_HANDLE;
+    }
+
+    const VkPipelineShaderStageCreateInfo stage =
+        shaderStage(VK_SHADER_STAGE_COMPUTE_BIT, shader);
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage  = stage;
+    pipelineInfo.layout = layout;
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    const VkResult r = vkCreateComputePipelines(
+        device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
+    if (r != VK_SUCCESS) {
+        logError("createComputePipeline: vkCreateComputePipelines failed: VkResult " +
+                 std::to_string(r));
+        return VK_NULL_HANDLE;
+    }
+    return pipeline;
 }
 
 VkPipeline createGraphicsPipeline(VkDevice device,

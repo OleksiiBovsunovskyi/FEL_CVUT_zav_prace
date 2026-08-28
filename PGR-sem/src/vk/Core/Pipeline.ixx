@@ -31,5 +31,13 @@ export struct GraphicsPipelineDesc {
 export [[nodiscard]] VkPipeline createGraphicsPipeline(
     VkDevice device, const GraphicsPipelineDesc& desc);
 
+/**
+ * Creates a compute pipeline with the supplied layout.
+ *
+ * @return VK_NULL_HANDLE on failure, after logging.
+ */
+export [[nodiscard]] VkPipeline createComputePipeline(
+    VkDevice device, VkPipelineLayout layout, VkShaderModule shader);
+
 export [[nodiscard]] VkPipelineShaderStageCreateInfo shaderStage(
     VkShaderStageFlagBits stage, VkShaderModule module);

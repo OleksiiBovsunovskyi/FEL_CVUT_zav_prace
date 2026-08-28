@@ -27,6 +27,7 @@ import ShadersLoader;
 import VK_Buffers;
 import UploadBatch;
 import GltfLoader;
+import BuildDrawCommands;
 import Logger;
 
 namespace {
@@ -99,6 +100,10 @@ public:
         loadModel();
 
         createPipeline();
+        if (!buildDrawCommands_.init(
+                device_, shaders_,
+                std::filesystem::path(SHADER_DIR) / "Core/build_draw_commands.comp"))
+            throw std::runtime_error("BuildDrawCommands::init failed");
         initImGuiVulkan();
 
         //Swapchains need recreation only on format change
@@ -145,6 +150,7 @@ private:
     ShaderLoader  shaders_;
     VK_buffers    buffers_;
     UploadBatch   uploads_;
+    BuildDrawCommands buildDrawCommands_;
 
     std::filesystem::path  modelPath_;
     uint32_t               maxFrames_   = 0;
@@ -335,6 +341,12 @@ private:
 
 
     void recordFrame(VkCommandBuffer cmd, const RenderTarget& target) {
+        uint32_t objectCount = 0;
+        for (const MultiMesh& object : scene_)
+            objectCount += static_cast<uint32_t>(object.parts().size());
+
+        buildDrawCommands_.record(cmd, objectCount);
+
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         colorAttachment.imageView   = target.view;
@@ -437,6 +449,7 @@ private:
 
         /* Meshes retire buffer ranges on destruction; must precede shutdown. */
         scene_.clear();
+        buildDrawCommands_.destroy();
         uploads_.destroy();
         buffers_.shutdown();
 
