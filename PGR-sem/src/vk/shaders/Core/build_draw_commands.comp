@@ -1,8 +1,12 @@
 #version 460
 
+#extension GL_EXT_debug_printf : enable
+
 // The C++ driver dispatches ceil(objectCount / 64) workgroups.
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 void main() {
     ///!todo
+    if (gl_GlobalInvocationID.x == 0)
+        debugPrintfEXT("build_draw_commands: %u workgroups", gl_NumWorkGroups.x);
 }

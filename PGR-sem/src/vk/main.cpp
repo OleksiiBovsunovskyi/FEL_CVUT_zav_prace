@@ -28,6 +28,7 @@ import VK_Buffers;
 import UploadBatch;
 import GltfLoader;
 import BuildDrawCommands;
+import ShaderPrint;
 import Logger;
 
 namespace {
@@ -76,6 +77,9 @@ public:
         if (!window_.init(WIN_WIDTH, WIN_HEIGHT, WIN_TITLE))
             throw std::runtime_error("AppWindow::init failed");
         window_.setUIMode(true);
+
+        ctx_.setDebugMessageSink(
+            [this](const std::string& message) { shaderPrint_.push(message); });
 
         if (!ctx_.init(window_, WIN_TITLE))
             throw std::runtime_error("VulkanContext::init failed");
@@ -151,6 +155,7 @@ private:
     VK_buffers    buffers_;
     UploadBatch   uploads_;
     BuildDrawCommands buildDrawCommands_;
+    ShaderPrint       shaderPrint_;
 
     std::filesystem::path  modelPath_;
     uint32_t               maxFrames_   = 0;
@@ -231,6 +236,8 @@ private:
             ImGui::TextUnformatted("Esc quits");
         }
         ImGui::End();
+
+        shaderPrint_.drawUI();
     }
 
     void loadModel() {

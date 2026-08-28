@@ -2,6 +2,7 @@ module;
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
 
+#include <functional>
 #include <string>
 
 export module VulkanContext;
@@ -22,6 +23,18 @@ public:
     /**Builds the instance, creates the window surface, selects a GPU that
     supports the GPU-driven feature set below, and creates the device.**/
     bool init(const AppWindow& window, const char* appName);
+
+    /**
+     * Routes validation messages of INFO severity - which is what
+     * debugPrintfEXT output arrives as - to `sink`. Warnings and errors keep
+     * going to the log. Must be called before init().
+     *
+     * @param sink receives one whole message per call, from the submitting
+     *        thread.
+     */
+    void setDebugMessageSink(std::function<void(const std::string&)> sink) {
+        debugSink_ = std::move(sink);
+    }
     void shutdown();
 
     VkInstance         instance()            const { return vkbInstance_.instance; }
@@ -50,6 +63,8 @@ private:
     VmaAllocator allocator_          = nullptr;
 
     std::string gpuName_;
+
+    std::function<void(const std::string&)> debugSink_;
 
     PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTasks_ = nullptr;
 

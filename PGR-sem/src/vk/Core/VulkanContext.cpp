@@ -2,6 +2,7 @@ module;
 #include <VkBootstrap.h>
 #include <vk_mem_alloc.h>
 
+#include <functional>
 #include <string>
 
 module VulkanContext;
@@ -46,13 +47,57 @@ bool VulkanContext::loadDeviceExtensionFunctions() {
     return true;
 }
 
+namespace {
+
+/**
+ * INFO carries debugPrintfEXT output; anything more severe is a real
+ * validation message.
+ */
+VKAPI_ATTR VkBool32 VKAPI_CALL debugMessengerCB(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT,
+    const VkDebugUtilsMessengerCallbackDataEXT* data,
+    void* userData) {
+
+    if (!data || !data->pMessage) return VK_FALSE;
+
+    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        logError(data->pMessage);
+        return VK_FALSE;
+    }
+
+    if (auto* sink = static_cast<std::function<void(const std::string&)>*>(userData);
+        sink && *sink)
+        (*sink)(data->pMessage);
+
+    return VK_FALSE;
+}
+
+} // namespace
+
 bool VulkanContext::createInstance(const char* appName) {
     vkb::InstanceBuilder builder;
     builder.set_app_name(appName)
            .require_api_version(1, 3, 0);
 #ifndef NDEBUG
+    static constexpr VkBool32 printfToStdout = VK_FALSE;
+
+    const VkLayerSettingEXT printfSetting{
+        .pLayerName   = "VK_LAYER_KHRONOS_validation",
+        .pSettingName = "printf_to_stdout",
+        .type         = VK_LAYER_SETTING_TYPE_BOOL32_EXT,
+        .valueCount   = 1,
+        .pValues      = &printfToStdout,
+    };
+
+    /* INFO severity: the layer reports shader printf output at that level, and
+       only reaches debugMessengerCB with printf_to_stdout off. */
     builder.request_validation_layers(true)
-           .use_default_debug_messenger();
+           .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT)
+           .add_layer_setting(printfSetting)
+           .add_debug_messenger_severity(VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
+           .set_debug_callback(debugMessengerCB)
+           .set_debug_callback_user_data_pointer(&debugSink_);
 #endif
 
     auto instRet = builder.build();

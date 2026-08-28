@@ -134,6 +134,7 @@ add_executable(pgr-vk
         Core/UploadBatch.cpp
         Core/Pipeline.cpp
         Core/BuildDrawCommands.cpp
+        Debug/ShaderPrint.cpp
         Object/Material/Material.cpp
         Object/Mesh/Mesh.cpp
         Object/Mesh/MeshLoader/ClusterLODGenerator.cpp
@@ -161,6 +162,7 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/UploadBatch.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Pipeline.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/BuildDrawCommands.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Debug/ShaderPrint.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Object.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Material/Material.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/Mesh.ixx"
