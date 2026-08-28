@@ -4,6 +4,7 @@ module;
 
 #include <array>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 export module VK_Buffers;
@@ -127,29 +128,186 @@ export struct MegaBufferView {
     [[nodiscard]] GpuPtr<T> deviceAddressAs() const { return GpuPtr<T>{deviceAddress}; }
 };
 
+export constexpr size_t STATIC_BUFFER_COUNT =
+    static_cast<size_t>(StaticBufferKind::Count);
+export constexpr size_t FRAME_BUFFER_COUNT =
+    static_cast<size_t>(FrameBufferKind::Count);
+
+/// Read as storage through a device address, and filled by a transfer.
+export constexpr VkBufferUsageFlags GPU_DATA_USAGE =
+    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+    VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+
 /**
- * Byte capacities. Strided buffers round down to whole elements.
- * !TODO:Make this not hardcoded....
+ * Static buffers take their stride from sizeof(Record), so the stride can no
+ * longer disagree with the type the shader reads.
+ */
+export template <StaticBufferKind Kind> struct StaticBufferTraits;
+export template <FrameBufferKind  Kind> struct FrameBufferTraits;
+
+template <> struct StaticBufferTraits<StaticBufferKind::Vertices> {
+    using Record = GPUVertex;
+    static constexpr const char*  name     = "GPU vertices";
+    static constexpr VkDeviceSize capacity = 64ull << 20;
+};
+template <> struct StaticBufferTraits<StaticBufferKind::Meshlets> {
+    using Record = GPUMeshlet;
+    static constexpr const char*  name     = "GPU meshlets";
+    static constexpr VkDeviceSize capacity = 8ull << 20;
+};
+template <> struct StaticBufferTraits<StaticBufferKind::MeshletVertexIndices> {
+    using Record = uint32_t;
+    static constexpr const char*  name     = "GPU meshlet vertex indices";
+    static constexpr VkDeviceSize capacity = 16ull << 20;
+};
+template <> struct StaticBufferTraits<StaticBufferKind::MeshletTriangleIndices> {
+    using Record = uint32_t;
+    static constexpr const char*  name     = "GPU meshlet triangle indices";
+    static constexpr VkDeviceSize capacity = 16ull << 20;
+};
+template <> struct StaticBufferTraits<StaticBufferKind::Meshes> {
+    using Record = GPUMesh;
+    static constexpr const char*  name     = "GPU meshes";
+    static constexpr VkDeviceSize capacity = 4ull << 20;
+};
+template <> struct StaticBufferTraits<StaticBufferKind::Materials> {
+    using Record = GPUMaterial;
+    static constexpr const char*  name     = "GPU materials";
+    static constexpr VkDeviceSize capacity = 4ull << 20;
+};
+template <> struct StaticBufferTraits<StaticBufferKind::Clusters> {
+    using Record = GPUCluster;
+    static constexpr const char*  name     = "GPU CLOD clusters";
+    static constexpr VkDeviceSize capacity = 8ull << 20;
+};
+template <> struct StaticBufferTraits<StaticBufferKind::ClusterGroups> {
+    using Record = GPUClusterGroup;
+    static constexpr const char*  name     = "GPU CLOD cluster groups";
+    static constexpr VkDeviceSize capacity = 4ull << 20;
+};
+
+/// No Record yet: allocated and sized, but nothing declares what it holds.
+template <> struct FrameBufferTraits<FrameBufferKind::FrameConstants> {
+    static constexpr const char*        name         = "frame constants";
+    static constexpr VkBufferUsageFlags usage        = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                                       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+    static constexpr bool               hostWritable = true;
+    static constexpr VkDeviceSize       capacity     = 64ull << 10;
+};
+template <> struct FrameBufferTraits<FrameBufferKind::Objects> {
+    using Record = GPUObject;
+    static constexpr const char*        name         = "objects";
+    static constexpr VkBufferUsageFlags usage        = GPU_DATA_USAGE;
+    static constexpr bool               hostWritable = true;
+    static constexpr VkDeviceSize       capacity     = 8ull << 20;
+};
+/// No Record yet: waiting on a GPULight in Core/GPUTypes.ixx.
+template <> struct FrameBufferTraits<FrameBufferKind::Lights> {
+    static constexpr const char*        name         = "lights";
+    static constexpr VkBufferUsageFlags usage        = GPU_DATA_USAGE;
+    static constexpr bool               hostWritable = true;
+    static constexpr VkDeviceSize       capacity     = 256ull << 10;
+};
+template <> struct FrameBufferTraits<FrameBufferKind::DrawData> {
+    using Record = GPUDrawData;
+    static constexpr const char*        name         = "draw data";
+    static constexpr VkBufferUsageFlags usage        = GPU_DATA_USAGE;
+    static constexpr bool               hostWritable = false;
+    static constexpr VkDeviceSize       capacity     = 8ull << 20;
+};
+/// INDIRECT_BUFFER: read by vkCmdDrawMeshTasksIndirect*.
+template <> struct FrameBufferTraits<FrameBufferKind::MeshTaskCommands> {
+    using Record = GPUMeshTaskCommand;
+    static constexpr const char*        name         = "mesh task commands";
+    static constexpr VkBufferUsageFlags usage        = GPU_DATA_USAGE |
+                                                       VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    static constexpr bool               hostWritable = false;
+    static constexpr VkDeviceSize       capacity     = 4ull << 20;
+};
+/// TRANSFER_DST: zeroed by vkCmdFillBuffer before each dispatch.
+template <> struct FrameBufferTraits<FrameBufferKind::MeshTaskCommandCount> {
+    using Record = uint32_t;
+    static constexpr const char*        name         = "mesh task command count";
+    static constexpr VkBufferUsageFlags usage        = GPU_DATA_USAGE |
+                                                       VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    static constexpr bool               hostWritable = false;
+    static constexpr VkDeviceSize       capacity     = 4ull << 10;
+};
+
+/// Runtime form of the traits, for the loops that walk every buffer.
+export struct StaticBufferSpec {
+    VkDeviceSize stride;
+    VkDeviceSize capacity;
+    const char*  name;
+};
+export struct FrameBufferSpec {
+    VkBufferUsageFlags usage;
+    VkDeviceSize       capacity;
+    const char*        name;
+    /// Written by the CPU every frame, so it is mapped rather than device-local.
+    bool               hostWritable;
+};
+
+namespace detail {
+
+template <StaticBufferKind Kind>
+constexpr StaticBufferSpec staticSpec() {
+    using Traits = StaticBufferTraits<Kind>;
+    return { sizeof(typename Traits::Record), Traits::capacity, Traits::name };
+}
+
+template <FrameBufferKind Kind>
+constexpr FrameBufferSpec frameSpec() {
+    using Traits = FrameBufferTraits<Kind>;
+    return { Traits::usage, Traits::capacity, Traits::name, Traits::hostWritable };
+}
+
+/* Instantiating over the whole enum is what makes a gap a compile error. */
+template <size_t... Index>
+constexpr auto staticSpecs(std::index_sequence<Index...>) {
+    return std::array<StaticBufferSpec, sizeof...(Index)>{
+        staticSpec<static_cast<StaticBufferKind>(Index)>()... };
+}
+
+template <size_t... Index>
+constexpr auto frameSpecs(std::index_sequence<Index...>) {
+    return std::array<FrameBufferSpec, sizeof...(Index)>{
+        frameSpec<static_cast<FrameBufferKind>(Index)>()... };
+}
+
+} // namespace detail
+
+export inline constexpr auto STATIC_BUFFER_SPECS =
+    detail::staticSpecs(std::make_index_sequence<STATIC_BUFFER_COUNT>{});
+export inline constexpr auto FRAME_BUFFER_SPECS =
+    detail::frameSpecs(std::make_index_sequence<FRAME_BUFFER_COUNT>{});
+
+namespace detail {
+
+template <typename Spec, size_t Count>
+constexpr std::array<VkDeviceSize, Count> capacitiesOf(
+    const std::array<Spec, Count>& specs) {
+    std::array<VkDeviceSize, Count> out{};
+    for (size_t i = 0; i < Count; ++i) out[i] = specs[i].capacity;
+    return out;
+}
+
+} // namespace detail
+
+/**
+ * Byte capacities, defaulted from the traits. Strided buffers round down to
+ * whole elements; a zero opts the buffer out entirely.
  */
 export struct GPUBufferCapacities {
-    VkDeviceSize vertices              = 64ull << 20;
-    VkDeviceSize meshlets              = 8ull  << 20;
-    VkDeviceSize meshletVertexIndices  = 16ull << 20;
-    VkDeviceSize meshletTriangleIndices = 16ull << 20;
-    VkDeviceSize meshes                = 4ull  << 20;
-    VkDeviceSize materials             = 4ull  << 20;
-    VkDeviceSize clusters              = 8ull  << 20;
-    VkDeviceSize clusterGroups         = 4ull  << 20;
+    std::array<VkDeviceSize, STATIC_BUFFER_COUNT> staticBytes =
+        detail::capacitiesOf(STATIC_BUFFER_SPECS);
+    std::array<VkDeviceSize, FRAME_BUFFER_COUNT> frameBytes =
+        detail::capacitiesOf(FRAME_BUFFER_SPECS);
 
-    VkDeviceSize frameConstants        = 64ull << 10;
-    VkDeviceSize objects               = 8ull  << 20;
-    VkDeviceSize lights                = 256ull << 10;
-    VkDeviceSize drawData              = 8ull  << 20;
-    VkDeviceSize meshTaskCommands      = 4ull  << 20;
-    VkDeviceSize meshTaskCommandCount  = 4ull  << 10;
-
-    VkDeviceSize upload                = 32ull << 20;
-    uint32_t     framesInFlight        = 2;
+    VkDeviceSize upload         = 32ull << 20;
+    uint32_t     framesInFlight = 2;
 };
 
 /**

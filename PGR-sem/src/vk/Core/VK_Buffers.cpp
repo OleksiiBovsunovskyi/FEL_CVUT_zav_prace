@@ -14,11 +14,6 @@ import Logger;
 
 namespace {
 
-constexpr VkBufferUsageFlags GPU_DATA_USAGE =
-    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-    VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-
 constexpr size_t index(StaticBufferKind kind) {
     return static_cast<size_t>(kind);
 }
@@ -27,100 +22,8 @@ constexpr size_t index(FrameBufferKind kind) {
     return static_cast<size_t>(kind);
 }
 
-/* No `default:`: -Werror=switch then rejects a missing enumerator. */
-struct StaticBufferSpec {
-    VkDeviceSize stride;
-    const char*  name;
-};
-
-constexpr StaticBufferSpec specOf(StaticBufferKind kind) {
-    switch (kind) {
-        case StaticBufferKind::Vertices:
-            return { sizeof(GPUVertex),       "GPU vertices" };
-        case StaticBufferKind::Meshlets:
-            return { sizeof(GPUMeshlet),      "GPU meshlets" };
-        case StaticBufferKind::MeshletVertexIndices:
-            return { sizeof(uint32_t),        "GPU meshlet vertex indices" };
-        case StaticBufferKind::MeshletTriangleIndices:
-            return { sizeof(uint32_t),        "GPU meshlet triangle indices" };
-        case StaticBufferKind::Meshes:
-            return { sizeof(GPUMesh),         "GPU meshes" };
-        case StaticBufferKind::Materials:
-            return { sizeof(GPUMaterial),     "GPU materials" };
-        case StaticBufferKind::Clusters:
-            return { sizeof(GPUCluster),      "GPU CLOD clusters" };
-        case StaticBufferKind::ClusterGroups:
-            return { sizeof(GPUClusterGroup), "GPU CLOD cluster groups" };
-        case StaticBufferKind::Count:
-            break;
-    }
-    return { 1, "<invalid>" };
-}
+/* Specs and capacities come from the traits in VK_Buffers.ixx. */
     
-struct FrameBufferSpec {
-    VkBufferUsageFlags usage;
-    const char*        name;
-    /// Written by the CPU every frame, so it is mapped rather than device-local.
-    bool               hostWritable;
-};
-
-constexpr FrameBufferSpec specOf(FrameBufferKind kind) {
-    switch (kind) {
-        case FrameBufferKind::FrameConstants:
-            return { VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
-                     VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                     "frame constants", true };
-        case FrameBufferKind::Objects:
-            return { GPU_DATA_USAGE, "objects", true };
-        case FrameBufferKind::Lights:
-            return { GPU_DATA_USAGE, "lights", true };
-        case FrameBufferKind::DrawData:
-            return { GPU_DATA_USAGE, "draw data", false };
-        /* INDIRECT_BUFFER: read by vkCmdDrawMeshTasksIndirect*. */
-        case FrameBufferKind::MeshTaskCommands:
-            return { GPU_DATA_USAGE | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                     "mesh task commands", false };
-        /* TRANSFER_DST: zeroed by vkCmdFillBuffer before each dispatch. */
-        case FrameBufferKind::MeshTaskCommandCount:
-            return { GPU_DATA_USAGE | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                     "mesh task command count", false };
-        case FrameBufferKind::Count:
-            break;
-    }
-    return { 0, "<invalid>", false };
-}
-
-constexpr VkDeviceSize capacityOf(const GPUBufferCapacities& c,
-                                  StaticBufferKind kind) {
-    switch (kind) {
-        case StaticBufferKind::Vertices:               return c.vertices;
-        case StaticBufferKind::Meshlets:               return c.meshlets;
-        case StaticBufferKind::MeshletVertexIndices:   return c.meshletVertexIndices;
-        case StaticBufferKind::MeshletTriangleIndices: return c.meshletTriangleIndices;
-        case StaticBufferKind::Meshes:                 return c.meshes;
-        case StaticBufferKind::Materials:              return c.materials;
-        case StaticBufferKind::Clusters:               return c.clusters;
-        case StaticBufferKind::ClusterGroups:          return c.clusterGroups;
-        case StaticBufferKind::Count:                  break;
-    }
-    return 0;
-}
-
-constexpr VkDeviceSize capacityOf(const GPUBufferCapacities& c,
-                                  FrameBufferKind kind) {
-    switch (kind) {
-        case FrameBufferKind::FrameConstants:       return c.frameConstants;
-        case FrameBufferKind::Objects:              return c.objects;
-        case FrameBufferKind::Lights:               return c.lights;
-        case FrameBufferKind::DrawData:             return c.drawData;
-        case FrameBufferKind::MeshTaskCommands:     return c.meshTaskCommands;
-        case FrameBufferKind::MeshTaskCommandCount: return c.meshTaskCommandCount;
-        case FrameBufferKind::Count:                break;
-    }
-    return 0;
-}
-
 } // namespace
 
 VK_buffers::~VK_buffers() {
@@ -131,7 +34,8 @@ VK_buffers::~VK_buffers() {
 }
 
 VkDeviceSize VK_buffers::staticStride(StaticBufferKind kind) {
-    return specOf(kind).stride;
+    if (kind == StaticBufferKind::Count) return 1;
+    return STATIC_BUFFER_SPECS[index(kind)].stride;
 }
 
 BufferAllocation::BufferAllocation(
@@ -196,11 +100,10 @@ bool VK_buffers::init(VulkanContext& ctx, const GPUBufferCapacities& c) {
     frameBuffers_.resize(c.framesInFlight);
 
     for (size_t i = 0; i < STATIC_COUNT; ++i) {
-        const auto kind = static_cast<StaticBufferKind>(i);
-        const VkDeviceSize capacity = capacityOf(c, kind);
+        const VkDeviceSize capacity = c.staticBytes[i];
         if (capacity == 0) continue;   // opted out
 
-        const StaticBufferSpec spec = specOf(kind);
+        const StaticBufferSpec& spec = STATIC_BUFFER_SPECS[i];
         if (!createBuffer(staticBuffers_[i], capacity, spec.stride,
                           GPU_DATA_USAGE,
                           VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0, spec.name)) {
@@ -211,11 +114,10 @@ bool VK_buffers::init(VulkanContext& ctx, const GPUBufferCapacities& c) {
 
     for (uint32_t frame = 0; frame < c.framesInFlight; ++frame) {
         for (size_t i = 0; i < FRAME_COUNT; ++i) {
-            const auto kind = static_cast<FrameBufferKind>(i);
-            const VkDeviceSize capacity = capacityOf(c, kind);
+            const VkDeviceSize capacity = c.frameBytes[i];
             if (capacity == 0) continue;   // opted out
 
-            const FrameBufferSpec spec = specOf(kind);
+            const FrameBufferSpec& spec = FRAME_BUFFER_SPECS[i];
             const std::string name =
                 std::string(spec.name) + " [frame " + std::to_string(frame) + "]";
 
