@@ -44,6 +44,15 @@ bool VulkanContext::loadDeviceExtensionFunctions() {
                  "VK_EXT_mesh_shader was required");
         return false;
     }
+
+    cmdDrawMeshTasksIndirectCount_ =
+        reinterpret_cast<PFN_vkCmdDrawMeshTasksIndirectCountEXT>(
+            vkGetDeviceProcAddr(vkbDevice_.device, "vkCmdDrawMeshTasksIndirectCountEXT"));
+    if (!cmdDrawMeshTasksIndirectCount_) {
+        logError("vkGetDeviceProcAddr: vkCmdDrawMeshTasksIndirectCountEXT not found "
+                 "although VK_EXT_mesh_shader was required");
+        return false;
+    }
     return true;
 }
 
@@ -115,6 +124,11 @@ bool VulkanContext::selectAndCreateDevice() {
     features10.drawIndirectFirstInstance = VK_TRUE; // per-draw instance offset
     features10.shaderInt64              = VK_TRUE;  // 64-bit math on buffer pointers
 
+    VkPhysicalDeviceVulkan11Features features11{};
+    features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
+    // gl_DrawID in the mesh shader, which indexes the per-draw GPUDrawData.
+    features11.shaderDrawParameters = VK_TRUE;
+
     VkPhysicalDeviceVulkan12Features features12{};
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     features12.bufferDeviceAddress = VK_TRUE;
@@ -152,6 +166,7 @@ bool VulkanContext::selectAndCreateDevice() {
                            .set_minimum_version(1, 3)
                            .add_required_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME)
                            .set_required_features(features10)
+                           .set_required_features_11(features11)
                            .set_required_features_12(features12)
                            .set_required_features_13(features13)
                            .add_required_extension_features(meshFeatures)

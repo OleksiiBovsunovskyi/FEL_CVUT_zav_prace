@@ -60,6 +60,8 @@ constexpr StaticBufferSpec specOf(StaticBufferKind kind) {
 struct FrameBufferSpec {
     VkBufferUsageFlags usage;
     const char*        name;
+    /// Written by the CPU every frame, so it is mapped rather than device-local.
+    bool               hostWritable;
 };
 
 constexpr FrameBufferSpec specOf(FrameBufferKind kind) {
@@ -68,24 +70,25 @@ constexpr FrameBufferSpec specOf(FrameBufferKind kind) {
             return { VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
                      VK_BUFFER_USAGE_TRANSFER_DST_BIT |
                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                     "frame constants" };
+                     "frame constants", true };
         case FrameBufferKind::Objects:
-            return { GPU_DATA_USAGE, "objects" };
+            return { GPU_DATA_USAGE, "objects", true };
         case FrameBufferKind::Lights:
-            return { GPU_DATA_USAGE, "lights" };
+            return { GPU_DATA_USAGE, "lights", true };
         case FrameBufferKind::DrawData:
-            return { GPU_DATA_USAGE, "draw data" };
+            return { GPU_DATA_USAGE, "draw data", false };
         /* INDIRECT_BUFFER: read by vkCmdDrawMeshTasksIndirect*. */
         case FrameBufferKind::MeshTaskCommands:
             return { GPU_DATA_USAGE | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                     "mesh task commands" };
+                     "mesh task commands", false };
+        /* TRANSFER_DST: zeroed by vkCmdFillBuffer before each dispatch. */
         case FrameBufferKind::MeshTaskCommandCount:
             return { GPU_DATA_USAGE | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
-                     "mesh task command count" };
+                     "mesh task command count", false };
         case FrameBufferKind::Count:
             break;
     }
-    return { 0, "<invalid>" };
+    return { 0, "<invalid>", false };
 }
 
 constexpr VkDeviceSize capacityOf(const GPUBufferCapacities& c,
@@ -218,7 +221,12 @@ bool VK_buffers::init(VulkanContext& ctx, const GPUBufferCapacities& c) {
 
             /* Stride 1: raw bytes. */
             if (!createBuffer(frameBuffers_[frame][i], capacity, 1, spec.usage,
-                              VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE, 0,
+                              spec.hostWritable ? VMA_MEMORY_USAGE_AUTO_PREFER_HOST
+                                                : VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
+                              spec.hostWritable
+                                  ? (VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
+                                     VMA_ALLOCATION_CREATE_MAPPED_BIT)
+                                  : 0,
                               name.c_str())) {
                 shutdown();
                 return false;

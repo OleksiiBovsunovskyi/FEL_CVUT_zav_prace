@@ -3,30 +3,21 @@ module;
 
 #include <cstring>
 
+#include <glm/glm.hpp>
+
 module VK_Material;
 
 GPUMaterial Material::gpuData() const {
     GPUMaterial result{};
 
-    result.albedo[0] = albedo_.r;
-    result.albedo[1] = albedo_.g;
-    result.albedo[2] = albedo_.b;
-    result.albedo[3] = albedo_.a;
+    result.albedo = albedo_;
 
-    result.emissive[0] = emissiveColor_.r;
-    result.emissive[1] = emissiveColor_.g;
-    result.emissive[2] = emissiveColor_.b;
-    result.emissive[3] = emissiveIntensity_;
+    result.emissive = glm::vec4(emissiveColor_, emissiveIntensity_);
 
-    result.surface[0] = specularIntensity_;
-    result.surface[1] = shininess_;
-    result.surface[2] = metallic_;
-    result.surface[3] = roughness_;
+    result.surface = glm::vec4(specularIntensity_, shininess_, metallic_, roughness_);
 
-    result.textures[0] = albedoTexture_;
-    result.textures[1] = normalTexture_;
-    result.textures[2] = ormTexture_;
-    result.textures[3] = emissiveTexture_;
+    result.textures = glm::uvec4(albedoTexture_, normalTexture_,
+                                 ormTexture_, emissiveTexture_);
 
     result.alphaThreshold = alphaThreshold_;
     if (emissive_) result.flags |= MATERIAL_EMISSIVE;

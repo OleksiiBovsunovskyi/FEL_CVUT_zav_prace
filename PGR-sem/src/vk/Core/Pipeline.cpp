@@ -1,7 +1,6 @@
 module;
 #include <vulkan/vulkan.h>
 
-#include <array>
 #include <cstdint>
 #include <string>
 
@@ -45,91 +44,89 @@ VkPipeline createComputePipeline(VkDevice device, VkPipelineLayout layout,
     return pipeline;
 }
 
-VkPipeline createGraphicsPipeline(VkDevice device,
-                                  const GraphicsPipelineDesc& desc) {
-    if (desc.stages.empty() || desc.colorFormat == VK_FORMAT_UNDEFINED) {
-        logError("createGraphicsPipeline: needs at least one stage and a color format");
+VkPipeline createMeshPipeline(VkDevice device, VkPipelineLayout layout,
+                              VkShaderModule meshShader,
+                              VkShaderModule fragmentShader,
+                              VkFormat colorFormat, VkFormat depthFormat) {
+    if (!device || !layout || !meshShader || !fragmentShader) {
+        logError("createMeshPipeline: device, layout and both shaders are required");
         return VK_NULL_HANDLE;
     }
 
-    /* Ignored by mesh shader pipelines; shaders read geometry themselves. */
-    VkPipelineVertexInputStateCreateInfo vertexInput{};
-    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    const VkPipelineShaderStageCreateInfo stages[]{
+        shaderStage(VK_SHADER_STAGE_MESH_BIT_EXT, meshShader),
+        shaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShader),
+    };
 
-    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.sType    = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-    /* Counts only; the values are dynamic state. */
-    VkPipelineViewportStateCreateInfo viewportState{};
-    viewportState.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount  = 1;
-
-    constexpr std::array<VkDynamicState, 2> dynamicStates{
-        VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
-    VkPipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates    = dynamicStates.data();
+    /* A mesh pipeline has no vertex input or input assembly state at all. */
+    VkPipelineViewportStateCreateInfo viewport{};
+    viewport.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewport.viewportCount = 1;
+    viewport.scissorCount  = 1;
 
     VkPipelineRasterizationStateCreateInfo raster{};
     raster.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     raster.polygonMode = VK_POLYGON_MODE_FILL;
-    raster.cullMode    = desc.cullMode;
-    raster.frontFace   = VK_FRONT_FACE_CLOCKWISE;
+    raster.cullMode    = VK_CULL_MODE_BACK_BIT;
+    raster.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     raster.lineWidth   = 1.0f;
 
     VkPipelineMultisampleStateCreateInfo multisample{};
     multisample.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
+    /* Reverse-Z: the far plane is 0, so a nearer fragment compares greater. */
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable  = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp   = VK_COMPARE_OP_GREATER;
+    depthStencil.maxDepthBounds   = 1.0f;
+
     VkPipelineColorBlendAttachmentState blendAttachment{};
-    blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                     VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    blendAttachment.blendEnable    = VK_FALSE;
+    blendAttachment.colorWriteMask =
+        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
     VkPipelineColorBlendStateCreateInfo blend{};
     blend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     blend.attachmentCount = 1;
     blend.pAttachments    = &blendAttachment;
 
-    const bool hasDepth = desc.depthFormat != VK_FORMAT_UNDEFINED;
+    /* The swapchain resizes, so neither is baked into the pipeline. */
+    const VkDynamicState dynamicStates[]{
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+    };
+    VkPipelineDynamicStateCreateInfo dynamic{};
+    dynamic.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic.dynamicStateCount = 2;
+    dynamic.pDynamicStates    = dynamicStates;
 
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable  = hasDepth ? VK_TRUE : VK_FALSE;
-    depthStencil.depthWriteEnable = hasDepth ? VK_TRUE : VK_FALSE;
-    depthStencil.depthCompareOp   = DEPTH_COMPARE_OP;
-
-    const VkFormat colorFormat = desc.colorFormat;
-    VkPipelineRenderingCreateInfo renderingInfo{};
-    renderingInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-    renderingInfo.colorAttachmentCount    = 1;
-    renderingInfo.pColorAttachmentFormats = &colorFormat;
-    renderingInfo.depthAttachmentFormat   = desc.depthFormat;
+    VkPipelineRenderingCreateInfo rendering{};
+    rendering.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    rendering.colorAttachmentCount    = 1;
+    rendering.pColorAttachmentFormats = &colorFormat;
+    rendering.depthAttachmentFormat   = depthFormat;
 
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.pNext               = &renderingInfo;
-    pipelineInfo.stageCount          = static_cast<uint32_t>(desc.stages.size());
-    pipelineInfo.pStages             = desc.stages.data();
-    pipelineInfo.pVertexInputState   = &vertexInput;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState      = &viewportState;
+    pipelineInfo.pNext               = &rendering;
+    pipelineInfo.stageCount          = 2;
+    pipelineInfo.pStages             = stages;
+    pipelineInfo.pViewportState      = &viewport;
     pipelineInfo.pRasterizationState = &raster;
     pipelineInfo.pMultisampleState   = &multisample;
     pipelineInfo.pDepthStencilState  = &depthStencil;
     pipelineInfo.pColorBlendState    = &blend;
-    pipelineInfo.pDynamicState       = &dynamicState;
-    pipelineInfo.layout              = desc.layout;
-    pipelineInfo.renderPass          = VK_NULL_HANDLE;   // dynamic rendering
+    pipelineInfo.pDynamicState       = &dynamic;
+    pipelineInfo.layout              = layout;
 
     VkPipeline pipeline = VK_NULL_HANDLE;
-    const VkResult r = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1,
-                                                 &pipelineInfo, nullptr, &pipeline);
+    const VkResult r = vkCreateGraphicsPipelines(
+        device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
     if (r != VK_SUCCESS) {
-        logError("createGraphicsPipeline: vkCreateGraphicsPipelines failed: VkResult " +
+        logError("createMeshPipeline: vkCreateGraphicsPipelines failed: VkResult " +
                  std::to_string(r));
         return VK_NULL_HANDLE;
     }

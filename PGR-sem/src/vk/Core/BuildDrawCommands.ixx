@@ -6,6 +6,7 @@ module;
 
 export module BuildDrawCommands;
 
+import GPUTypes;
 import ShadersLoader;
 
 /**
@@ -22,8 +23,14 @@ public:
     [[nodiscard]] bool init(VkDevice device, ShaderLoader& shaders,
                             const std::filesystem::path& shaderPath);
 
-    /// Records one compute invocation per object, in groups of 64 ///!TODO: Ask driver about line count.
-    void record(VkCommandBuffer commandBuffer, uint32_t objectCount) const;
+    /**
+     * Records one compute invocation per object, in groups of 64 ///!TODO: Ask driver about line count.
+     *
+     * @param push buffer addresses plus the object count, which the tail
+     *        invocations of the last group exit on.
+     */
+    void record(VkCommandBuffer commandBuffer,
+                const BuildDrawCommandsPush& push) const;
 
     void destroy();
 

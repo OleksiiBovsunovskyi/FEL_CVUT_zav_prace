@@ -6,6 +6,7 @@ module;
 
 module BuildDrawCommands;
 
+import GPUTypes;
 import Logger;
 import Pipeline;
 
@@ -23,8 +24,16 @@ bool BuildDrawCommands::init(VkDevice device, ShaderLoader& shaders,
 
     device_ = device;
 
+    const VkPushConstantRange pushRange{
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .offset     = 0,
+        .size       = sizeof(BuildDrawCommandsPush),
+    };
+
     VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges    = &pushRange;
     if (vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
         logError("BuildDrawCommands: vkCreatePipelineLayout failed");
         destroy();
@@ -49,13 +58,15 @@ bool BuildDrawCommands::init(VkDevice device, ShaderLoader& shaders,
 }
 
 void BuildDrawCommands::record(VkCommandBuffer commandBuffer,
-                               uint32_t objectCount) const {
-    if (!pipeline_ || objectCount == 0) return;
+                               const BuildDrawCommandsPush& push) const {
+    if (!pipeline_ || push.objectCount == 0) return;
 
     const uint32_t groupCount =
-        (objectCount + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
+        (push.objectCount + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
+    vkCmdPushConstants(commandBuffer, pipelineLayout_, VK_SHADER_STAGE_COMPUTE_BIT,
+                       0, sizeof(push), &push);
     vkCmdDispatch(commandBuffer, groupCount, 1, 1);
 }
 

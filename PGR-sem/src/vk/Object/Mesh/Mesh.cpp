@@ -9,6 +9,8 @@ module;
 #include <span>
 #include <utility>
 
+#include <glm/glm.hpp>
+
 module Mesh;
 
 import Logger;
@@ -170,10 +172,7 @@ bool Mesh::upload(VK_buffers& buffers, VkCommandBuffer commandBuffer,
         staged[CLUSTER_GROUPS].destination.slice().elementIndex;
     gpuMesh.clusterGroupCount =
         static_cast<uint32_t>(data.clusterGroups.size());
-    gpuMesh.boundingSphere[0] = data.bounds.center.x;
-    gpuMesh.boundingSphere[1] = data.bounds.center.y;
-    gpuMesh.boundingSphere[2] = data.bounds.center.z;
-    gpuMesh.boundingSphere[3] = data.bounds.radius;
+    gpuMesh.boundingSphere = glm::vec4(data.bounds.center, data.bounds.radius);
 
     const std::span<const GPUMesh> record{&gpuMesh, 1};
     if (!stageRange(buffers, StaticBufferKind::Meshes, record,

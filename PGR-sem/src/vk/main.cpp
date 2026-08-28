@@ -4,10 +4,10 @@
 #include "imgui_impl_vulkan.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <stdexcept>
@@ -16,18 +16,20 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 
 import VkWindow;
 import VulkanContext;
 import VkSwapchain;
 import FrameRunner;
 import VkUtil;
-import Pipeline;
 import ShadersLoader;
 import VK_Buffers;
 import UploadBatch;
 import GltfLoader;
 import BuildDrawCommands;
+import MeshDraw;
+import GPUTypes;
 import ShaderPrint;
 import Logger;
 
@@ -42,25 +44,7 @@ void check(VkResult r, const char* what) {
         throw std::runtime_error(std::string(what) + " failed: VkResult " + std::to_string(r));
 }
 
-constexpr char SHADER_DIR[] = "Shaders/src";
-
-/**
- * Must match the push_constant block in shaders/gpu_types.glsl field for field.
- * Nothing checks it at build time.
- */
-struct DrawPush {
-    glm::mat4       viewProj;               // offset 0, model already folded in
-    VkDeviceAddress vertices             = 0;   // 64
-    VkDeviceAddress meshlets             = 0;   // 72
-    VkDeviceAddress meshletVertexIndices = 0;   // 80
-    VkDeviceAddress meshletTriangles     = 0;   // 88
-    VkDeviceAddress meshes               = 0;   // 96
-    VkDeviceAddress materials            = 0;   // 104
-    uint32_t        meshIndex            = 0;   // 112
-};
-
-/* Guaranteed minimum maxPushConstantsSize. */
-static_assert(sizeof(DrawPush) <= 128);
+constexpr char SHADER_DIR[] = "Shaders";
 
 class VulkanApp {
 public:
@@ -91,10 +75,7 @@ public:
         if (!frames_.init(ctx_, swapchain_))
             throw std::runtime_error("FrameRunner::init failed");
 
-        drawMeshTasks_ = ctx_.cmdDrawMeshTasks();
-
         shaders_.init(device_);
-        shaders_.addIncludeDir(SHADER_DIR);
 
         if (!buffers_.init(ctx_))
             throw std::runtime_error("VK_buffers::init failed");
@@ -103,23 +84,18 @@ public:
 
         loadModel();
 
-        createPipeline();
         if (!buildDrawCommands_.init(
                 device_, shaders_,
-                std::filesystem::path(SHADER_DIR) / "Core/build_draw_commands.comp"))
+                std::filesystem::path(SHADER_DIR) / "build_draw_commands.spv"))
             throw std::runtime_error("BuildDrawCommands::init failed");
-        initImGuiVulkan();
 
-        //Swapchains need recreation only on format change
-        frames_.setSwapchainRecreatedCallback([this](VkExtent2D, VkFormat format) {
-            if (format != pipelineFormat_) {
-                vkDestroyPipeline(device_, pipeline_, nullptr);
-                vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
-                pipeline_       = VK_NULL_HANDLE;
-                pipelineLayout_ = VK_NULL_HANDLE;
-                createPipeline();
-            }
-        });
+        if (!meshDraw_.init(device_, shaders_,
+                            std::filesystem::path(SHADER_DIR) / "mesh.spv",
+                            std::filesystem::path(SHADER_DIR) / "mesh_frag.spv",
+                            swapchain_.format(), DEPTH_FORMAT,
+                            ctx_.cmdDrawMeshTasksIndirectCount()))
+            throw std::runtime_error("MeshDraw::init failed");
+        initImGuiVulkan();
 
         window_.setResizeCallback([this](int, int) { frames_.notifyResized(); });
         window_.setUICallback([this] { drawUI(); });
@@ -155,7 +131,20 @@ private:
     VK_buffers    buffers_;
     UploadBatch   uploads_;
     BuildDrawCommands buildDrawCommands_;
+    MeshDraw          meshDraw_;
     ShaderPrint       shaderPrint_;
+
+    /**
+     * What buildDrawCommands() produced this frame, consumed by the indirect
+     * draw in recordFrame(). objectCount 0 means there is nothing to draw.
+     */
+    struct PendingDraw {
+        BufferSlice  commands{};
+        BufferSlice  count{};
+        MeshDrawPush push{};
+        uint32_t     objectCount = 0;
+    };
+    PendingDraw pendingDraw_;
 
     std::filesystem::path  modelPath_;
     uint32_t               maxFrames_   = 0;
@@ -164,14 +153,7 @@ private:
     glm::vec3              sceneCenter_{0.0f};
     float                  sceneRadius_ = 1.0f;
 
-    PFN_vkCmdDrawMeshTasksEXT drawMeshTasks_ = nullptr;
-
     VkDevice device_ = VK_NULL_HANDLE;
-
-    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
-    VkPipeline       pipeline_       = VK_NULL_HANDLE;
-    /// The format pipeline_ was built against; a swapchain rebuild compares it.
-    VkFormat         pipelineFormat_ = VK_FORMAT_UNDEFINED;
 
     VkDescriptorPool imguiPool_ = VK_NULL_HANDLE;
     bool             imguiVulkanInitialized_ = false;
@@ -250,52 +232,6 @@ private:
         frameScene();
     }
 
-    VkShaderModule loadShader(const std::string& name) {
-        VkShaderModule module = shaders_.load(std::string(SHADER_DIR) + "/" + name);
-        if (!module)
-            throw std::runtime_error("shader failed to compile: " + name);
-        return module;
-    }
-
-    void createPipeline() {
-        VkShaderModule mesh = loadShader("mesh.mesh");
-        VkShaderModule frag = loadShader("mesh.frag");
-
-        const std::array stages{
-            shaderStage(VK_SHADER_STAGE_MESH_BIT_EXT, mesh),
-            shaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, frag),
-        };
-
-        /* Both stages read the block, so both must be named. */
-        const VkPushConstantRange pushRange{
-            VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT,
-            0, sizeof(DrawPush),
-        };
-
-        VkPipelineLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        layoutInfo.pushConstantRangeCount = 1;
-        layoutInfo.pPushConstantRanges    = &pushRange;
-        /* No descriptor sets: buffers are reached by device address. */
-        check(vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_),
-              "vkCreatePipelineLayout");
-
-        pipelineFormat_ = swapchain_.format();
-
-        pipeline_ = createGraphicsPipeline(device_, GraphicsPipelineDesc{
-            .stages      = stages,
-            .layout      = pipelineLayout_,
-            .colorFormat = pipelineFormat_,
-        });
-
-        // The pipeline holds everything it needs from them now.
-        shaders_.destroy(frag);
-        shaders_.destroy(mesh);
-
-        if (!pipeline_)
-            throw std::runtime_error("createGraphicsPipeline failed");
-    }
-
     /// Fits the camera to the loaded scene.
     void frameScene() {
         glm::vec3 min{ std::numeric_limits<float>::max() };
@@ -347,12 +283,127 @@ private:
     }
 
 
-    void recordFrame(VkCommandBuffer cmd, const RenderTarget& target) {
-        uint32_t objectCount = 0;
-        for (const MultiMesh& object : scene_)
-            objectCount += static_cast<uint32_t>(object.parts().size());
+    /**
+     * Fills this frame's Objects buffer and dispatches the build pass.
+     *
+     * The frame slot's fence has signalled by the time drawFrame() records, so
+     * last frame's ranges are free to reuse.
+     */
+    void buildDrawCommands(VkCommandBuffer cmd, VkExtent2D extent) {
+        const uint32_t frame = frames_.frameIndex();
+        buffers_.resetFrame(frame);
+        pendingDraw_ = {};
 
-        buildDrawCommands_.record(cmd, objectCount);
+        std::vector<GPUObject> objects;
+        for (const MultiMesh& object : scene_) {
+            for (const MultiMeshPart& part : object.parts()) {
+                const Mesh& mesh = *part.mesh;
+                if (!mesh.uploaded() || mesh.meshletCount() == 0) continue;
+
+                GPUObject record{};
+                record.transform = part.localTransform;
+                record.meshIndex = mesh.getGpuIndex();
+                objects.push_back(record);
+            }
+        }
+        if (objects.empty()) return;
+
+        const auto objectCount = static_cast<uint32_t>(objects.size());
+
+        const BufferSlice objectSlice = buffers_.allocateFrame(
+            frame, FrameBufferKind::Objects, objects.size() * sizeof(GPUObject));
+        const BufferSlice drawDataSlice = buffers_.allocateFrame(
+            frame, FrameBufferKind::DrawData, objects.size() * sizeof(GPUDrawData));
+        const BufferSlice commandSlice = buffers_.allocateFrame(
+            frame, FrameBufferKind::MeshTaskCommands,
+            objects.size() * sizeof(GPUMeshTaskCommand));
+        const BufferSlice countSlice = buffers_.allocateFrame(
+            frame, FrameBufferKind::MeshTaskCommandCount, sizeof(uint32_t), 4);
+
+        if (!objectSlice || !objectSlice.mapped || !drawDataSlice ||
+            !commandSlice || !countSlice) {
+            logError("recordFrame: out of per-frame buffer space");
+            return;
+        }
+
+        std::memcpy(objectSlice.mapped, objects.data(),
+                    objects.size() * sizeof(GPUObject));
+
+        vkCmdFillBuffer(cmd, countSlice.buffer, countSlice.offset,
+                        sizeof(uint32_t), 0);
+
+        /* The counter is the target of the shader's atomicAdd. */
+        VkMemoryBarrier2 clearBarrier{};
+        clearBarrier.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        clearBarrier.srcStageMask  = VK_PIPELINE_STAGE_2_CLEAR_BIT;
+        clearBarrier.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+        clearBarrier.dstStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        clearBarrier.dstAccessMask =
+            VK_ACCESS_2_SHADER_STORAGE_READ_BIT | VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+
+        VkDependencyInfo clearDependency{};
+        clearDependency.sType              = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        clearDependency.memoryBarrierCount = 1;
+        clearDependency.pMemoryBarriers    = &clearBarrier;
+        vkCmdPipelineBarrier2(cmd, &clearDependency);
+
+        const glm::mat4 viewProj = viewProjection(extent);
+
+        BuildDrawCommandsPush push{};
+        push.viewProj     = viewProj;
+        push.objects      = objectSlice.deviceAddressAs<GPUObject>();
+        push.meshes       = buffers_.staticBuffer(StaticBufferKind::Meshes)
+                                    .deviceAddressAs<GPUMesh>();
+        push.drawData     = drawDataSlice.deviceAddressAs<GPUDrawData>();
+        push.commands     = commandSlice.deviceAddressAs<GPUMeshTaskCommand>();
+        push.commandCount = countSlice.deviceAddressAs<uint32_t>();
+        push.objectCount  = objectCount;
+
+        buildDrawCommands_.record(cmd, push);
+
+        /**
+         * The commands and the count are fetched by the indirect draw itself;
+         * the mesh shader reads drawData as storage, which is a separate
+         * hazard from the command fetch.
+         */
+        VkMemoryBarrier2 buildBarrier{};
+        buildBarrier.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+        buildBarrier.srcStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT;
+        buildBarrier.srcAccessMask = VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT;
+        buildBarrier.dstStageMask  = VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT |
+                                     VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT;
+        buildBarrier.dstAccessMask = VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |
+                                     VK_ACCESS_2_SHADER_STORAGE_READ_BIT;
+
+        VkDependencyInfo buildDependency{};
+        buildDependency.sType              = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        buildDependency.memoryBarrierCount = 1;
+        buildDependency.pMemoryBarriers    = &buildBarrier;
+        vkCmdPipelineBarrier2(cmd, &buildDependency);
+
+        pendingDraw_.commands    = commandSlice;
+        pendingDraw_.count       = countSlice;
+        pendingDraw_.objectCount = objectCount;
+
+        MeshDrawPush& meshPush = pendingDraw_.push;
+        meshPush.viewProj = viewProj;
+        meshPush.drawData = drawDataSlice.deviceAddressAs<GPUDrawData>();
+        meshPush.objects  = objectSlice.deviceAddressAs<GPUObject>();
+        meshPush.meshes   = push.meshes;
+        meshPush.vertices = buffers_.staticBuffer(StaticBufferKind::Vertices)
+                                    .deviceAddressAs<GPUVertex>();
+        meshPush.meshlets = buffers_.staticBuffer(StaticBufferKind::Meshlets)
+                                    .deviceAddressAs<GPUMeshlet>();
+        meshPush.meshletVertexIndices =
+            buffers_.staticBuffer(StaticBufferKind::MeshletVertexIndices)
+                    .deviceAddressAs<uint32_t>();
+        meshPush.meshletTriangles =
+            buffers_.staticBuffer(StaticBufferKind::MeshletTriangleIndices)
+                    .deviceAddressAs<uint32_t>();
+    }
+
+    void recordFrame(VkCommandBuffer cmd, const RenderTarget& target) {
+        buildDrawCommands(cmd, target.extent);
 
         VkRenderingAttachmentInfo colorAttachment{};
         colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
@@ -381,62 +432,14 @@ private:
 
         vkCmdBeginRendering(cmd, &rendering);
 
-        VkViewport viewport{};
-        viewport.x        = 0.0f;
-        viewport.y        = 0.0f;
-        viewport.width    = static_cast<float>(target.extent.width);
-        viewport.height   = static_cast<float>(target.extent.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-        const VkRect2D scissor{ {0, 0}, target.extent };
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-        drawScene(cmd, target.extent);
+        meshDraw_.record(cmd, target.extent, pendingDraw_.push,
+                         pendingDraw_.commands.buffer, pendingDraw_.commands.offset,
+                         pendingDraw_.count.buffer, pendingDraw_.count.offset,
+                         pendingDraw_.objectCount);
 
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
 
         vkCmdEndRendering(cmd);
-    }
-
-    /**
-     * One dispatch per part, one mesh workgroup per meshlet. Direct, not
-     * indirect: the GPU-driven path replaces only this function.
-     */
-    void drawScene(VkCommandBuffer cmd, VkExtent2D extent) {
-        if (scene_.empty()) return;
-
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-
-        DrawPush push{};
-        push.vertices  = buffers_.staticBuffer(StaticBufferKind::Vertices).deviceAddress;
-        push.meshlets  = buffers_.staticBuffer(StaticBufferKind::Meshlets).deviceAddress;
-        push.meshletVertexIndices =
-            buffers_.staticBuffer(StaticBufferKind::MeshletVertexIndices).deviceAddress;
-        push.meshletTriangles =
-            buffers_.staticBuffer(StaticBufferKind::MeshletTriangleIndices).deviceAddress;
-        push.meshes    = buffers_.staticBuffer(StaticBufferKind::Meshes).deviceAddress;
-        push.materials = buffers_.staticBuffer(StaticBufferKind::Materials).deviceAddress;
-
-        const glm::mat4 viewProj = viewProjection(extent);
-
-        for (const MultiMesh& object : scene_) {
-            for (const MultiMeshPart& part : object.parts()) {
-                const Mesh& mesh = *part.mesh;
-                if (!mesh.uploaded() || mesh.meshletCount() == 0) continue;
-
-                /* Folded: a second mat4 would not fit in 128 bytes. */
-                push.viewProj  = viewProj * part.localTransform;
-                push.meshIndex = mesh.getGpuIndex();
-
-                vkCmdPushConstants(cmd, pipelineLayout_,
-                                   VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT,
-                                   0, sizeof(push), &push);
-
-                drawMeshTasks_(cmd, mesh.meshletCount(), 1, 1);
-            }
-        }
     }
 
     void cleanup() {
@@ -456,14 +459,12 @@ private:
 
         /* Meshes retire buffer ranges on destruction; must precede shutdown. */
         scene_.clear();
+        meshDraw_.destroy();
         buildDrawCommands_.destroy();
         uploads_.destroy();
         buffers_.shutdown();
 
         frames_.destroy();
-
-        vkDestroyPipeline(device_, pipeline_, nullptr);
-        vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
 
         swapchain_.destroy();
         ctx_.shutdown();

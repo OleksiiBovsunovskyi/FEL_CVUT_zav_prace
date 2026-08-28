@@ -1,6 +1,10 @@
 module;
+#include <vulkan/vulkan.h>
+
 #include <cstdint>
 #include <limits>
+
+#include <glm/glm.hpp>
 
 export module GPUTypes;
 
@@ -11,6 +15,21 @@ export module GPUTypes;
  * Layouts are std430/scalar compatible; the static_asserts are the contract with
  * shaders/gpu_types.glsl.
  */
+
+/**
+ * Device address of an array of T, and the C++ spelling of a `T*` in a shader.
+ *
+ * A plain VkDeviceAddress makes every buffer the same type, so swapping two
+ * push constant fields compiles and reads garbage on the GPU. Naming the
+ * pointee makes that a compile error. Obtained from
+ * BufferSlice/MegaBufferView::deviceAddressAs<T>().
+ */
+export template <typename T>
+struct GpuPtr {
+    VkDeviceAddress address = 0;
+};
+
+static_assert(sizeof(GpuPtr<float>) == sizeof(VkDeviceAddress));
 
 export constexpr uint32_t INVALID_GPU_MESH_INDEX =
     std::numeric_limits<uint32_t>::max();
@@ -23,11 +42,11 @@ export constexpr uint32_t INVALID_TEXTURE_INDEX =
  * identical. position.w and normal.w are reserved; tangent.w is handedness.
  */
 export struct alignas(16) GPUVertex {
-    float position[4] = {}; // byte offset 0
-    float normal[4]   = {}; // byte offset 16
-    float tangent[4]  = {}; // byte offset 32
-    float texCoord[2] = {}; // byte offset 48
-    float _padding[2] = {}; // byte offset 56
+    glm::vec4 position{}; // byte offset 0
+    glm::vec4 normal{};   // byte offset 16
+    glm::vec4 tangent{};  // byte offset 32
+    glm::vec2 texCoord{}; // byte offset 48
+    glm::vec2 _padding{}; // byte offset 56
 };
 
 static_assert(sizeof(GPUVertex) == 64);
@@ -45,9 +64,9 @@ export struct alignas(16) GPUMeshlet {
     uint32_t vertexCount    = 0;
     uint32_t triangleCount  = 0;
 
-    float boundingSphere[4] = {};
+    glm::vec4 boundingSphere{};
     /// xyz = unit cone axis, w = cosine cutoff used for backface cone culling.
-    float normalCone[4] = {};
+    glm::vec4 normalCone{};
 };
 
 static_assert(sizeof(GPUMeshlet) == 48);
@@ -80,9 +99,9 @@ export struct alignas(16) GPUClusterGroup {
     uint32_t clusterCount = 0;
     uint32_t depth        = 0;
     uint32_t _padding0    = 0;
-    float boundingSphere[4] = {};
-    float error             = 0.0f;
-    float _padding1[3]      = {};
+    glm::vec4 boundingSphere{};
+    float     error          = 0.0f;
+    glm::vec3 _padding1{};
 };
 
 static_assert(sizeof(GPUClusterGroup) == 48);
@@ -104,7 +123,7 @@ export struct alignas(16) GPUMesh {
     uint32_t clusterCount              = 0;
     uint32_t clusterGroupOffset        = 0;
     uint32_t clusterGroupCount         = 0;
-    float boundingSphere[4]            = {};
+    glm::vec4 boundingSphere{};
 };
 
 static_assert(sizeof(GPUMesh) == 64);
@@ -117,23 +136,83 @@ export enum MaterialFlags : uint32_t {
 
 /// Material record; five 16-byte blocks.
 export struct alignas(16) GPUMaterial {
-    float albedo[4]   = {1.0f, 1.0f, 1.0f, 1.0f};
-    float emissive[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+    glm::vec4 albedo{1.0f, 1.0f, 1.0f, 1.0f};
+    glm::vec4 emissive{0.0f, 0.0f, 0.0f, 1.0f};
 
     /* x=specular intensity, y=shininess, z=metallic, w=roughness */
-    float surface[4] = {0.5f, 32.0f, 0.0f, 0.1f};
+    glm::vec4 surface{0.5f, 32.0f, 0.0f, 0.1f};
 
     /* Albedo, normal, ORM and emissive bindless descriptor indices. */
-    uint32_t textures[4] = {
+    glm::uvec4 textures{
         INVALID_TEXTURE_INDEX,
         INVALID_TEXTURE_INDEX,
         INVALID_TEXTURE_INDEX,
         INVALID_TEXTURE_INDEX,
     };
 
-    float    alphaThreshold = 0.0f;
-    uint32_t flags          = 0;
-    uint32_t _padding[2]    = {};
+    float      alphaThreshold = 0.0f;
+    uint32_t   flags          = 0;
+    glm::uvec2 _padding{};
 };
 
 static_assert(sizeof(GPUMaterial) == 80);
+
+/**
+ * One drawable instance. transform is model-to-world.
+ */
+export struct alignas(16) GPUObject {
+    glm::mat4  transform{1.0f};
+    uint32_t   meshIndex = INVALID_GPU_MESH_INDEX;
+    glm::uvec3 _padding{};
+};
+
+static_assert(sizeof(GPUObject) == 80);
+
+/// Written per surviving draw, at the same index as its mesh-task command.
+export struct alignas(16) GPUDrawData {
+    uint32_t   objectIndex = 0;
+    uint32_t   meshIndex   = 0;
+    glm::uvec2 _padding{};
+};
+
+static_assert(sizeof(GPUDrawData) == 16);
+
+/// Written by build_draw_commands.comp, consumed by vkCmdDrawMeshTasksIndirect*.
+export using GPUMeshTaskCommand = VkDrawMeshTasksIndirectCommandEXT;
+
+static_assert(sizeof(GPUMeshTaskCommand) == 12);
+
+/**
+ * Arguments to build_draw_commands.comp.
+ */
+export struct alignas(16) BuildDrawCommandsPush {
+    glm::mat4                 viewProj{1.0f};
+    GpuPtr<GPUObject>          objects;      //transforms
+    GpuPtr<GPUMesh>            meshes;       //offsets in the mesh megabuffer to find mesh data
+    GpuPtr<GPUDrawData>        drawData;     //Output. Object and mesh indices, used to retrieve actual mesh data and its material
+    GpuPtr<GPUMeshTaskCommand> commands;     //Output. Actual draw command, built here
+    GpuPtr<uint32_t>           commandCount; //Output. How many actual draw commands have been built
+    uint32_t                   objectCount = 0;  //Amount of objects to draw
+    uint32_t                   _padding    = 0;
+};
+
+static_assert(sizeof(BuildDrawCommandsPush) == 112);
+
+/**
+ * Arguments to mesh.mesh. The mega-buffer bases are the ones GPUMesh's offsets
+ * index into; build_draw_commands.comp needs none of them.
+ *
+ * 120 of the 128 guaranteed push constant bytes.
+ */
+export struct MeshDrawPush {
+    glm::mat4             viewProj{1.0f};
+    GpuPtr<GPUDrawData>   drawData;
+    GpuPtr<GPUObject>     objects;
+    GpuPtr<GPUMesh>       meshes;
+    GpuPtr<GPUVertex>     vertices;
+    GpuPtr<GPUMeshlet>    meshlets;
+    GpuPtr<uint32_t>      meshletVertexIndices;
+    GpuPtr<uint32_t>      meshletTriangles;
+};
+
+static_assert(sizeof(MeshDrawPush) == 120);

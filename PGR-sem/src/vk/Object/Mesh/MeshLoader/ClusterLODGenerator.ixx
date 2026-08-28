@@ -8,11 +8,8 @@ export module ClusterLODGenerator;
 export import Mesh;
 
 /**
- * Output limits declared by shaders/mesh.mesh. generateClusterLOD rejects
- * settings above these, so a meshlet the mesh shader cannot emit is never built.
- *
- * The shader repeats the numbers as literals; nothing links the two. Passing them
- * through as shader macros would close that.
+ * Mesh-shader output limits. generateClusterLOD rejects settings above these,
+ * so a meshlet the mesh shader cannot emit is never built.
  */
 export constexpr uint32_t MESHLET_MAX_VERTICES  = 64;
 export constexpr uint32_t MESHLET_MAX_TRIANGLES = 64;

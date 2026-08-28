@@ -2,9 +2,7 @@
 # pgr-vk — Vulkan target.
 # ===========================================================================
 
-# shaderc_combined ships with the SDK: glslang + SPIRV-Tools in one static lib.
-# It is what ShaderLoader uses to compile GLSL (and resolve #include) at runtime.
-find_package(Vulkan REQUIRED COMPONENTS shaderc_combined)
+find_package(Vulkan REQUIRED)
 
 include(FetchContent)
 
@@ -74,51 +72,118 @@ target_link_libraries(imgui-vk PUBLIC imgui Vulkan::Vulkan)
 set_property(TARGET imgui-vk PROPERTY CXX_STANDARD 20)
 
 # ---------------------------------------------------------------------------
-# GLSL -> SPIR-V at build time. This is now an ahead-of-time check rather than
-# the only path: ShaderLoader compiles the same sources at runtime, so a broken
-# shader is caught here at build time and reported again (with the include
-# stack) at load time. The sources themselves are copied next to the executable
-# further down.
+# Slang -> SPIR-V at build time. The renderer loads only the .spv, so a broken
+# shader fails the build rather than the run.
 # ---------------------------------------------------------------------------
-find_program(GLSL_COMPILER
-        NAMES glslangValidator glslc
+find_program(SLANG_COMPILER
+        NAMES slangc
         HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin"
 )
-if(NOT GLSL_COMPILER)
+if(NOT SLANG_COMPILER)
   message(FATAL_ERROR
-          "No glslangValidator/glslc found. Install the Vulkan SDK "
+          "No slangc found. Install the Vulkan SDK "
           "(https://vulkan.lunarg.com/) and make sure VULKAN_SDK is set.")
 endif()
-message(STATUS "Shader compiler: ${GLSL_COMPILER}")
+message(STATUS "Shader compiler: ${SLANG_COMPILER}")
 
-set(VK_SHADER_SOURCES
-        shaders/triangle.vert
-        shaders/triangle.frag
-        shaders/mesh.mesh
-        shaders/mesh.frag
-        shaders/Core/build_draw_commands.comp
+set(VK_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
+
+# ---------------------------------------------------------------------------
+# The GPU records are declared once, in Core/GPUTypes.ixx, and translated into
+# a Slang module the shaders import. Generating rather than mirroring them is
+# why gpu_types.slang lives in the build tree and must not be edited.
+# ---------------------------------------------------------------------------
+set(VK_GENERATED_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(VK_GPU_TYPES_SLANG "${VK_GENERATED_SHADER_DIR}/gpu_types.slang")
+
+add_custom_command(
+        OUTPUT  "${VK_GPU_TYPES_SLANG}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${VK_GENERATED_SHADER_DIR}"
+        COMMAND ${CMAKE_COMMAND}
+                "-DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/Core/GPUTypes.ixx"
+                "-DOUTPUT=${VK_GPU_TYPES_SLANG}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_slang_structs.cmake"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Core/GPUTypes.ixx"
+                "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_slang_structs.cmake"
+        COMMENT "Generating gpu_types.slang from GPUTypes.ixx"
+        VERBATIM
+)
+
+# Imported by the entry points; every shader is rebuilt when one of them changes.
+set(VK_SLANG_MODULES
+        "${VK_GPU_TYPES_SLANG}"
+        "${VK_SHADER_DIR}/Utils/ShereVisibilityTest.slang"
 )
 
 set(VK_SPV_FILES "")
-foreach(SHADER ${VK_SHADER_SOURCES})
-  get_filename_component(SHADER_NAME "${SHADER}" NAME)
-  set(SPV_OUT "${CMAKE_CURRENT_BINARY_DIR}/Shaders/${SHADER_NAME}.spv")
+
+# One SPIR-V module per entry point; slangc names the entry point "main" in all
+# of them, so the pipelines need no entry name of their own.
+function(add_slang_shader SOURCE ENTRY STAGE OUTPUT_NAME)
+  set(SPV_OUT "${CMAKE_CURRENT_BINARY_DIR}/Shaders/${OUTPUT_NAME}")
   add_custom_command(
           OUTPUT  "${SPV_OUT}"
           COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/Shaders"
-          # -I mirrors ShaderLoader::addIncludeDir so both compilers resolve
-          # #include the same way.
-          COMMAND "${GLSL_COMPILER}" --target-env vulkan1.3
-                  "-I${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-                  "${CMAKE_CURRENT_SOURCE_DIR}/${SHADER}" -o "${SPV_OUT}"
-          DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/${SHADER}"
-          COMMENT "SPIR-V: ${SHADER_NAME}"
+          COMMAND "${SLANG_COMPILER}" -target spirv -profile spirv_1_6
+                  -emit-spirv-directly
+                  -I "${VK_SHADER_DIR}" -I "${VK_SHADER_DIR}/Utils"
+                  -I "${VK_GENERATED_SHADER_DIR}"
+                  "${VK_SHADER_DIR}/${SOURCE}"
+                  -entry ${ENTRY} -stage ${STAGE} -o "${SPV_OUT}"
+          DEPENDS "${VK_SHADER_DIR}/${SOURCE}" ${VK_SLANG_MODULES}
+          COMMENT "Slang: ${OUTPUT_NAME}"
           VERBATIM
   )
-  list(APPEND VK_SPV_FILES "${SPV_OUT}")
-endforeach()
+  set(VK_SPV_FILES ${VK_SPV_FILES} "${SPV_OUT}" PARENT_SCOPE)
+endfunction()
+
+add_slang_shader(Core/build_draw_commands.slang main     compute  build_draw_commands.spv)
+add_slang_shader(Core/mesh.slang                meshMain mesh     mesh.spv)
+add_slang_shader(Core/mesh.slang                fragMain fragment mesh_frag.spv)
 
 add_custom_target(pgr-vk-shaders DEPENDS ${VK_SPV_FILES})
+
+# ---------------------------------------------------------------------------
+# Record layouts are declared twice - Core/GPUTypes.ixx and gpu_types.slang.
+# Rather than generating one from the other, the offsets slangc chose are read
+# back out of the SPIR-V and turned into static_asserts, so drift is a compile
+# error with the shader compiler's own numbers.
+# ---------------------------------------------------------------------------
+find_program(SPIRV_DIS NAMES spirv-dis
+        HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin")
+if(NOT SPIRV_DIS)
+  message(FATAL_ERROR "No spirv-dis found; it ships with the Vulkan SDK.")
+endif()
+
+set(VK_SPVASM_DIR "${CMAKE_CURRENT_BINARY_DIR}/Shaders/asm")
+set(VK_SPVASM_FILES "")
+foreach(SPV IN LISTS VK_SPV_FILES)
+  get_filename_component(SPV_NAME "${SPV}" NAME_WE)
+  set(ASM_OUT "${VK_SPVASM_DIR}/${SPV_NAME}.spvasm")
+  add_custom_command(
+          OUTPUT  "${ASM_OUT}"
+          COMMAND ${CMAKE_COMMAND} -E make_directory "${VK_SPVASM_DIR}"
+          COMMAND "${SPIRV_DIS}" "${SPV}" -o "${ASM_OUT}"
+          DEPENDS "${SPV}"
+          COMMENT "Disassembling ${SPV_NAME}.spv"
+          VERBATIM
+  )
+  list(APPEND VK_SPVASM_FILES "${ASM_OUT}")
+endforeach()
+
+set(VK_LAYOUT_CHECK "${CMAKE_CURRENT_BINARY_DIR}/generated/gpu_layout_check.cpp")
+add_custom_command(
+        OUTPUT  "${VK_LAYOUT_CHECK}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+        COMMAND ${CMAKE_COMMAND}
+                "-DSPVASM_DIR=${VK_SPVASM_DIR}"
+                "-DOUTPUT=${VK_LAYOUT_CHECK}"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_layout_check.cmake"
+        DEPENDS ${VK_SPVASM_FILES}
+                "${CMAKE_CURRENT_SOURCE_DIR}/cmake/gen_layout_check.cmake"
+        COMMENT "Generating GPU record layout checks"
+        VERBATIM
+)
 
 # ---------------------------------------------------------------------------
 #Executable
@@ -134,12 +199,14 @@ add_executable(pgr-vk
         Core/UploadBatch.cpp
         Core/Pipeline.cpp
         Core/BuildDrawCommands.cpp
+        Core/MeshDraw.cpp
         Debug/ShaderPrint.cpp
         Object/Material/Material.cpp
         Object/Mesh/Mesh.cpp
         Object/Mesh/MeshLoader/ClusterLODGenerator.cpp
         Object/Mesh/MeshLoader/GltfLoader.cpp
         shaders/ShadersLoader.cpp
+        "${VK_LAYOUT_CHECK}"
 )
 
 # Logger.ixx is shared verbatim with the OpenGL target; it only uses the std
@@ -162,6 +229,7 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/UploadBatch.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Pipeline.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/BuildDrawCommands.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/MeshDraw.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Debug/ShaderPrint.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Object.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Material/Material.ixx"
@@ -182,7 +250,6 @@ target_link_libraries(pgr-vk PRIVATE
         fastgltf::fastgltf
         glfw
         imgui-vk
-        Vulkan::shaderc_combined
         meshoptimizer
         glm::glm
 )
@@ -214,31 +281,4 @@ add_custom_command(TARGET pgr-vk POST_BUILD
         "$<TARGET_FILE_DIR:pgr-vk>/Shaders"
 )
 
-# ...and the GLSL sources, which ShaderLoader compiles at runtime. Only the
-# shader files, not ShadersLoader.* which shares this directory. CONFIGURE_DEPENDS
-# re-globs on build, so a newly added .glsl does not need a manual reconfigure.
-file(GLOB VK_SHADER_FILES CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.vert"
-        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.frag"
-        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.comp"
-        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.geom"
-        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.tesc"
-        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.tese"
-        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.task"
-        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.mesh"
-        "${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.glsl"
-)
-add_custom_command(TARGET pgr-vk POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:pgr-vk>/Shaders/src"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                ${VK_SHADER_FILES} "$<TARGET_FILE_DIR:pgr-vk>/Shaders/src"
-)
-
-# Preserve the nested path expected by BuildDrawCommands' runtime shader load.
-add_custom_command(TARGET pgr-vk POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-                "$<TARGET_FILE_DIR:pgr-vk>/Shaders/src/Core"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Core/build_draw_commands.comp"
-                "$<TARGET_FILE_DIR:pgr-vk>/Shaders/src/Core/build_draw_commands.comp"
-)
+# The .slang sources are not needed at runtime: only the .spv above is loaded.

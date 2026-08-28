@@ -9,6 +9,7 @@ module;
 export module VK_Buffers;
 
 import VulkanContext;
+import GPUTypes;
 
 /**
  * Static, rarely updated buffers.
@@ -62,6 +63,13 @@ export struct BufferSlice {
     /// Host pointer to `offset`, or null when the buffer is not mapped.
     void*           mapped        = nullptr;
 
+    /**
+     * `deviceAddress` tagged with the record the range holds. Naming the type
+     * here is what stops one buffer's address reaching another's shader field.
+     */
+    template <typename T>
+    [[nodiscard]] GpuPtr<T> deviceAddressAs() const { return GpuPtr<T>{deviceAddress}; }
+
     /// @return true when this slice refers to a real range.
     [[nodiscard]] explicit operator bool() const {
         return buffer != VK_NULL_HANDLE && size != 0;
@@ -113,6 +121,10 @@ export struct MegaBufferView {
     VkDeviceSize    stride        = 1;
     VkDeviceAddress deviceAddress = 0;
     void*           mapped        = nullptr;
+
+    /// See BufferSlice::deviceAddressAs.
+    template <typename T>
+    [[nodiscard]] GpuPtr<T> deviceAddressAs() const { return GpuPtr<T>{deviceAddress}; }
 };
 
 /**

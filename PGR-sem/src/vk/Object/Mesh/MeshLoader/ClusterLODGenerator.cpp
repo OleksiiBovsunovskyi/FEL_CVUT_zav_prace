@@ -6,6 +6,8 @@ module;
 #include <string>
 #include <vector>
 
+#include <glm/gtc/type_ptr.hpp>
+
 #include <meshoptimizer.h>
 #define CLUSTERLOD_IMPLEMENTATION
 #include <clusterlod.h>
@@ -30,14 +32,9 @@ void appendMeshlet(GeneratedClusterLOD& output,
         static_cast<uint32_t>(output.meshletTriangles.size());
     meshlet.vertexCount = static_cast<uint32_t>(localVertices.size());
     meshlet.triangleCount = triangleCount;
-    meshlet.boundingSphere[0] = center[0];
-    meshlet.boundingSphere[1] = center[1];
-    meshlet.boundingSphere[2] = center[2];
-    meshlet.boundingSphere[3] = radius;
-    meshlet.normalCone[0] = cone.cone_axis[0];
-    meshlet.normalCone[1] = cone.cone_axis[1];
-    meshlet.normalCone[2] = cone.cone_axis[2];
-    meshlet.normalCone[3] = cone.cone_cutoff;
+    meshlet.boundingSphere = glm::vec4(center[0], center[1], center[2], radius);
+    meshlet.normalCone = glm::vec4(cone.cone_axis[0], cone.cone_axis[1],
+                                   cone.cone_axis[2], cone.cone_cutoff);
 
     const uint32_t meshletIndex =
         static_cast<uint32_t>(output.meshlets.size());
@@ -76,7 +73,7 @@ bool generateSingleLevel(std::span<const GPUVertex> vertices,
 
     const size_t meshletCount = meshopt_buildMeshlets(
         meshlets.data(), meshletVertices.data(), meshletTriangles.data(),
-        indices.data(), indices.size(), vertices.front().position,
+        indices.data(), indices.size(), glm::value_ptr(vertices.front().position),
         vertices.size(), sizeof(GPUVertex),
         settings.maxVerticesPerCluster,
         settings.maxTrianglesPerCluster,
@@ -88,17 +85,15 @@ bool generateSingleLevel(std::span<const GPUVertex> vertices,
      * asserts past 512 triangles or 256 unique vertices. This is the whole mesh.
      */
     const meshopt_Bounds meshBounds = meshopt_computeSphereBounds(
-        vertices.front().position, vertices.size(), sizeof(GPUVertex),
+        glm::value_ptr(vertices.front().position), vertices.size(), sizeof(GPUVertex),
         nullptr, 0);
 
     GPUClusterGroup group{};
     group.firstCluster = 0;
     group.clusterCount = static_cast<uint32_t>(meshletCount);
     group.depth = 0;
-    group.boundingSphere[0] = meshBounds.center[0];
-    group.boundingSphere[1] = meshBounds.center[1];
-    group.boundingSphere[2] = meshBounds.center[2];
-    group.boundingSphere[3] = meshBounds.radius;
+    group.boundingSphere = glm::vec4(meshBounds.center[0], meshBounds.center[1],
+                                     meshBounds.center[2], meshBounds.radius);
     group.error = FLT_MAX;
     output.groups.push_back(group);
 
@@ -113,7 +108,7 @@ bool generateSingleLevel(std::span<const GPUVertex> vertices,
         };
         const meshopt_Bounds bounds = meshopt_computeMeshletBounds(
             localVertices.data(), localTriangles.data(),
-            meshlet.triangle_count, vertices.front().position,
+            meshlet.triangle_count, glm::value_ptr(vertices.front().position),
             vertices.size(), sizeof(GPUVertex));
 
         appendMeshlet(output, localVertices, localTriangles,
@@ -145,9 +140,9 @@ bool generateHierarchy(std::span<const GPUVertex> vertices,
     source.indices = indices.data();
     source.index_count = indices.size();
     source.vertex_count = vertices.size();
-    source.vertex_positions = vertices.front().position;
+    source.vertex_positions = glm::value_ptr(vertices.front().position);
     source.vertex_positions_stride = sizeof(GPUVertex);
-    source.vertex_attributes = vertices.front().normal;
+    source.vertex_attributes = glm::value_ptr(vertices.front().normal);
     source.vertex_attributes_stride = sizeof(GPUVertex);
     source.attribute_weights = attributeWeights;
     source.attribute_count = 10;
@@ -163,10 +158,9 @@ bool generateHierarchy(std::span<const GPUVertex> vertices,
                 static_cast<uint32_t>(output.clusters.size());
             gpuGroup.clusterCount = static_cast<uint32_t>(clusterCount);
             gpuGroup.depth = static_cast<uint32_t>(group.depth);
-            gpuGroup.boundingSphere[0] = group.simplified.center[0];
-            gpuGroup.boundingSphere[1] = group.simplified.center[1];
-            gpuGroup.boundingSphere[2] = group.simplified.center[2];
-            gpuGroup.boundingSphere[3] = group.simplified.radius;
+            gpuGroup.boundingSphere = glm::vec4(
+                group.simplified.center[0], group.simplified.center[1],
+                group.simplified.center[2], group.simplified.radius);
             gpuGroup.error = group.simplified.error;
             output.groups.push_back(gpuGroup);
 
@@ -181,7 +175,7 @@ bool generateHierarchy(std::span<const GPUVertex> vertices,
 
                 const meshopt_Bounds bounds = meshopt_computeClusterBounds(
                     cluster.indices, cluster.index_count,
-                    vertices.front().position, vertices.size(),
+                    glm::value_ptr(vertices.front().position), vertices.size(),
                     sizeof(GPUVertex));
 
                 appendMeshlet(

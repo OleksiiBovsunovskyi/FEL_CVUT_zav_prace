@@ -49,7 +49,13 @@ public:
     /// vkb::SwapchainBuilder takes a vkb::Device.
     const vkb::Device& vkbDevice() const { return vkbDevice_; }
 
-    PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTasks() const { return cmdDrawMeshTasks_; }
+    /// VK_EXT_mesh_shader entry points, resolved during init().
+    PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTasks() const {
+        return cmdDrawMeshTasks_;
+    }
+    PFN_vkCmdDrawMeshTasksIndirectCountEXT cmdDrawMeshTasksIndirectCount() const {
+        return cmdDrawMeshTasksIndirectCount_;
+    }
 
     void waitIdle() const { vkDeviceWaitIdle(vkbDevice_.device); }
 
@@ -64,9 +70,10 @@ private:
 
     std::string gpuName_;
 
-    std::function<void(const std::string&)> debugSink_;
+    PFN_vkCmdDrawMeshTasksEXT              cmdDrawMeshTasks_             = nullptr;
+    PFN_vkCmdDrawMeshTasksIndirectCountEXT cmdDrawMeshTasksIndirectCount_ = nullptr;
 
-    PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTasks_ = nullptr;
+    std::function<void(const std::string&)> debugSink_;
 
     bool createInstance(const char* appName);
     bool selectAndCreateDevice();
