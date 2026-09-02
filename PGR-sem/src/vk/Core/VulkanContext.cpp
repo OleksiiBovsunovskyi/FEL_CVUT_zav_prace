@@ -155,6 +155,8 @@ bool VulkanContext::selectAndCreateDevice() {
      * compute/mesh workgroup size.
      */
     features13.maintenance4     = VK_TRUE;
+    /* Slang lowers `discard` to OpDemoteToHelperInvocation. */
+    features13.shaderDemoteToHelperInvocation = VK_TRUE;
 
     VkPhysicalDeviceMeshShaderFeaturesEXT meshFeatures{};
     meshFeatures.sType      = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT;

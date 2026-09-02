@@ -14,187 +14,149 @@ module;
 module Mesh;
 
 import Logger;
+import VkUtil;
 
 namespace {
 
-/// Reserved and filled on the host; copy not recorded yet.
-struct Staged {
-    BufferAllocation destination;
-    BufferSlice      staging;
-};
+/* Every section starts on this boundary, so a pointer into the blob satisfies
+ * the alignment of the record it addresses. */
+constexpr VkDeviceSize SECTION_ALIGNMENT = 16;
 
-/// Number of ranges a mesh writes: six geometry arrays plus its own record.
-constexpr size_t STAGED_COUNT = 7;
-
-/**
- * Reserves `values.size()` records and copies them into staging. Records
- * nothing; the caller decides whether the batch goes ahead.
- */
-template <typename T>
-bool stageRange(VK_buffers& buffers, StaticBufferKind kind,
-                std::span<const T> values, Staged& out) {
-    if (values.empty()) return false;
-
-    BufferAllocation destination =
-        buffers.allocateStatic(kind, static_cast<uint32_t>(values.size()));
-    if (!destination) return false;
-
-    const std::span<const std::byte> bytes = std::as_bytes(values);
-
-    /* Trips only if the stride table and T disagree. */
-    if (destination.slice().size != bytes.size()) {
-        logError("Mesh: static buffer stride does not match the staged record");
-        return false;
-    }
-
-    const BufferSlice staging = buffers.allocateUpload(bytes.size(), 16);
-    if (!staging || !staging.mapped) return false;
-
-    std::memcpy(staging.mapped, bytes.data(), bytes.size());
-
-    out.destination = std::move(destination);
-    out.staging     = staging;
-    return true;
+constexpr VkDeviceSize alignUp(VkDeviceSize value) {
+    return (value + SECTION_ALIGNMENT - 1) & ~(SECTION_ALIGNMENT - 1);
 }
 
-/// Records every staged copy, then one barrier covering all of them.
-void recordStaged(VkCommandBuffer commandBuffer,
-                  const std::array<Staged, STAGED_COUNT>& staged) {
-    for (const Staged& range : staged) {
-        const VkBufferCopy copy{
-            .srcOffset = range.staging.offset,
-            .dstOffset = range.destination.slice().offset,
-            .size      = range.destination.slice().size,
-        };
-        vkCmdCopyBuffer(commandBuffer, range.staging.buffer,
-                        range.destination.slice().buffer, 1, &copy);
-    }
+/**
+ * Byte offsets of one mesh's sections inside its blob. Built before anything is
+ * allocated, so a rejected mesh costs nothing.
+ */
+struct BlobLayout {
+    VkDeviceSize meshlets             = 0;
+    VkDeviceSize meshletVertexIndices = 0;
+    VkDeviceSize meshletTriangles     = 0;
+    VkDeviceSize vertices             = 0;
+    VkDeviceSize size                 = 0;
+};
 
-    std::array<VkBufferMemoryBarrier2, STAGED_COUNT> barriers{};
-    for (size_t i = 0; i < STAGED_COUNT; ++i) {
-        const BufferSlice& slice = staged[i].destination.slice();
-        barriers[i] = VkBufferMemoryBarrier2{
-            .sType         = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2,
-            .srcStageMask  = VK_PIPELINE_STAGE_2_TRANSFER_BIT,
-            .srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            .dstStageMask  = VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
-                             VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                             VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
-                             VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-            .dstAccessMask = VK_ACCESS_2_SHADER_STORAGE_READ_BIT,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .buffer = slice.buffer,
-            .offset = slice.offset,
-            .size   = slice.size,
-        };
-    }
+BlobLayout layoutOf(const MeshUploadData& data) {
+    BlobLayout layout{};
+    VkDeviceSize cursor = alignUp(sizeof(GPUMeshHeader));
 
-    const VkDependencyInfo dependency{
-        .sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO,
-        .bufferMemoryBarrierCount = static_cast<uint32_t>(barriers.size()),
-        .pBufferMemoryBarriers    = barriers.data(),
-    };
-    vkCmdPipelineBarrier2(commandBuffer, &dependency);
+    layout.meshlets = cursor;
+    cursor = alignUp(cursor + data.meshlets.size() * sizeof(GPUMeshlet));
+
+    layout.meshletVertexIndices = cursor;
+    cursor = alignUp(cursor + data.meshletVertexIndices.size() *
+                                  sizeof(GPUMeshletVertexIndex));
+
+    layout.meshletTriangles = cursor;
+    cursor = alignUp(cursor + data.meshletTriangles.size() *
+                                  sizeof(GPUMeshletTriangle));
+
+    layout.vertices = cursor;
+    cursor = alignUp(cursor + data.vertices.size() * sizeof(GPUVertex));
+
+    layout.size = cursor;
+    return layout;
+}
+
+/// Copies one section into the blob image being built in the upload buffer.
+template <typename T>
+void writeSection(std::byte* blob, VkDeviceSize offset,
+                  std::span<const T> values) {
+    if (values.empty()) return;
+    std::memcpy(blob + offset, values.data(), values.size() * sizeof(T));
 }
 
 } // namespace
 
-uint32_t Mesh::getGpuIndex() const {
-    if (!gpuRecord_) {
-        logError("Mesh::getGpuIndex called before the mesh was uploaded");
-        return INVALID_GPU_MESH_INDEX;
+MeshDataPointer Mesh::header() const {
+    if (!blob_) {
+        logError("Mesh::header called before the mesh was uploaded");
+        return {};
     }
-    return gpuRecord_.slice().elementIndex;
+    /* The header is the first record in the blob, so the blob's address is it. */
+    return MeshDataPointer{blob_.span().gpu.data.address};
 }
 
-bool Mesh::upload(VK_buffers& buffers, VkCommandBuffer commandBuffer,
+bool Mesh::upload(BufferManager& buffers, VkCommandBuffer commandBuffer,
                   const MeshUploadData& data,
                   std::shared_ptr<Material> material) {
 
     if (!buffers.initialized()) {
-        logError("Mesh::upload called before VK_buffers::init");
+        logError("Mesh::upload called before BufferManager::init");
         return false;
     }
-
     if (uploaded() || !material || data.vertices.empty() ||
         data.meshlets.empty() || data.meshletVertexIndices.empty() ||
-        data.meshletTriangles.empty() || data.clusters.empty() ||
-        data.clusterGroups.empty()) {
+        data.meshletTriangles.empty()) {
         return false;
     }
 
-    /**
-     * Nothing below touches the command buffer until every stage succeeds.
-     * Material first: staging reserves its slot, making gpuIndex() valid for the
-     * GPUMesh built below while its copy is recorded later.
-     */
-    BufferSlice materialStaging{};
-    const bool stageMaterial = !material->uploaded();
-    if (stageMaterial && !material->stage(buffers, materialStaging))
+    /* Material first: its record has to exist before the header names it. */
+    MappedSpan<std::byte> materialUpload{};
+    const bool uploadMaterial = !material->uploaded();
+    if (uploadMaterial && !material->prepare(buffers, materialUpload))
         return false;
 
-    enum : size_t {
-        VERTICES, MESHLETS, MESHLET_VERTEX_INDICES, MESHLET_TRIANGLES,
-        CLUSTERS, CLUSTER_GROUPS, GPU_RECORD,
-    };
+    const BlobLayout layout = layoutOf(data);
 
-    std::array<Staged, STAGED_COUNT> staged{};
+    DeviceArray<std::byte> blob =
+        buffers.allocateStatic<StaticBufferKind::MeshData>(
+            static_cast<uint32_t>(layout.size), SECTION_ALIGNMENT);
+    if (!blob) return false;
 
-    if (!stageRange(buffers, StaticBufferKind::Vertices,
-                    data.vertices, staged[VERTICES]) ||
-        !stageRange(buffers, StaticBufferKind::Meshlets,
-                    data.meshlets, staged[MESHLETS]) ||
-        !stageRange(buffers, StaticBufferKind::MeshletVertexIndices,
-                    data.meshletVertexIndices, staged[MESHLET_VERTEX_INDICES]) ||
-        !stageRange(buffers, StaticBufferKind::MeshletTriangleIndices,
-                    data.meshletTriangles, staged[MESHLET_TRIANGLES]) ||
-        !stageRange(buffers, StaticBufferKind::Clusters,
-                    data.clusters, staged[CLUSTERS]) ||
-        !stageRange(buffers, StaticBufferKind::ClusterGroups,
-                    data.clusterGroups, staged[CLUSTER_GROUPS])) {
-        return false;
-    }
+    const MappedSpan<std::byte> upload =
+        buffers.allocateUpload(layout.size, SECTION_ALIGNMENT);
+    if (!upload) return false;
 
-    GPUMesh gpuMesh{};
-    gpuMesh.vertexOffset = staged[VERTICES].destination.slice().elementIndex;
-    gpuMesh.vertexCount  = static_cast<uint32_t>(data.vertices.size());
-    gpuMesh.meshletOffset = staged[MESHLETS].destination.slice().elementIndex;
-    gpuMesh.meshletCount  = static_cast<uint32_t>(data.meshlets.size());
-    gpuMesh.meshletVertexIndexOffset =
-        staged[MESHLET_VERTEX_INDICES].destination.slice().elementIndex;
-    gpuMesh.meshletTriangleOffset =
-        staged[MESHLET_TRIANGLES].destination.slice().elementIndex;
-    gpuMesh.materialIndex = material->gpuIndex();
-    gpuMesh.clusterOffset = staged[CLUSTERS].destination.slice().elementIndex;
-    gpuMesh.clusterCount  = static_cast<uint32_t>(data.clusters.size());
-    gpuMesh.clusterGroupOffset =
-        staged[CLUSTER_GROUPS].destination.slice().elementIndex;
-    gpuMesh.clusterGroupCount =
-        static_cast<uint32_t>(data.clusterGroups.size());
-    gpuMesh.boundingSphere = glm::vec4(data.bounds.center, data.bounds.radius);
+    /* The blob is assembled in the upload buffer, pointers and all, then moved
+     * across in one copy. */
+    const VkDeviceAddress base = blob.span().gpu.data.address;
 
-    const std::span<const GPUMesh> record{&gpuMesh, 1};
-    if (!stageRange(buffers, StaticBufferKind::Meshes, record,
-                    staged[GPU_RECORD])) {
-        return false;
-    }
+    GPUMeshHeader header{};
+    header.vertices = GpuPtr<GPUVertex>{base + layout.vertices};
+    header.meshlets = GpuPtr<GPUMeshlet>{base + layout.meshlets};
+    header.meshletVertexIndices =
+        GpuPtr<GPUMeshletVertexIndex>{base + layout.meshletVertexIndices};
+    header.meshletTriangles =
+        GpuPtr<GPUMeshletTriangle>{base + layout.meshletTriangles};
+    header.vertexCount    = static_cast<uint32_t>(data.vertices.size());
+    header.meshletCount   = static_cast<uint32_t>(data.meshlets.size());
+    header.material       = material->gpuIndex();
+    header.boundingSphere = glm::vec4(data.bounds.center, data.bounds.radius);
 
-    if (stageMaterial)
-        material->record(commandBuffer, materialStaging);
+    std::byte* image = upload.host;
+    std::memset(image, 0, layout.size);
+    std::memcpy(image, &header, sizeof(header));
+    writeSection(image, layout.meshlets, data.meshlets);
+    writeSection(image, layout.vertices, data.vertices);
 
-    recordStaged(commandBuffer, staged);
+    /* The two index arrays are single-field records over the generator's
+     * uint32 output, so they copy as raw bytes. */
+    std::memcpy(image + layout.meshletVertexIndices,
+                data.meshletVertexIndices.data(),
+                data.meshletVertexIndices.size() * sizeof(uint32_t));
+    std::memcpy(image + layout.meshletTriangles, data.meshletTriangles.data(),
+                data.meshletTriangles.size() * sizeof(uint32_t));
 
-    vertices_             = std::move(staged[VERTICES].destination);
-    meshlets_             = std::move(staged[MESHLETS].destination);
-    meshletVertexIndices_ = std::move(staged[MESHLET_VERTEX_INDICES].destination);
-    meshletTriangles_     = std::move(staged[MESHLET_TRIANGLES].destination);
-    clusters_             = std::move(staged[CLUSTERS].destination);
-    clusterGroups_        = std::move(staged[CLUSTER_GROUPS].destination);
-    gpuRecord_            = std::move(staged[GPU_RECORD].destination);
-    material_             = std::move(material);
-    bounds_               = data.bounds;
-    vertexCount_          = static_cast<uint32_t>(data.vertices.size());
-    meshletCount_         = static_cast<uint32_t>(data.meshlets.size());
+    if (uploadMaterial) material->record(commandBuffer, materialUpload);
+
+    copy(commandBuffer, upload.region, blob.span().region);
+
+    const std::array<BufferRegion, 1> written{blob.span().region};
+    barrier(commandBuffer, written,
+            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
+                VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
+                VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
+                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+            VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+
+    blob_         = std::move(blob);
+    material_     = std::move(material);
+    bounds_       = data.bounds;
+    vertexCount_  = header.vertexCount;
+    meshletCount_ = header.meshletCount;
     return true;
 }

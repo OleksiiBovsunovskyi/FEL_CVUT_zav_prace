@@ -5,19 +5,16 @@ struct MeshDrawPush {
     float4x4 viewProj;                  // 0
 
     GPUDrawData* drawData;              // 64
-    GPUObject*   objects;               // 72
-    GPUMesh*     meshes;                // 80
-    GPUVertex*   vertices;              // 88
-    GPUMeshlet*  meshlets;              // 96
-    uint*        meshletVertexIndices;  // 104
-    uint*        meshletTriangles;      // 112
-};                                      // 120
+    GPUMeshInstance*   instances;            // 72
+    GPUMaterial* materials;             // 80
+};                                      // 88
 
 [[vk::push_constant]] ConstantBuffer<MeshDrawPush> pc;
 
 struct MeshVertex {
     float4 position : SV_Position;
     float3 normal   : NORMAL;
+    nointerpolation uint materialIndex : MATERIAL;
 };
 
 // meshopt's limits, matching MESHLET_MAX_* in ClusterLODGenerator.ixx.
@@ -37,36 +34,55 @@ void meshMain(
 {
     // Slot handed out by the atomic in build_draw_commands.slang.
     const GPUDrawData draw   = pc.drawData[drawId];
-    const GPUObject   object = pc.objects[draw.objectIndex];
-    const GPUMesh     mesh   = pc.meshes[draw.meshIndex];
+    const GPUMeshInstance instance = pc.instances[draw.instanceIndex];
+    // Every section of the mesh is reached through its header.
+    const GPUMeshHeader mesh = draw.mesh[0];
 
-    const GPUMeshlet meshlet = pc.meshlets[mesh.meshletOffset + groupId];
+    const GPUMeshlet meshlet = mesh.meshlets[groupId];
 
     SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
 
-    const float4x4 mvp = mul(pc.viewProj, object.transform);
+    const float4x4 mvp = mul(pc.viewProj, instance.transform);
     // Uniform scale is assumed; a non-uniform one needs the inverse transpose.
-    const float3x3 normalMatrix = float3x3(object.transform);
-
-    const uint vertexBase   = mesh.meshletVertexIndexOffset + meshlet.vertexOffset;
-    const uint triangleBase = mesh.meshletTriangleOffset + meshlet.triangleOffset;
+    const float3x3 normalMatrix = float3x3(instance.transform);
 
     for (uint i = laneId; i < meshlet.vertexCount; i += 64) {
-        const uint      index  = pc.meshletVertexIndices[vertexBase + i];
-        const GPUVertex vertex = pc.vertices[mesh.vertexOffset + index];
+        const uint      index  = mesh.meshletVertexIndices[meshlet.vertexOffset + i].value;
+        const GPUVertex vertex = mesh.vertices[index];
 
-        verts[i].position = mul(mvp, float4(vertex.position.xyz, 1.0));
-        verts[i].normal   = normalize(mul(normalMatrix, vertex.normal.xyz));
+        verts[i].position      = mul(mvp, float4(vertex.position.xyz, 1.0));
+        verts[i].normal        = normalize(mul(normalMatrix, vertex.normal.xyz));
+        verts[i].materialIndex = mesh.material.value;
     }
 
     for (uint i = laneId; i < meshlet.triangleCount; i += 64) {
         // One triangle per uint: i0 | (i1 << 8) | (i2 << 16).
-        const uint packed = pc.meshletTriangles[triangleBase + i];
+        const uint packed = mesh.meshletTriangles[meshlet.triangleOffset + i].packed;
         tris[i] = uint3(packed & 0xffu, (packed >> 8) & 0xffu, (packed >> 16) & 0xffu);
     }
 }
 
+// ponytail: one hardcoded light, no view vector, so Lambert only. Replace both
+// with the Lights buffer and a camera position once GPULight exists.
+static const float3 LIGHT_DIRECTION = normalize(float3(0.4, 0.8, 0.3));
+static const float  AMBIENT         = 0.15;
+
 [shader("fragment")]
 float4 fragMain(MeshVertex input) : SV_Target {
-    return float4(input.normal, 1.0);
+    const GPUMaterial material = pc.materials[input.materialIndex];
+
+    if ((material.flags & MATERIAL_ALPHA_MASK) != 0 &&
+        material.albedo.a < material.alphaThreshold)
+        discard;
+
+    const float3 normal  = normalize(input.normal);
+    const float  diffuse = max(dot(normal, LIGHT_DIRECTION), 0.0);
+
+    // emissive.w is the intensity the colour is scaled by.
+    const float3 emissive = ((material.flags & MATERIAL_EMISSIVE) != 0)
+                          ? material.emissive.rgb * material.emissive.w
+                          : float3(0.0);
+
+    const float3 color = material.albedo.rgb * (AMBIENT + diffuse) + emissive;
+    return float4(color, material.albedo.a);
 }

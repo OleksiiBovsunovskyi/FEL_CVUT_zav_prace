@@ -60,7 +60,7 @@ EQUALS = =
 CMAKE_SOURCE_DIR = C:/Users/obols/Documents/PGR_BC/PGR-sem/src
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug
+CMAKE_BINARY_DIR = C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -132,21 +132,21 @@ install/strip/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(CMAKE_COMMAND) -E cmake_progress_start C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug/CMakeFiles C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework//CMakeFiles/progress.marks
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/all
-	$(CMAKE_COMMAND) -E cmake_progress_start C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug/CMakeFiles 0
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(CMAKE_COMMAND) -E cmake_progress_start C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release/CMakeFiles C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework//CMakeFiles/progress.marks
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/all
+	$(CMAKE_COMMAND) -E cmake_progress_start C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release/CMakeFiles 0
 .PHONY : all
 
 # The main codegen target
 codegen: cmake_check_build_system
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(CMAKE_COMMAND) -E cmake_progress_start C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug/CMakeFiles C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework//CMakeFiles/progress.marks
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/codegen
-	$(CMAKE_COMMAND) -E cmake_progress_start C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug/CMakeFiles 0
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(CMAKE_COMMAND) -E cmake_progress_start C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release/CMakeFiles C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework//CMakeFiles/progress.marks
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/codegen
+	$(CMAKE_COMMAND) -E cmake_progress_start C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release/CMakeFiles 0
 .PHONY : codegen
 
 # The main clean target
 clean:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/clean
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/clean
 .PHONY : clean
 
 # The main clean target
@@ -155,22 +155,22 @@ clean/fast: clean
 
 # Prepare targets for installation.
 preinstall: all
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/preinstall
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/preinstall
 .PHONY : preinstall
 
 # Prepare targets for installation.
 preinstall/fast:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/preinstall
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/preinstall
 .PHONY : preinstall/fast
 
 # clear depends
 depend:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
 .PHONY : depend
 
 # Convenience name for target.
 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/rule:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/rule
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/rule
 .PHONY : C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/rule
 
 # Convenience name for target.
@@ -179,7 +179,7 @@ pgr: C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/ru
 
 # fast build rule for target.
 pgr/fast:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build
 .PHONY : pgr/fast
 
 src/Shader.obj: src/Shader.cpp.obj
@@ -187,7 +187,7 @@ src/Shader.obj: src/Shader.cpp.obj
 
 # target to build an object file
 src/Shader.cpp.obj:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/Shader.cpp.obj
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/Shader.cpp.obj
 .PHONY : src/Shader.cpp.obj
 
 src/Shader.i: src/Shader.cpp.i
@@ -195,7 +195,7 @@ src/Shader.i: src/Shader.cpp.i
 
 # target to preprocess a source file
 src/Shader.cpp.i:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/Shader.cpp.i
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/Shader.cpp.i
 .PHONY : src/Shader.cpp.i
 
 src/Shader.s: src/Shader.cpp.s
@@ -203,7 +203,7 @@ src/Shader.s: src/Shader.cpp.s
 
 # target to generate assembly for a file
 src/Shader.cpp.s:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/Shader.cpp.s
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/Shader.cpp.s
 .PHONY : src/Shader.cpp.s
 
 src/gl_core_4_4.obj: src/gl_core_4_4.c.obj
@@ -211,7 +211,7 @@ src/gl_core_4_4.obj: src/gl_core_4_4.c.obj
 
 # target to build an object file
 src/gl_core_4_4.c.obj:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gl_core_4_4.c.obj
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gl_core_4_4.c.obj
 .PHONY : src/gl_core_4_4.c.obj
 
 src/gl_core_4_4.i: src/gl_core_4_4.c.i
@@ -219,7 +219,7 @@ src/gl_core_4_4.i: src/gl_core_4_4.c.i
 
 # target to preprocess a source file
 src/gl_core_4_4.c.i:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gl_core_4_4.c.i
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gl_core_4_4.c.i
 .PHONY : src/gl_core_4_4.c.i
 
 src/gl_core_4_4.s: src/gl_core_4_4.c.s
@@ -227,7 +227,7 @@ src/gl_core_4_4.s: src/gl_core_4_4.c.s
 
 # target to generate assembly for a file
 src/gl_core_4_4.c.s:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gl_core_4_4.c.s
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gl_core_4_4.c.s
 .PHONY : src/gl_core_4_4.c.s
 
 src/gldebug.obj: src/gldebug.cpp.obj
@@ -235,7 +235,7 @@ src/gldebug.obj: src/gldebug.cpp.obj
 
 # target to build an object file
 src/gldebug.cpp.obj:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gldebug.cpp.obj
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gldebug.cpp.obj
 .PHONY : src/gldebug.cpp.obj
 
 src/gldebug.i: src/gldebug.cpp.i
@@ -243,7 +243,7 @@ src/gldebug.i: src/gldebug.cpp.i
 
 # target to preprocess a source file
 src/gldebug.cpp.i:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gldebug.cpp.i
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gldebug.cpp.i
 .PHONY : src/gldebug.cpp.i
 
 src/gldebug.s: src/gldebug.cpp.s
@@ -251,7 +251,7 @@ src/gldebug.s: src/gldebug.cpp.s
 
 # target to generate assembly for a file
 src/gldebug.cpp.s:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gldebug.cpp.s
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/gldebug.cpp.s
 .PHONY : src/gldebug.cpp.s
 
 src/pgr.obj: src/pgr.cpp.obj
@@ -259,7 +259,7 @@ src/pgr.obj: src/pgr.cpp.obj
 
 # target to build an object file
 src/pgr.cpp.obj:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/pgr.cpp.obj
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/pgr.cpp.obj
 .PHONY : src/pgr.cpp.obj
 
 src/pgr.i: src/pgr.cpp.i
@@ -267,7 +267,7 @@ src/pgr.i: src/pgr.cpp.i
 
 # target to preprocess a source file
 src/pgr.cpp.i:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/pgr.cpp.i
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/pgr.cpp.i
 .PHONY : src/pgr.cpp.i
 
 src/pgr.s: src/pgr.cpp.s
@@ -275,7 +275,7 @@ src/pgr.s: src/pgr.cpp.s
 
 # target to generate assembly for a file
 src/pgr.cpp.s:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/pgr.cpp.s
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(MAKE) $(MAKESILENT) -f C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/build.make C:/Users/obols/Documents/PGR_BC/PGR-sem/src/framework/CMakeFiles/pgr.dir/src/pgr.cpp.s
 .PHONY : src/pgr.cpp.s
 
 # Help Target
@@ -315,6 +315,6 @@ help:
 # No rule that depends on this can have commands that come from listfiles
 # because they might be regenerated.
 cmake_check_build_system:
-	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
+	cd C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-release && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
 .PHONY : cmake_check_build_system
 

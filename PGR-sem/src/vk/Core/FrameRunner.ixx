@@ -63,7 +63,7 @@ public:
      * Serial of the most recent submission; monotonic.
      *
      * With completedSerial(), the clock for deferred buffer retirement. Once
-     * per frame the owner of a VK_buffers should call:
+     * per frame the owner of a BufferManager should call:
      *
      *     buffers.setRetirementSerial(frames.submittedSerial());
      *     buffers.collect(frames.completedSerial());

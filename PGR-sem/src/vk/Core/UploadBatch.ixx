@@ -4,23 +4,23 @@ module;
 export module UploadBatch;
 
 import VulkanContext;
-import VK_Buffers;
+import BufferManager;
 
 /**
  * Gets data into GPU memory the CPU cannot write to directly.
  *
- * Mesh::upload copies nothing itself: it writes into the host-visible staging
- * buffer and records a copy command. The data has to stay in staging until the
- * GPU runs that command, which is why staging is released by submitAndWait()
+ * Mesh::upload copies nothing itself: it writes into the host-visible upload
+ * buffer and records a copy command. The data has to stay there until the GPU
+ * runs that command, which is why that space is released by submitAndWait()
  * alone.
  *
  *     VkCommandBuffer cmd = batch.begin();
  *     mesh.upload(buffers, cmd, data, material);   // records, copies nothing
- *     batch.submitAndWait();                       // runs it, frees staging
+ *     batch.submitAndWait();                       // runs it, frees the space
  *
- * A failed upload may only have run out of staging space; submitting and
+ * A failed upload may only have run out of upload space; submitting and
  * retrying on a fresh batch clears that, unless the source is larger than
- * VK_buffers::uploadCapacity() outright.
+ * BufferManager::uploadCapacity() outright.
  *
  * Blocks the CPU until the GPU finishes, which only load time can afford.
  */
@@ -32,7 +32,7 @@ public:
     UploadBatch(const UploadBatch&)            = delete;
     UploadBatch& operator=(const UploadBatch&) = delete;
 
-    bool init(VulkanContext& ctx, VK_buffers& buffers);
+    bool init(VulkanContext& ctx, BufferManager& buffers);
     void destroy();
 
     /// VK_NULL_HANDLE on failure or if a batch is already open.
@@ -40,9 +40,9 @@ public:
 
     /**
      * Ends recording, submits, blocks until the GPU is done, then releases the
-     * staging buffer. Safe on an empty batch.
+     * upload buffer. Safe on an empty batch.
      *
-     * Every BufferSlice from allocateUpload() since the last flush dies here.
+     * Every span from allocateUpload() since the last flush dies here.
      */
     bool submitAndWait();
 
@@ -50,7 +50,7 @@ public:
 
 private:
     VulkanContext* ctx_     = nullptr;
-    VK_buffers*    buffers_ = nullptr;
+    BufferManager* buffers_ = nullptr;
     VkDevice       device_  = VK_NULL_HANDLE;
 
     VkCommandPool   commandPool_   = VK_NULL_HANDLE;

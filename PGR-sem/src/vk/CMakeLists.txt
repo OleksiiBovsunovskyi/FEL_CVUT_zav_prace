@@ -190,17 +190,21 @@ add_custom_command(
 # ---------------------------------------------------------------------------
 add_executable(pgr-vk
         main.cpp
+        VulkanApp.cpp
         vma_impl.cpp
         VK_Window/AppWindow.cpp
         Core/VulkanContext.cpp
         Core/Swapchain.cpp
         Core/FrameRunner.cpp
-        Core/VK_Buffers.cpp
+        Core/BufferManager.cpp
         Core/UploadBatch.cpp
         Core/Pipeline.cpp
         Core/BuildDrawCommands.cpp
         Core/MeshDraw.cpp
         Debug/ShaderPrint.cpp
+        Object/DrawList.cpp
+        Object/RenderComponent.cpp
+        Scene/Scene.cpp
         Object/Material/Material.cpp
         Object/Mesh/Mesh.cpp
         Object/Mesh/MeshLoader/ClusterLODGenerator.cpp
@@ -219,6 +223,7 @@ target_sources(pgr-vk PRIVATE
         FILE_SET CXX_MODULES
         BASE_DIRS "${PGR_SRC_ROOT}"
         FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/VulkanApp.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/VK_Window/AppWindow.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/VulkanContext.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Swapchain.ixx"
@@ -226,12 +231,19 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/GPUTypes.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/FrameRunner.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/VK_Buffers.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/BufferManager.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/UploadBatch.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Pipeline.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/BuildDrawCommands.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/MeshDraw.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Debug/ShaderPrint.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/DrawList.ixx"
+        # VkScene and its two partitions: Component names Object and Scene,
+        # Object names Component and Scene, Scene names Object.
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/Component.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Object.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Scene/Scene.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/RenderComponent.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Material/Material.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/Mesh.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/MultiMesh/MultiMesh.ixx"

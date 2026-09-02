@@ -22,13 +22,13 @@ UploadBatch::~UploadBatch() {
     destroy();
 }
 
-bool UploadBatch::init(VulkanContext& ctx, VK_buffers& buffers) {
+bool UploadBatch::init(VulkanContext& ctx, BufferManager& buffers) {
     if (commandPool_) {
         logError("UploadBatch: init called twice");
         return false;
     }
     if (!buffers.initialized()) {
-        logError("UploadBatch: VK_buffers must be initialized first");
+        logError("UploadBatch: BufferManager must be initialized first");
         return false;
     }
 

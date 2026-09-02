@@ -1,6 +1,7 @@
 module;
 #include <vulkan/vulkan.h>
 
+#include <cstddef>
 #include <cstdint>
 
 #include <glm/glm.hpp>
@@ -8,7 +9,7 @@ module;
 export module VK_Material;
 
 export import GPUTypes;
-import VK_Buffers;
+import BufferManager;
 
 /**
  * One fixed-size material record in the Materials mega-buffer. Texture indices
@@ -23,24 +24,29 @@ public:
     Material& operator=(Material&&) noexcept = default;
 
     /// Allocates on first call, then updates the same record in-place.
-    bool upload(VK_buffers& buffers, VkCommandBuffer commandBuffer);
+    bool upload(BufferManager& buffers, VkCommandBuffer commandBuffer);
 
     /**
      * First half of upload(): reserves the record slot if absent, then writes
-     * current state into a staging slice. Records nothing, so abandoning the
+     * current state into the upload buffer. Records nothing, so abandoning the
      * batch after this leaves the command buffer untouched.
      */
-    [[nodiscard]] bool stage(VK_buffers& buffers, BufferSlice& outStaging);
+    [[nodiscard]] bool prepare(BufferManager& buffers,
+                               MappedSpan<std::byte>& outUpload);
 
-    /// Second half of upload(): records the copy staged by stage().
-    void record(VkCommandBuffer commandBuffer, const BufferSlice& staging) const;
+    /// Second half of upload(): records the copy prepare() set up.
+    void record(VkCommandBuffer commandBuffer,
+                const MappedSpan<std::byte>& upload) const;
 
     [[nodiscard]] bool uploaded() const {
         return static_cast<bool>(gpuRecord_);
     }
-    [[nodiscard]] uint32_t gpuIndex() const;
-    [[nodiscard]] const BufferSlice& gpuSlice() const {
-        return gpuRecord_.slice();
+
+    /// Call only after uploaded(). @return this record's index in Materials.
+    [[nodiscard]] GPUMaterialIndex gpuIndex() const;
+
+    [[nodiscard]] const BufferRegion& gpuRegion() const {
+        return gpuRecord_.span().region;
     }
     [[nodiscard]] GPUMaterial gpuData() const;
 
@@ -78,7 +84,7 @@ public:
     [[nodiscard]] bool isTransparent() const { return transparent_; }
 
 private:
-    BufferAllocation gpuRecord_{};
+    DeviceArray<GPUMaterial> gpuRecord_{};
 
     glm::vec4 albedo_{1.0f};
     glm::vec3 emissiveColor_{0.0f};

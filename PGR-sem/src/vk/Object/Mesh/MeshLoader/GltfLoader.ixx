@@ -1,13 +1,16 @@
 module;
 #include <filesystem>
+#include <memory>
 #include <vector>
+
+#include <glm/glm.hpp>
 
 export module GltfLoader;
 
 export import MultiMesh;
 export import ClusterLODGenerator;
 
-import VK_Buffers;
+import BufferManager;
 import UploadBatch;
 
 export struct GltfLoadSettings {
@@ -19,29 +22,45 @@ export struct GltfLoadSettings {
 };
 
 /**
- * Loads a .gltf or .glb into MultiMeshes.
+ * Loads a .gltf or .glb as one model.
  *
- * One MultiMesh per scene node that references a mesh, with one part per glTF
- * primitive, because that is how the two formats line up: a glTF primitive is
- * one geometry with one material (a Mesh), and a glTF mesh is a list of those (a
- * MultiMesh). A single-primitive mesh therefore still comes back as a one-part
- * MultiMesh - no special case, as requested.
+ * Every scene node that references a mesh becomes one part, carrying that
+ * node's world transform, because a glTF primitive is one geometry with one
+ * material (a Mesh) and everything the file places is one thing to put in the
+ * world. A single-primitive file still comes back as a one-part MultiMesh - no
+ * special case.
  *
- * Part transforms are node *world* transforms; the returned vector renders the
- * whole scene with no further hierarchy walking.
+ * Node world transforms end up on the parts, so the result needs no further
+ * hierarchy walking, and the Object that carries the model places all of it at
+ * once.
  *
- * Geometry and materials are shared: two nodes on the same glTF mesh get parts
- * holding one shared_ptr<Mesh>, and primitives with the same material index
- * share one GPUMaterial record.
- *
- * `batch` must be initialized and not already open; the loader opens and
- * submits it as it goes.
- *
- * @return false on a parse error, an unsupported primitive, or a failed upload.
- *         `out` may hold already-loaded objects when it fails.
+ * Geometry and materials are shared: two nodes on the same glTF mesh reference
+ * one Mesh, and primitives with the same material index share one GPUMaterial
+ * record.
  */
-export [[nodiscard]] bool loadGltf(const std::filesystem::path& path,
-                                   VK_buffers& buffers,
-                                   UploadBatch& batch,
-                                   std::vector<MultiMesh>& out,
-                                   const GltfLoadSettings& settings = {});
+export class GltfLoader {
+public:
+    GltfLoader() = default;
+
+    /**
+     * @param buffers where geometry and materials are allocated; must outlive
+     *        this.
+     * @param batch used for every upload; must be initialized and never left
+     *        open by a caller, since loadModel opens and submits it as it goes.
+     */
+    bool init(BufferManager& buffers, UploadBatch& batch);
+
+    /**
+     * @param path a .gltf or .glb.
+     * @return the model, or null on a parse error, an unsupported primitive or
+     *         a failed upload. Whatever uploaded before the failure stays
+     *         allocated until the returned parts die.
+     */
+    [[nodiscard]] std::shared_ptr<MultiMesh> loadModel(
+        const std::filesystem::path& path,
+        const GltfLoadSettings& settings = {});
+
+private:
+    BufferManager* buffers_ = nullptr;
+    UploadBatch*   batch_   = nullptr;
+};

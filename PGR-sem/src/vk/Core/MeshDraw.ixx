@@ -8,6 +8,7 @@ export module MeshDraw;
 
 import GPUTypes;
 import ShadersLoader;
+import VK_Buffers;
 
 /**
  * Owns the mesh-shader graphics pass and issues the indirect draw whose
@@ -36,16 +37,14 @@ public:
      * Records one indirect draw. Must be inside a render pass whose attachment
      * formats match those given to init().
      *
-     * @param commands buffer and byte offset of the GPUMeshTaskCommand array.
-     * @param count buffer and byte offset of the draw count written by the
-     *        build pass; both offsets must be 4-byte aligned.
+     * @param commands the GPUMeshTaskCommand array built by the compute pass.
+     * @param count the draw count it wrote; both offsets must be 4-byte aligned.
      * @param maxDrawCount upper bound the count is clamped against - the object
      *        count the command buffer was sized for.
      */
     void record(VkCommandBuffer commandBuffer, VkExtent2D extent,
                 const MeshDrawPush& push,
-                VkBuffer commands, VkDeviceSize commandsOffset,
-                VkBuffer count, VkDeviceSize countOffset,
+                const BufferRegion& commands, const BufferRegion& count,
                 uint32_t maxDrawCount) const;
 
     void destroy();

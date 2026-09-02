@@ -59,10 +59,10 @@ bool BuildDrawCommands::init(VkDevice device, ShaderLoader& shaders,
 
 void BuildDrawCommands::record(VkCommandBuffer commandBuffer,
                                const BuildDrawCommandsPush& push) const {
-    if (!pipeline_ || push.objectCount == 0) return;
+    if (!pipeline_ || push.instanceCount == 0) return;
 
     const uint32_t groupCount =
-        (push.objectCount + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
+        (push.instanceCount + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
     vkCmdPushConstants(commandBuffer, pipelineLayout_, VK_SHADER_STAGE_COMPUTE_BIT,

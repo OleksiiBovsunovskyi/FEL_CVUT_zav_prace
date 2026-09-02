@@ -21,8 +21,8 @@ export module GPUTypes;
  *
  * A plain VkDeviceAddress makes every buffer the same type, so swapping two
  * push constant fields compiles and reads garbage on the GPU. Naming the
- * pointee makes that a compile error. Obtained from
- * BufferSlice/MegaBufferView::deviceAddressAs<T>().
+ * pointee makes that a compile error. Obtained from a DeviceSpan or MappedSpan
+ * handed out by BufferManager.
  */
 export template <typename T>
 struct GpuPtr {
@@ -31,8 +31,19 @@ struct GpuPtr {
 
 static_assert(sizeof(GpuPtr<float>) == sizeof(VkDeviceAddress));
 
-export constexpr uint32_t INVALID_GPU_MESH_INDEX =
-    std::numeric_limits<uint32_t>::max();
+/**
+ * Device address of a T[count]. The shader-facing form of a range; a bare
+ * address plus a loose length is what it replaces.
+ */
+export template <typename T>
+struct GpuSpan {
+    GpuPtr<T> data{};
+    uint32_t  count = 0;
+
+    [[nodiscard]] explicit operator bool() const {
+        return data.address != 0 && count != 0;
+    }
+};
 
 export constexpr uint32_t INVALID_TEXTURE_INDEX =
     std::numeric_limits<uint32_t>::max();
@@ -51,12 +62,33 @@ export struct alignas(16) GPUVertex {
 
 static_assert(sizeof(GPUVertex) == 64);
 
+/// Meshlet-local vertex slot to an index of a GPUVertex in the same mesh.
+export struct GPUMeshletVertexIndex {
+    uint32_t value = 0;
+};
+
+static_assert(sizeof(GPUMeshletVertexIndex) == 4);
+
+/// One triangle, meshlet-local: i0 | (i1 << 8) | (i2 << 16).
+export struct GPUMeshletTriangle {
+    uint32_t packed = 0;
+};
+
+static_assert(sizeof(GPUMeshletTriangle) == 4);
+
+/// Record index into the Materials mega-buffer.
+export struct GPUMaterialIndex {
+    uint32_t value = 0;
+};
+
+static_assert(sizeof(GPUMaterialIndex) == 4);
+
 /**
  * One meshlet, processed by one mesh-shader workgroup.
  *
- * vertexOffset and triangleOffset are relative to the owning GPUMesh's
- * meshletVertexIndexOffset and meshletTriangleOffset. Triangle indices are
- * meshlet-local. Bounds and normal cone are in mesh space.
+ * vertexOffset and triangleOffset index the owning mesh's meshletVertexIndices
+ * and meshletTriangles. Triangle indices are meshlet-local. Bounds and normal
+ * cone are in mesh space.
  */
 export struct alignas(16) GPUMeshlet {
     uint32_t vertexOffset   = 0;
@@ -73,7 +105,7 @@ static_assert(sizeof(GPUMeshlet) == 48);
 
 /**
  * Connects one meshlet to the flat CLOD DAG. All three indices are relative to
- * the owning GPUMesh.
+ * the owning mesh. Generated at load; nothing uploads or reads it yet.
  *
  * group is the group containing this cluster; refinedGroup is the more detailed
  * group that produced it, or -1 for original geometry.
@@ -90,7 +122,7 @@ static_assert(sizeof(GPUCluster) == 16);
 /**
  * Clusters selected together by the CLOD error test.
  *
- * firstCluster is relative to GPUMesh::clusterOffset. error is geometric, in
+ * firstCluster is relative to the mesh's cluster array. error is geometric, in
  * mesh-space units, FLT_MAX for terminal groups; the renderer projects it to
  * pixels to choose between this group and a refined one.
  */
@@ -107,26 +139,25 @@ export struct alignas(16) GPUClusterGroup {
 static_assert(sizeof(GPUClusterGroup) == 48);
 
 /**
- * Record for one single-material mesh. Every offset is an element index into its
- * mega-buffer, taken from BufferSlice::elementIndex.
+ * First record in a mesh's MeshData blob, and the only part of it anything
+ * outside points at. Each pointer addresses a section of that same blob.
  */
-export struct alignas(16) GPUMesh {
-    uint32_t vertexOffset              = 0;
-    uint32_t vertexCount               = 0;
-    uint32_t meshletOffset             = 0;
-    uint32_t meshletCount              = 0;
-    uint32_t meshletVertexIndexOffset  = 0;
-    uint32_t meshletTriangleOffset     = 0;
-    uint32_t materialIndex             = 0;
-    uint32_t _padding                  = 0;
-    uint32_t clusterOffset             = 0;
-    uint32_t clusterCount              = 0;
-    uint32_t clusterGroupOffset        = 0;
-    uint32_t clusterGroupCount         = 0;
+export struct alignas(16) GPUMeshHeader {
+    GpuPtr<GPUVertex>             vertices{};
+    GpuPtr<GPUMeshlet>            meshlets{};
+    GpuPtr<GPUMeshletVertexIndex> meshletVertexIndices{};
+    GpuPtr<GPUMeshletTriangle>    meshletTriangles{};
+    uint32_t vertexCount  = 0;
+    uint32_t meshletCount = 0;
+    GPUMaterialIndex material{};
+    uint32_t _padding     = 0;
     glm::vec4 boundingSphere{};
 };
 
-static_assert(sizeof(GPUMesh) == 64);
+static_assert(sizeof(GPUMeshHeader) == 64);
+
+/// Address of a mesh's header. What a GPUMeshInstance and a GPUDrawData carry.
+export using MeshDataPointer = GpuPtr<GPUMeshHeader>;
 
 export enum MaterialFlags : uint32_t {
     MATERIAL_EMISSIVE    = 1u << 0,
@@ -158,21 +189,25 @@ export struct alignas(16) GPUMaterial {
 static_assert(sizeof(GPUMaterial) == 80);
 
 /**
- * One drawable instance. transform is model-to-world.
+ * One drawable instance. transform is model-to-world; MultiMesh parts are
+ * flattened on the CPU, so one part is one of these.
+ *
+ * The trailing 8 bytes are alignment padding held for a per-instance material
+ * override, which fits without growing the record.
  */
-export struct alignas(16) GPUObject {
-    glm::mat4  transform{1.0f};
-    uint32_t   meshIndex = INVALID_GPU_MESH_INDEX;
-    glm::uvec3 _padding{};
+export struct alignas(16) GPUMeshInstance {
+    glm::mat4      transform{1.0f};
+    MeshDataPointer mesh{};
+    glm::uvec2     _padding{};
 };
 
-static_assert(sizeof(GPUObject) == 80);
+static_assert(sizeof(GPUMeshInstance) == 80);
 
 /// Written per surviving draw, at the same index as its mesh-task command.
 export struct alignas(16) GPUDrawData {
-    uint32_t   objectIndex = 0;
-    uint32_t   meshIndex   = 0;
-    glm::uvec2 _padding{};
+    uint32_t        instanceIndex = 0;
+    uint32_t        _padding    = 0;
+    MeshDataPointer mesh{};
 };
 
 static_assert(sizeof(GPUDrawData) == 16);
@@ -186,33 +221,27 @@ static_assert(sizeof(GPUMeshTaskCommand) == 12);
  * Arguments to build_draw_commands.comp.
  */
 export struct alignas(16) BuildDrawCommandsPush {
-    glm::mat4                 viewProj{1.0f};
-    GpuPtr<GPUObject>          objects;      //transforms
-    GpuPtr<GPUMesh>            meshes;       //offsets in the mesh megabuffer to find mesh data
-    GpuPtr<GPUDrawData>        drawData;     //Output. Object and mesh indices, used to retrieve actual mesh data and its material
+    glm::mat4                  viewProj{1.0f};
+    GpuPtr<GPUMeshInstance>    instances;      //transform + the mesh it draws
+    GpuPtr<GPUDrawData>        drawData;     //Output. Object index and mesh, read back by the mesh shader
     GpuPtr<GPUMeshTaskCommand> commands;     //Output. Actual draw command, built here
     GpuPtr<uint32_t>           commandCount; //Output. How many actual draw commands have been built
-    uint32_t                   objectCount = 0;  //Amount of objects to draw
+    uint32_t                   instanceCount = 0;  //Amount of instances to draw
     uint32_t                   _padding    = 0;
 };
 
 static_assert(sizeof(BuildDrawCommandsPush) == 112);
 
 /**
- * Arguments to mesh.mesh. The mega-buffer bases are the ones GPUMesh's offsets
- * index into; build_draw_commands.comp needs none of them.
- *
- * 120 of the 128 guaranteed push constant bytes.
+ * Arguments to mesh.mesh. Geometry is reached through the mesh header a
+ * GPUDrawData points at, so only the two per-frame arrays and the material
+ * table need a base here.
  */
 export struct MeshDrawPush {
-    glm::mat4             viewProj{1.0f};
-    GpuPtr<GPUDrawData>   drawData;
-    GpuPtr<GPUObject>     objects;
-    GpuPtr<GPUMesh>       meshes;
-    GpuPtr<GPUVertex>     vertices;
-    GpuPtr<GPUMeshlet>    meshlets;
-    GpuPtr<uint32_t>      meshletVertexIndices;
-    GpuPtr<uint32_t>      meshletTriangles;
+    glm::mat4           viewProj{1.0f};
+    GpuPtr<GPUDrawData> drawData;
+    GpuPtr<GPUMeshInstance>   instances;
+    GpuPtr<GPUMaterial> materials;
 };
 
-static_assert(sizeof(MeshDrawPush) == 120);
+static_assert(sizeof(MeshDrawPush) == 88);

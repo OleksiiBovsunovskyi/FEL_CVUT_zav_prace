@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Solution>
+	<Configurations>
+		<BuildType Name="Debug"/>
+		<BuildType Name="Release"/>
+		<BuildType Name="MinSizeRel"/>
+		<BuildType Name="RelWithDebInfo"/>
+		<Platform Name="x64"/>
+	</Configurations>
+	<Project Path="pgr.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="8f3ed5ed-9605-35b8-9750-7d6e82b530a9">
+		<BuildDependency Project="C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug-clang/ZERO_CHECK.vcxproj"/>
+	</Project>
+	<Folder Name="/CMakePredefinedTargets/">
+		<Project Path="ALL_BUILD.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="0b0c007a-7e2e-30f7-a4dd-3700fa75342d" DefaultStartup="true">
+			<BuildDependency Project="C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug-clang/ZERO_CHECK.vcxproj"/>
+			<BuildDependency Project="pgr.vcxproj"/>
+		</Project>
+		<Project Path="INSTALL.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="2a210328-46d7-3812-9e73-1bb8840c428b">
+			<BuildDependency Project="ALL_BUILD.vcxproj"/>
+			<BuildDependency Project="C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug-clang/ZERO_CHECK.vcxproj"/>
+			<Build Solution="Debug|*" Project="false"/>
+			<Build Solution="Release|*" Project="false"/>
+			<Build Solution="MinSizeRel|*" Project="false"/>
+			<Build Solution="RelWithDebInfo|*" Project="false"/>
+		</Project>
+		<Project Path="C:/Users/obols/Documents/PGR_BC/PGR-sem/src/cmake-build-debug-clang/ZERO_CHECK.vcxproj" Type="8bc9ceb8-8b4a-11d0-8d11-00a0c91bc942" Id="4f363fd7-1b1e-3789-8f74-817dbdcd27e4"/>
+	</Folder>
+</Solution>

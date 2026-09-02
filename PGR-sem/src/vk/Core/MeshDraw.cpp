@@ -9,6 +9,7 @@ module MeshDraw;
 import GPUTypes;
 import Logger;
 import Pipeline;
+import VkUtil;
 
 MeshDraw::~MeshDraw() {
     if (device_)
@@ -34,7 +35,8 @@ bool MeshDraw::init(VkDevice device, ShaderLoader& shaders,
 
     /* Every buffer is reached through its device address, so no descriptor sets. */
     const VkPushConstantRange pushRange{
-        .stageFlags = VK_SHADER_STAGE_MESH_BIT_EXT,
+        /* The fragment stage needs it too: it reads the material record. */
+        .stageFlags = VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT,
         .offset     = 0,
         .size       = sizeof(MeshDrawPush),
     };
@@ -70,26 +72,21 @@ bool MeshDraw::init(VkDevice device, ShaderLoader& shaders,
 
 void MeshDraw::record(VkCommandBuffer commandBuffer, VkExtent2D extent,
                       const MeshDrawPush& push,
-                      VkBuffer commands, VkDeviceSize commandsOffset,
-                      VkBuffer count, VkDeviceSize countOffset,
+                      const BufferRegion& commands, const BufferRegion& count,
                       uint32_t maxDrawCount) const {
     if (!pipeline_ || !commands || !count || maxDrawCount == 0) return;
 
-    const VkViewport viewport{
-        .x = 0.0f, .y = 0.0f,
-        .width  = static_cast<float>(extent.width),
-        .height = static_cast<float>(extent.height),
-        .minDepth = 0.0f, .maxDepth = 1.0f,
-    };
-    const VkRect2D scissor{ {0, 0}, extent };
+    const auto [viewport, scissor] = viewportAndScissor(extent);
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-    vkCmdPushConstants(commandBuffer, pipelineLayout_, VK_SHADER_STAGE_MESH_BIT_EXT,
+    vkCmdPushConstants(commandBuffer, pipelineLayout_,
+                       VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT,
                        0, sizeof(push), &push);
 
-    drawIndirectCount_(commandBuffer, commands, commandsOffset, count, countOffset,
+    drawIndirectCount_(commandBuffer, commands.buffer, commands.offset,
+                       count.buffer, count.offset,
                        maxDrawCount, sizeof(GPUMeshTaskCommand));
 }
 

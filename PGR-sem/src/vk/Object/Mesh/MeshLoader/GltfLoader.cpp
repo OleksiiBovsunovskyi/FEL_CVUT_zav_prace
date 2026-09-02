@@ -209,24 +209,36 @@ bool readIndices(const fastgltf::Asset& asset,
 } // namespace
 
 
-bool loadGltf(const fs::path& path, VK_buffers& buffers, UploadBatch& batch,
-              std::vector<MultiMesh>& out, const GltfLoadSettings& settings) {
+bool GltfLoader::init(BufferManager& buffers, UploadBatch& batch) {
     if (!buffers.initialized()) {
-        logError("GltfLoader: VK_buffers must be initialized first");
+        logError("GltfLoader: BufferManager must be initialized first");
         return false;
     }
+    buffers_ = &buffers;
+    batch_   = &batch;
+    return true;
+}
+
+std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
+                                                 const GltfLoadSettings& settings) {
+    if (!buffers_ || !batch_) {
+        logError("GltfLoader: loadModel called before init");
+        return nullptr;
+    }
+    BufferManager& buffers = *buffers_;
+    UploadBatch&   batch   = *batch_;
 
     const std::string extension = path.extension().string();
     if (extension != ".gltf" && extension != ".glb") {
         logError("GltfLoader: " + path.string() + " is not .gltf or .glb");
-        return false;
+        return nullptr;
     }
 
     auto data = fastgltf::GltfDataBuffer::FromPath(path);
     if (data.error() != fastgltf::Error::None) {
         logError("GltfLoader: cannot read " + path.string() + ": " +
                  std::string(fastgltf::getErrorMessage(data.error())));
-        return false;
+        return nullptr;
     }
 
     // LoadExternalBuffers covers .gltf with sidecar .bin files; GenerateMeshIndices
@@ -262,7 +274,7 @@ bool loadGltf(const fs::path& path, VK_buffers& buffers, UploadBatch& batch,
                      "EXT_meshopt_compression, which needs decompressing before "
                      "it can be read. Re-export without -c.");
         }
-        return false;
+        return nullptr;
     }
     const fastgltf::Asset& asset = parsed.get();
 
@@ -271,7 +283,7 @@ bool loadGltf(const fs::path& path, VK_buffers& buffers, UploadBatch& batch,
         if (view.meshoptCompression != nullptr) {
             logError("GltfLoader: " + path.string() +
                      " has meshopt-compressed buffer views, which are not decoded");
-            return false;
+            return nullptr;
         }
     }
 
@@ -281,6 +293,9 @@ bool loadGltf(const fs::path& path, VK_buffers& buffers, UploadBatch& batch,
 
     // [glTF mesh][primitive] -> uploaded geometry.
     std::vector<std::vector<std::shared_ptr<Mesh>>> meshCache(asset.meshes.size());
+
+    // [glTF mesh] -> its parts, shared by every node referencing it.
+    std::vector<std::shared_ptr<MultiMesh>> multiMeshCache(asset.meshes.size());
 
     std::vector<GPUVertex> vertices;
     std::vector<uint32_t>  indices;
@@ -327,7 +342,7 @@ bool loadGltf(const fs::path& path, VK_buffers& buffers, UploadBatch& batch,
         }
 
         /**
-         * One batch per primitive: a GPU round trip each, with staging empty on
+         * One batch per primitive: a GPU round trip each, with the upload buffer empty on
          * entry so a large primitive is never starved by its predecessors.
          */
         VkCommandBuffer cmd = batch.begin();
@@ -350,38 +365,52 @@ bool loadGltf(const fs::path& path, VK_buffers& buffers, UploadBatch& batch,
         return cache[primitiveIndex];
     };
 
-    auto addObject = [&](size_t meshIndex, const glm::mat4& transform) {
-        MultiMesh object;
+    /// Builds one glTF mesh's parts, or returns the already-built ones.
+    auto multiMeshFor = [&](size_t meshIndex) -> std::shared_ptr<MultiMesh> {
+        if (multiMeshCache[meshIndex]) return multiMeshCache[meshIndex];
+
+        auto multiMesh = std::make_shared<MultiMesh>();
         for (size_t p = 0; p < asset.meshes[meshIndex].primitives.size(); ++p) {
-            if (auto mesh = meshFor(meshIndex, p))
-                object.add(std::move(mesh), transform);
+            /* Identity: a glTF primitive has no transform of its own. */
+            if (auto mesh = meshFor(meshIndex, p)) multiMesh->add(std::move(mesh));
         }
-        if (!object.empty()) out.push_back(std::move(object));
+        if (multiMesh->empty()) return nullptr;
+
+        multiMeshCache[meshIndex] = std::move(multiMesh);
+        return multiMeshCache[meshIndex];
+    };
+
+    /* One model: every placed node contributes its parts at that node's world
+     * transform, so the file becomes one thing to put in the world. */
+    auto model = std::make_shared<MultiMesh>();
+
+    auto addInstance = [&](size_t meshIndex, const glm::mat4& transform) {
+        const std::shared_ptr<MultiMesh> placed = multiMeshFor(meshIndex);
+        if (!placed) return;
+        for (const MultiMeshPart& part : placed->parts())
+            model->add(part.mesh, transform * part.localTransform);
     };
 
     if (asset.scenes.empty()) {
         /* An asset may carry meshes with no scene. */
         for (size_t m = 0; m < asset.meshes.size(); ++m)
-            addObject(m, glm::mat4{1.0f});
+            addInstance(m, glm::mat4{1.0f});
     } else {
         const size_t sceneIndex = asset.defaultScene.value_or(0);
         fastgltf::iterateSceneNodes(
             asset, sceneIndex, fastgltf::math::fmat4x4{},
             [&](const fastgltf::Node& node, const fastgltf::math::fmat4x4& world) {
                 if (node.meshIndex.has_value())
-                    addObject(*node.meshIndex, toGlm(world));
+                    addInstance(*node.meshIndex, toGlm(world));
             });
     }
 
-    if (out.empty()) {
+    if (model->empty()) {
         logError("GltfLoader: " + path.string() + " produced no drawable meshes");
-        return false;
+        return nullptr;
     }
 
-    size_t parts = 0;
-    for (const MultiMesh& object : out) parts += object.size();
-    logMessage("GltfLoader: " + path.filename().string() + " -> " +
-               std::to_string(out.size()) + " objects, " +
-               std::to_string(parts) + " parts");
-    return true;
+    logMessage("GltfLoader: " + path.filename().string() + " -> one model, " +
+               std::to_string(model->size()) + " parts");
+    return model;
 }

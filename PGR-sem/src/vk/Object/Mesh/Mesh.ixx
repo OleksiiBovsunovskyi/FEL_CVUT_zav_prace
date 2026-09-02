@@ -1,6 +1,7 @@
 module;
 #include <vulkan/vulkan.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -11,7 +12,7 @@ export module Mesh;
 
 export import GPUTypes;
 export import VK_Material;
-import VK_Buffers;
+import BufferManager;
 
 /// Local-space bounding sphere of an entire mesh.
 export struct MeshBounds {
@@ -47,7 +48,7 @@ export struct MeshUploadData {
  * One geometry primitive using one material.
  *
  * Owns a persistent allocation in every static geometry mega-buffer; destroying
- * or replacing it retires them through VK_buffers. Transforms, visibility and
+ * or replacing it retires them through BufferManager. Transforms, visibility and
  * scene hierarchy live in render/transform components.
  */
 export class Mesh {
@@ -64,33 +65,33 @@ public:
     Mesh& operator=(Mesh&&) noexcept = default;
 
     /**
-     * Allocates static mega-buffer ranges and records staging copies.
+     * Allocates the mesh's MeshData blob and records the copy into it.
      *
-     * The command buffer must be recording and VK_buffers must be initialized.
+     * The command buffer must be recording and BufferManager must be initialized.
      * The material is uploaded automatically if needed.
      * Calling it on an uploaded Mesh returns false.
      *
      * All-or-nothing: every allocation and host copy precedes the first vkCmd*
-     * call. A failed call still consumes staging space until the next
-     * VK_buffers::resetUpload().
+     * call. A failed call still consumes upload space until the next
+     * BufferManager::resetUpload().
      *
      * @return true when every allocation and copy was recorded.
      */
-    bool upload(VK_buffers& buffers, VkCommandBuffer commandBuffer,
+    bool upload(BufferManager& buffers, VkCommandBuffer commandBuffer,
                 const MeshUploadData& data,
                 std::shared_ptr<Material> material);
 
-    /// @return true once the mesh is in the GPU record.
+    /// @return true once the mesh's blob is on the GPU.
     [[nodiscard]] bool uploaded() const {
-        return static_cast<bool>(gpuRecord_);
+        return static_cast<bool>(blob_);
     }
 
     /**
      * Call only after uploaded().
-     * @return element index of this mesh's GPUMesh record, or
-     *         INVALID_GPU_MESH_INDEX before upload.
+     * @return address of this mesh's GPUMeshHeader, or a null pointer before
+     *         upload.
      */
-    [[nodiscard]] uint32_t getGpuIndex() const;
+    [[nodiscard]] MeshDataPointer header() const;
 
     /// @return the mesh's local-space bounding sphere.
     [[nodiscard]] const MeshBounds& bounds() const { return bounds_; }
@@ -110,13 +111,8 @@ public:
     }
 
 private:
-    BufferAllocation vertices_{};
-    BufferAllocation meshlets_{};
-    BufferAllocation meshletVertexIndices_{};
-    BufferAllocation meshletTriangles_{};
-    BufferAllocation clusters_{};
-    BufferAllocation clusterGroups_{};
-    BufferAllocation gpuRecord_{};
+    /// Header, meshlets, both index arrays and vertices, in one range.
+    DeviceArray<std::byte> blob_{};
 
     std::shared_ptr<Material> material_;
     MeshBounds bounds_{};

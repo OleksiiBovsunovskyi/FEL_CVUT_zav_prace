@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\obols\Documents\PGR_BC\PGR-sem\src\cmake-build-debug-clang\CMakeFiles\a92af96bcae8c31d7561edc1e7355385\INSTALL_force.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{14640133-07E8-318C-9E5B-1A5FBB1ED86E}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
