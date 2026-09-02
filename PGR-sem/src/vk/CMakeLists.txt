@@ -204,6 +204,9 @@ add_executable(pgr-vk
         Debug/ShaderPrint.cpp
         Object/DrawList.cpp
         Object/Component.cpp
+        Object/Object.cpp
+        # Compile-time checks; no runtime presence.
+        Tests/TestEventsHandling.cpp
         Object/RenderComponent.cpp
         Object/CameraComponent.cpp
         Scene/Scene.cpp
@@ -244,6 +247,9 @@ target_sources(pgr-vk PRIVATE
         # names Component and Scene, Scene names Object and CameraComponent.
         # Transformable is the base both Object and Component derive from.
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Transformable.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/Subscribers.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/EventCapable.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/Event.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Component.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Object.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/CameraComponent.ixx"

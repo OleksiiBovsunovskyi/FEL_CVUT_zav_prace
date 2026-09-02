@@ -102,6 +102,7 @@ void VulkanApp::run() {
     window_.setResizeCallback([this](int, int) { frames_.notifyResized(); });
     window_.setUICallback([this] { drawUI(); });
     window_.setDrawCallback([this] {
+        scene_.tick(elapseFrame());
         updateCamera();
         frames_.drawFrame([this](VkCommandBuffer cmd, const RenderTarget& target) {
             recordFrame(cmd, target);
@@ -213,6 +214,16 @@ void VulkanApp::frameScene() {
     }
 
     updateCamera();
+}
+
+float VulkanApp::elapseFrame() {
+    const int now = window_.getElapsedMs();
+    const int delta = now - lastFrameMs_;
+    lastFrameMs_ = now;
+
+
+    if (delta <= 0 || delta > MAX_FRAME_MS) return 0.0f;
+    return static_cast<float>(delta) * 0.001f;
 }
 
 void VulkanApp::updateCamera() {

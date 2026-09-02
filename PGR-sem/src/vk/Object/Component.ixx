@@ -4,6 +4,7 @@ module;
 export module VkScene:Component;
 
 export import :Transformable;
+export import :EventCapable;
 
 export class Object;
 
@@ -12,7 +13,7 @@ export class Object;
  *
  * Owned by the Object through a pointer
  */
-export class Component : public Transformable {
+export class Component : public Transformable, public EventCapable {
 public:
     Component() = default;
     virtual ~Component() = default;

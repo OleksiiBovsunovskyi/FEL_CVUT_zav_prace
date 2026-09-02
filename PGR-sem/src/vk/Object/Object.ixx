@@ -9,16 +9,16 @@ export module VkScene:Object;
 
 export import :Component;
 export import :Transformable;
+export import :Event;
 
 export class Scene;
 
 /**
  * Something placed in the world.
  *
- * Owns its transform and its components, and knows nothing about what any of
- * them do or what they registered themselves with.
+ * Owns its transform and its components.
  */
-export class Object : public Transformable {
+export class Object : public Transformable, public EventCapable {
 public:
     Object() = default;
     explicit Object(const glm::mat4& transform) : Transformable(transform) {}
@@ -35,8 +35,7 @@ public:
     /**
      * Takes ownership of a constructed component.
      *
-     * @return the stored component, whose address is stable for the Object's
-     *         life.
+     * @return the stored component.
      */
     template <typename T>
     T& addComponent(T component) {
@@ -44,8 +43,21 @@ public:
         T&   stored   = *owned;
         stored.owner_ = this;
         components_.push_back(std::move(owned));
+        
+        //Events component is subscribed to are defined by its declared methods.
+        //For example public: void onTick(float dt);  
+        pendingSubscriptions_.subscribe(stored);
 
         components_.back()->onWorldTransformChanged();
+        //!TODO: This seems like potential point of failure
+        /* A component added after the Object joined a Scene missed the call
+         * that lets it register itself, so it gets it here instead - and its
+         * subscriptions have somewhere to go immediately. */
+        if (scene_) {
+            components_.back()->onAddedToScene();
+            flushSubscriptions();
+        }
+
         return stored;
     }
 
@@ -66,7 +78,10 @@ public:
     [[nodiscard]] Scene* getScene() const { return scene_; }
 
 protected:
-    /// Every component composes from this, so every one of them is now stale.
+    /**
+     * Called when object transform changed
+     * Notifies all the components owned
+     */
     void onTransformChanged() override {
         for (auto& component : components_) component->onWorldTransformChanged();
     }
@@ -74,12 +89,20 @@ protected:
 private:
     friend class Scene;
 
-    /// Called by Scene::addObject, once the Object belongs to the Scene.
-    void onAddedToScene(Scene& scene) {
-        scene_ = &scene;
-        for (auto& component : components_) component->onAddedToScene();
-    }
+
+    /**Called after object is added to the scene
+     * @param scene - scene object was added to
+     */
+    void onAddedToScene(Scene& scene);
+
+    /// Hands everything subscribed so far to the Scene, if there is one yet.
+    void flushSubscriptions();
 
     std::vector<std::unique_ptr<Component>> components_;
     Scene*                                  scene_ = nullptr;
+
+    /* Where subscriptions wait while this Object has no Scene to put them in.
+     * Empty from the moment it joins one, since everything after that routes
+     * straight through. */
+    AllEventSubscriptions pendingSubscriptions_;
 };

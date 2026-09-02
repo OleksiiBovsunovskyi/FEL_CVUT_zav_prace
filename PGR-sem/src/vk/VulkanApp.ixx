@@ -143,8 +143,12 @@ private:
         }
     };
 
+    /// A gap longer than this is a stall, not a frame; the tick gets 0 instead.
+    static constexpr int MAX_FRAME_MS = 250;
+
     uint32_t              maxFrames_   = 0;
     uint32_t              framesDrawn_ = 0;
+    int                   lastFrameMs_ = 0;
     Scene                 scene_;
     glm::vec3             sceneCenter_{0.0f};
     float                 sceneRadius_ = 1.0f;
@@ -172,6 +176,12 @@ private:
      * !TODO: make proper player and remove orbit
      */
     void updateCamera();
+
+    /**
+     * @return seconds since the previous frame, 0 when there is no previous
+     *         one or the gap is too long to integrate against.
+     */
+    [[nodiscard]] float elapseFrame();
 
     /**
      * Refills drawList_ from the scene, then flattens it into one GPUMeshInstance per
