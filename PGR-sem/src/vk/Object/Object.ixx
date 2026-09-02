@@ -8,6 +8,7 @@ module;
 export module VkScene:Object;
 
 export import :Component;
+export import :Transformable;
 
 export class Scene;
 
@@ -17,44 +18,19 @@ export class Scene;
  * Owns its transform and its components, and knows nothing about what any of
  * them do or what they registered themselves with.
  */
-export class Object {
+export class Object : public Transformable {
 public:
     Object() = default;
-    explicit Object(const glm::mat4& transform) : transform_(transform) {}
+    explicit Object(const glm::mat4& transform) : Transformable(transform) {}
 
-    /// Components are uniquely owned.
+    /**Moving an object would invalidate pointers to that object**/
     Object(const Object&)            = delete;
     Object& operator=(const Object&) = delete;
+    Object(Object&&)                 = delete;
+    Object& operator=(Object&&)      = delete;
 
-    /* A moved Object leaves its components where they are, so each one has to
-     * be told where its owner went. This is what lets a Scene keep Objects in
-     * a vector. */
-    Object(Object&& other) noexcept
-        : transform_(other.transform_),
-          components_(std::move(other.components_)),
-          scene_(other.scene_) {
-        repointComponents();
-    }
-    Object& operator=(Object&& other) noexcept {
-        if (this != &other) {
-            transform_  = other.transform_;
-            components_ = std::move(other.components_);
-            scene_      = other.scene_;
-            repointComponents();
-        }
-        return *this;
-    }
-
-    ~Object() = default;
-
-    /// Model-to-world.
-    [[nodiscard]] const glm::mat4& getTransform() const { return transform_; }
-
-    /// Tells every component, so anything derived from the transform follows.
-    void setTransform(const glm::mat4& transform) {
-        transform_ = transform;
-        for (auto& component : components_) component->onOwnerTransformChanged();
-    }
+    /// Virtual: a Scene owns Objects through unique_ptr<Object>.
+    virtual ~Object() = default;
 
     /**
      * Takes ownership of a constructed component.
@@ -69,10 +45,7 @@ public:
         stored.owner_ = this;
         components_.push_back(std::move(owned));
 
-        /* The component was built before it had an owner, so anything it
-         * derives from the transform is one call behind. Through the base,
-         * which is what Object is a friend of. */
-        components_.back()->onOwnerTransformChanged();
+        components_.back()->onWorldTransformChanged();
         return stored;
     }
 
@@ -89,26 +62,24 @@ public:
     /**
      * The Scene this Object belongs to, or null before it joins one. A
      * component reaches the world through it.
-     *
-     * Whatever removes an Object from a Scene must null this on the way out:
-     * a stale pointer is indistinguishable from a live one.
      */
     [[nodiscard]] Scene* getScene() const { return scene_; }
+
+protected:
+    /// Every component composes from this, so every one of them is now stale.
+    void onTransformChanged() override {
+        for (auto& component : components_) component->onWorldTransformChanged();
+    }
 
 private:
     friend class Scene;
 
-    /// Called by Scene::addObject, once the Object is at its final address.
+    /// Called by Scene::addObject, once the Object belongs to the Scene.
     void onAddedToScene(Scene& scene) {
         scene_ = &scene;
         for (auto& component : components_) component->onAddedToScene();
     }
 
-    void repointComponents() {
-        for (auto& component : components_) component->owner_ = this;
-    }
-
-    glm::mat4                               transform_{1.0f};
     std::vector<std::unique_ptr<Component>> components_;
     Scene*                                  scene_ = nullptr;
 };

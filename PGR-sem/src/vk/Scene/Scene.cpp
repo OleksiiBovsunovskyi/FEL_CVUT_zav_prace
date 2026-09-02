@@ -1,10 +1,11 @@
 module;
+#include <memory>
 #include <utility>
 
 module VkScene;
 
-Object& Scene::addObject(Object object) {
-    Object& stored = objects_.emplace_back(std::move(object));
+Object& Scene::addObject(std::unique_ptr<Object> object) {
+    Object& stored = *objects_.emplace_back(std::move(object));
 
     /* Entering the scene is what lets a component register itself; an Object
      * built and never added draws nothing. */

@@ -30,6 +30,12 @@ constexpr char WIN_TITLE[] = "PGR_VK";
 
 constexpr char SHADER_DIR[] = "Shaders";
 
+
+static_assert(DEPTH_CLEAR == 0.0f,
+              "CameraComponent::viewProjection swaps near and far, so the far "
+              "plane is 0 and DEPTH_CLEAR must clear to it; VkUtil's "
+              "DEPTH_COMPARE_OP has to be a GREATER one to match");
+
 void check(VkResult r, const char* what) {
     if (r != VK_SUCCESS)
         throw std::runtime_error(std::string(what) + " failed: VkResult " + std::to_string(r));
@@ -96,6 +102,7 @@ void VulkanApp::run() {
     window_.setResizeCallback([this](int, int) { frames_.notifyResized(); });
     window_.setUICallback([this] { drawUI(); });
     window_.setDrawCallback([this] {
+        updateCamera();
         frames_.drawFrame([this](VkCommandBuffer cmd, const RenderTarget& target) {
             recordFrame(cmd, target);
         });
@@ -191,32 +198,36 @@ void VulkanApp::frameScene() {
         }
     }
 
-    if (min.x > max.x) { sceneCenter_ = glm::vec3{0.0f}; sceneRadius_ = 1.0f; return; }
+    if (min.x > max.x) {
+        sceneCenter_ = glm::vec3{0.0f};
+        sceneRadius_ = 1.0f;
+    } else {
+        sceneCenter_ = (min + max) * 0.5f;
+        sceneRadius_ = std::max(glm::length(max - min) * 0.5f, 1e-3f);
+    }
 
-    sceneCenter_ = (min + max) * 0.5f;
-    sceneRadius_ = std::max(glm::length(max - min) * 0.5f, 1e-3f);
+    if (!scene_.getActiveCamera()) {
+        auto camera = std::make_unique<Object>();
+        camera->addComponent(CameraComponent{});
+        scene_.addObject(std::move(camera));
+    }
+
+    updateCamera();
 }
 
-glm::mat4 VulkanApp::viewProjection(VkExtent2D extent) const {
-    const float aspect = static_cast<float>(extent.width) /
-                         static_cast<float>(std::max(extent.height, 1u));
+void VulkanApp::updateCamera() {
+    CameraComponent* camera = scene_.getActiveCamera();
+    if (!camera) return;
 
     const float angle    = static_cast<float>(window_.getElapsedMs()) * 0.0004f;
     const float distance = sceneRadius_ * 2.5f;
     const glm::vec3 eye = sceneCenter_ + distance * glm::vec3{
         std::cos(angle), 0.45f, std::sin(angle) };
 
-    const glm::mat4 view =
-        glm::lookAt(eye, sceneCenter_, glm::vec3{0.0f, 1.0f, 0.0f});
-
-    /* Reverse-Z: near and far swapped. */
-    glm::mat4 projection = glm::perspective(
-        glm::radians(60.0f), aspect, sceneRadius_ * 20.0f, sceneRadius_ * 0.01f);
-
-    /* Vulkan clip space has +Y down. */
-    projection[1][1] *= -1.0f;
-
-    return projection * view;
+    /* The Object's transform is where the camera is, not what it looks like
+     * from there, so the view matrix lookAt builds is inverted back out. */
+    camera->getOwner().setTransform(glm::inverse(
+        glm::lookAt(eye, sceneCenter_, glm::vec3{0.0f, 1.0f, 0.0f})));
 }
 
 std::vector<GPUMeshInstance> VulkanApp::collectMeshInstances() {
@@ -301,6 +312,11 @@ void VulkanApp::buildDrawCommands(VkCommandBuffer cmd, VkExtent2D extent) {
     buffers_.resetFrame(frame);
     pendingDraw_ = {};
 
+    /* No fallback matrix: an identity one would render as a rendering bug
+     * instead of as a missing camera. */
+    const CameraComponent* camera = scene_.getActiveCamera();
+    if (!camera) return;
+
     const std::vector<GPUMeshInstance> instances = collectMeshInstances();
     if (instances.empty()) return;
 
@@ -314,7 +330,9 @@ void VulkanApp::buildDrawCommands(VkCommandBuffer cmd, VkExtent2D extent) {
     std::memcpy(spans.instances.host, instances.data(),
                 instances.size() * sizeof(GPUMeshInstance));
 
-    const glm::mat4 viewProj = viewProjection(extent);
+    const float aspect = static_cast<float>(extent.width) /
+                         static_cast<float>(std::max(extent.height, 1u));
+    const glm::mat4 viewProj = camera->viewProjection(aspect);
     recordBuildDrawCommands(cmd, spans, viewProj, instanceCount);
 
     pendingDraw_.commands    = spans.commands.region;

@@ -162,10 +162,16 @@ private:
 
     void drawUI();
 
-    /// Fits the camera to the loaded scene.
+    /**
+     * Measures the scene and gives it a camera if it has none. The bounds are
+     * what the orbit is sized from; the camera itself is an ordinary Object.
+     */
     void frameScene();
 
-    [[nodiscard]] glm::mat4 viewProjection(VkExtent2D extent) const;
+    /**
+     * !TODO: make proper player and remove orbit
+     */
+    void updateCamera();
 
     /**
      * Refills drawList_ from the scene, then flattens it into one GPUMeshInstance per

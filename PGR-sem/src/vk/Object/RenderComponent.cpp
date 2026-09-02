@@ -9,9 +9,9 @@ void RenderComponent::onAddedToScene() {
 
     /* Assigning drops any previous entry through the moved-from handle. */
     handle_ = scene->getDrawList().add(
-        DrawItem{multiMesh_, getOwner().getTransform(), isVisible_});
+        DrawItem{multiMesh_, getWorldTransform(), isVisible_});
 }
 
-void RenderComponent::onOwnerTransformChanged() {
-    handle_.setTransform(getOwner().getTransform());
+void RenderComponent::onWorldTransformChanged() {
+    handle_.setTransform(getWorldTransform());
 }

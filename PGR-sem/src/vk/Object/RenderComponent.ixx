@@ -40,7 +40,7 @@ protected:
     /// Takes the Scene's DrawList and adds the entry that makes this exist.
     void onAddedToScene() override;
 
-    void onOwnerTransformChanged() override;
+    void onWorldTransformChanged() override;
 
 private:
     std::shared_ptr<MultiMesh> multiMesh_;

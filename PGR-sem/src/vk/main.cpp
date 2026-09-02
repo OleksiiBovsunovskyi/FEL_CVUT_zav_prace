@@ -30,8 +30,8 @@ int main(int argc, char** argv) {
             return EXIT_FAILURE;
         }
 
-        Object object{};
-        object.addComponent(RenderComponent{std::move(model)});
+        auto object = std::make_unique<Object>();
+        object->addComponent(RenderComponent{std::move(model)});
         app.getScene().addObject(std::move(object));
 
         app.run();

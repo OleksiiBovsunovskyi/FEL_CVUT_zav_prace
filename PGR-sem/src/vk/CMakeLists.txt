@@ -203,7 +203,9 @@ add_executable(pgr-vk
         Core/MeshDraw.cpp
         Debug/ShaderPrint.cpp
         Object/DrawList.cpp
+        Object/Component.cpp
         Object/RenderComponent.cpp
+        Object/CameraComponent.cpp
         Scene/Scene.cpp
         Object/Material/Material.cpp
         Object/Mesh/Mesh.cpp
@@ -238,10 +240,13 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/MeshDraw.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Debug/ShaderPrint.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/DrawList.ixx"
-        # VkScene and its two partitions: Component names Object and Scene,
-        # Object names Component and Scene, Scene names Object.
+        # VkScene and its partitions: Component names Object and Scene, Object
+        # names Component and Scene, Scene names Object and CameraComponent.
+        # Transformable is the base both Object and Component derive from.
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/Transformable.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Component.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Object.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/CameraComponent.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Scene/Scene.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/RenderComponent.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Material/Material.ixx"
