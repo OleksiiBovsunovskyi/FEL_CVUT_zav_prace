@@ -1,6 +1,7 @@
 module;
 #include <VkBootstrap.h>
-#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.hpp>
 
 #include <functional>
 #include <string>
@@ -37,13 +38,16 @@ public:
     }
     void shutdown();
 
-    VkInstance         instance()            const { return vkbInstance_.instance; }
-    VkPhysicalDevice   physicalDevice()      const { return vkbDevice_.physical_device; }
-    VkDevice           device()              const { return vkbDevice_.device; }
-    VkSurfaceKHR       surface()             const { return surface_; }
-    VkQueue            graphicsQueue()       const { return graphicsQueue_; }
+    vk::Instance       instance()            const { return vkbInstance_.instance; }
+    /// vkb::PhysicalDevice converts to the handle, so the cast picks that out.
+    vk::PhysicalDevice physicalDevice()      const {
+        return static_cast<VkPhysicalDevice>(vkbDevice_.physical_device);
+    }
+    vk::Device         device()              const { return vkbDevice_.device; }
+    vk::SurfaceKHR     surface()             const { return surface_; }
+    vk::Queue          graphicsQueue()       const { return graphicsQueue_; }
     uint32_t           graphicsQueueFamily() const { return graphicsQueueFamily_; }
-    VmaAllocator       allocator()           const { return allocator_; }
+    vma::Allocator     allocator()           const { return allocator_; }
     const std::string& gpuName()             const { return gpuName_; }
 
     /// vkb::SwapchainBuilder takes a vkb::Device.
@@ -64,9 +68,9 @@ private:
     vkb::Device   vkbDevice_{};
     VkSurfaceKHR  surface_ = VK_NULL_HANDLE;
 
-    VkQueue     graphicsQueue_       = VK_NULL_HANDLE;
-    uint32_t    graphicsQueueFamily_ = 0;
-    VmaAllocator allocator_          = nullptr;
+    VkQueue        graphicsQueue_       = VK_NULL_HANDLE;
+    uint32_t       graphicsQueueFamily_ = 0;
+    vma::Allocator allocator_           = nullptr;
 
     std::string gpuName_;
 

@@ -1,6 +1,6 @@
 module;
-#include <vulkan/vulkan.h>
-#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.hpp>
 
 #include <array>
 #include <cstdint>
@@ -27,14 +27,14 @@ public:
      * Records this frame's work. The command buffer is begun and ended by the
      * caller; the target is renderable on entry and presented on return.
      */
-    using RecordFn = std::function<void(VkCommandBuffer, const RenderTarget&)>;
+    using RecordFn = std::function<void(vk::CommandBuffer, const RenderTarget_Old&)>;
 
     /**
      * Fired from inside drawFrame() after a swapchain rebuild. Extent changes
      * need no pipeline rebuild; a format change invalidates every pipeline
      * built against it.
      */
-    using SwapchainRecreatedFn = std::function<void(VkExtent2D, VkFormat)>;
+    using SwapchainRecreatedFn = std::function<void(vk::Extent2D, vk::Format)>;
 
     FrameRunner() = default;
     ~FrameRunner() = default;
@@ -92,26 +92,26 @@ private:
      * One per frame in flight. Concurent frames should not share.
      */
     struct DepthImage {
-        VkImage       image      = VK_NULL_HANDLE;
-        VmaAllocation allocation = nullptr;
-        VkImageView   view       = VK_NULL_HANDLE;
+        vk::Image       image      = nullptr;
+        vma::Allocation allocation = nullptr;
+        vk::ImageView   view       = nullptr;
     };
 
     VulkanContext* ctx_       = nullptr;
     Swapchain*     swapchain_ = nullptr;
-    VkDevice       device_    = VK_NULL_HANDLE;
+    vk::Device     device_    = nullptr;
 
-    VkCommandPool commandPool_ = VK_NULL_HANDLE;
-    std::array<VkCommandBuffer, FRAMES_IN_FLIGHT> commandBuffers_{};
-    std::array<VkFence,         FRAMES_IN_FLIGHT> inFlightFences_{};
-    std::array<VkSemaphore,     FRAMES_IN_FLIGHT> imageAvailable_{};
-    std::array<DepthImage,      FRAMES_IN_FLIGHT> depthImages_{};
+    vk::CommandPool commandPool_ = nullptr;
+    std::array<vk::CommandBuffer, FRAMES_IN_FLIGHT> commandBuffers_{};
+    std::array<vk::Fence,         FRAMES_IN_FLIGHT> inFlightFences_{};
+    std::array<vk::Semaphore,     FRAMES_IN_FLIGHT> imageAvailable_{};
+    std::array<DepthImage,        FRAMES_IN_FLIGHT> depthImages_{};
 
     /// One per swapchain image.
-    std::vector<VkSemaphore> renderFinished_;
+    std::vector<vk::Semaphore> renderFinished_;
 
-    VkSemaphore timeline_       = VK_NULL_HANDLE;
-    uint64_t    submittedSerial_ = 0;
+    vk::Semaphore timeline_       = nullptr;
+    uint64_t      submittedSerial_ = 0;
 
     uint32_t currentFrame_       = 0;
     bool     framebufferResized_ = false;
@@ -122,7 +122,7 @@ private:
     /**
      * Logs, and latches deviceLost_ on VK_ERROR_DEVICE_LOST
      */
-    bool checkResult(VkResult r, const char* what);
+    bool checkResult(vk::Result r, const char* what);
 
     /**
      * For the stretch between resetting the fence and the submit that signals
@@ -130,7 +130,7 @@ private:
      *
      * @return false on device loss; anything else throws.
      */
-    bool checkFatal(VkResult r, const char* what);
+    bool checkFatal(vk::Result r, const char* what);
 
     bool createCommandObjects();
     bool createSyncObjects();
@@ -144,5 +144,5 @@ private:
 
     bool recreateSwapchain();
 
-    bool recordAndSubmit(VkCommandBuffer cmd, uint32_t imageIndex, const RecordFn& record);
+    bool recordAndSubmit(vk::CommandBuffer cmd, uint32_t imageIndex, const RecordFn& record);
 };

@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module UploadBatch;
 
@@ -14,7 +14,7 @@ import BufferManager;
  * runs that command, which is why that space is released by submitAndWait()
  * alone.
  *
- *     VkCommandBuffer cmd = batch.begin();
+ *     vk::CommandBuffer cmd = batch.begin();
  *     mesh.upload(buffers, cmd, data, material);   // records, copies nothing
  *     batch.submitAndWait();                       // runs it, frees the space
  *
@@ -35,8 +35,8 @@ public:
     bool init(VulkanContext& ctx, BufferManager& buffers);
     void destroy();
 
-    /// VK_NULL_HANDLE on failure or if a batch is already open.
-    [[nodiscard]] VkCommandBuffer begin();
+    /// nullptr on failure or if a batch is already open.
+    [[nodiscard]] vk::CommandBuffer begin();
 
     /**
      * Ends recording, submits, blocks until the GPU is done, then releases the
@@ -49,13 +49,13 @@ public:
     [[nodiscard]] bool recording() const { return recording_; }
 
 private:
-    VulkanContext* ctx_     = nullptr;
-    BufferManager* buffers_ = nullptr;
-    VkDevice       device_  = VK_NULL_HANDLE;
+    VulkanContext*   ctx_     = nullptr;
+    BufferManager*   buffers_ = nullptr;
+    vk::Device       device_  = nullptr;
 
-    VkCommandPool   commandPool_   = VK_NULL_HANDLE;
-    VkCommandBuffer commandBuffer_ = VK_NULL_HANDLE;
-    VkFence         fence_         = VK_NULL_HANDLE;
+    vk::CommandPool   commandPool_   = nullptr;
+    vk::CommandBuffer commandBuffer_ = nullptr;
+    vk::Fence         fence_         = nullptr;
 
     bool recording_ = false;
 };

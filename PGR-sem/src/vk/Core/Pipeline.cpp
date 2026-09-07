@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <string>
@@ -9,109 +9,99 @@ module Pipeline;
 import Logger;
 import VkUtil;
 
-VkPipelineShaderStageCreateInfo shaderStage(VkShaderStageFlagBits stage,
-                                             VkShaderModule module) {
-    VkPipelineShaderStageCreateInfo info{};
-    info.sType  = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+vk::PipelineShaderStageCreateInfo shaderStage(vk::ShaderStageFlagBits stage,
+                                               vk::ShaderModule module) {
+    vk::PipelineShaderStageCreateInfo info{};
     info.stage  = stage;
     info.module = module;
     info.pName  = "main";
     return info;
 }
 
-VkPipeline createComputePipeline(VkDevice device, VkPipelineLayout layout,
-                                 VkShaderModule shader) {
+vk::Pipeline createComputePipeline(vk::Device device, vk::PipelineLayout layout,
+                                   vk::ShaderModule shader) {
     if (!device || !layout || !shader) {
         logError("createComputePipeline: device, layout and shader are required");
-        return VK_NULL_HANDLE;
+        return nullptr;
     }
 
-    const VkPipelineShaderStageCreateInfo stage =
-        shaderStage(VK_SHADER_STAGE_COMPUTE_BIT, shader);
+    const vk::PipelineShaderStageCreateInfo stage =
+        shaderStage(vk::ShaderStageFlagBits::eCompute, shader);
 
-    VkComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType  = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    vk::ComputePipelineCreateInfo pipelineInfo{};
     pipelineInfo.stage  = stage;
     pipelineInfo.layout = layout;
 
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    const VkResult r = vkCreateComputePipelines(
-        device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
-    if (r != VK_SUCCESS) {
-        logError("createComputePipeline: vkCreateComputePipelines failed: VkResult " +
-                 std::to_string(r));
-        return VK_NULL_HANDLE;
+    vk::Pipeline pipeline = nullptr;
+    const vk::Result r = device.createComputePipelines(
+        nullptr, 1, &pipelineInfo, nullptr, &pipeline);
+    if (r != vk::Result::eSuccess) {
+        logError("createComputePipeline: createComputePipelines failed: " +
+                 vk::to_string(r));
+        return nullptr;
     }
     return pipeline;
 }
 
-VkPipeline createMeshPipeline(VkDevice device, VkPipelineLayout layout,
-                              VkShaderModule meshShader,
-                              VkShaderModule fragmentShader,
-                              VkFormat colorFormat, VkFormat depthFormat) {
+vk::Pipeline createMeshPipeline(vk::Device device, vk::PipelineLayout layout,
+                                vk::ShaderModule meshShader,
+                                vk::ShaderModule fragmentShader,
+                                vk::Format colorFormat, vk::Format depthFormat) {
     if (!device || !layout || !meshShader || !fragmentShader) {
         logError("createMeshPipeline: device, layout and both shaders are required");
-        return VK_NULL_HANDLE;
+        return nullptr;
     }
 
-    const VkPipelineShaderStageCreateInfo stages[]{
-        shaderStage(VK_SHADER_STAGE_MESH_BIT_EXT, meshShader),
-        shaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragmentShader),
+    const vk::PipelineShaderStageCreateInfo stages[]{
+        shaderStage(vk::ShaderStageFlagBits::eMeshEXT, meshShader),
+        shaderStage(vk::ShaderStageFlagBits::eFragment, fragmentShader),
     };
 
     /* A mesh pipeline has no vertex input or input assembly state at all. */
-    VkPipelineViewportStateCreateInfo viewport{};
-    viewport.sType         = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    vk::PipelineViewportStateCreateInfo viewport{};
     viewport.viewportCount = 1;
     viewport.scissorCount  = 1;
 
-    VkPipelineRasterizationStateCreateInfo raster{};
-    raster.sType       = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    raster.polygonMode = VK_POLYGON_MODE_FILL;
-    raster.cullMode    = VK_CULL_MODE_BACK_BIT;
-    raster.frontFace   = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    vk::PipelineRasterizationStateCreateInfo raster{};
+    raster.polygonMode = vk::PolygonMode::eFill;
+    raster.cullMode    = vk::CullModeFlagBits::eBack;
+    raster.frontFace   = vk::FrontFace::eCounterClockwise;
     raster.lineWidth   = 1.0f;
 
-    VkPipelineMultisampleStateCreateInfo multisample{};
-    multisample.sType                = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    vk::PipelineMultisampleStateCreateInfo multisample{};
+    multisample.rasterizationSamples = vk::SampleCountFlagBits::e1;
 
     /* Reverse-Z: the far plane is 0, so a nearer fragment compares greater. */
-    VkPipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.sType            = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable  = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
+    vk::PipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.depthTestEnable  = vk::True;
+    depthStencil.depthWriteEnable = vk::True;
     depthStencil.depthCompareOp   = DEPTH_COMPARE_OP;
     depthStencil.maxDepthBounds   = 1.0f;
 
-    VkPipelineColorBlendAttachmentState blendAttachment{};
+    vk::PipelineColorBlendAttachmentState blendAttachment{};
     blendAttachment.colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+        vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
 
-    VkPipelineColorBlendStateCreateInfo blend{};
-    blend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    vk::PipelineColorBlendStateCreateInfo blend{};
     blend.attachmentCount = 1;
     blend.pAttachments    = &blendAttachment;
 
     /* The swapchain resizes, so neither is baked into the pipeline. */
-    const VkDynamicState dynamicStates[]{
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR,
+    const vk::DynamicState dynamicStates[]{
+        vk::DynamicState::eViewport,
+        vk::DynamicState::eScissor,
     };
-    VkPipelineDynamicStateCreateInfo dynamic{};
-    dynamic.sType             = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    vk::PipelineDynamicStateCreateInfo dynamic{};
     dynamic.dynamicStateCount = 2;
     dynamic.pDynamicStates    = dynamicStates;
 
-    VkPipelineRenderingCreateInfo rendering{};
-    rendering.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    vk::PipelineRenderingCreateInfo rendering{};
     rendering.colorAttachmentCount    = 1;
     rendering.pColorAttachmentFormats = &colorFormat;
     rendering.depthAttachmentFormat   = depthFormat;
 
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    vk::GraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.pNext               = &rendering;
     pipelineInfo.stageCount          = 2;
     pipelineInfo.pStages             = stages;
@@ -123,13 +113,13 @@ VkPipeline createMeshPipeline(VkDevice device, VkPipelineLayout layout,
     pipelineInfo.pDynamicState       = &dynamic;
     pipelineInfo.layout              = layout;
 
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    const VkResult r = vkCreateGraphicsPipelines(
-        device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipeline);
-    if (r != VK_SUCCESS) {
-        logError("createMeshPipeline: vkCreateGraphicsPipelines failed: VkResult " +
-                 std::to_string(r));
-        return VK_NULL_HANDLE;
+    vk::Pipeline pipeline = nullptr;
+    const vk::Result r = device.createGraphicsPipelines(
+        nullptr, 1, &pipelineInfo, nullptr, &pipeline);
+    if (r != vk::Result::eSuccess) {
+        logError("createMeshPipeline: createGraphicsPipelines failed: " +
+                 vk::to_string(r));
+        return nullptr;
     }
     return pipeline;
 }

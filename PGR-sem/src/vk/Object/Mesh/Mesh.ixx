@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -77,7 +77,7 @@ public:
      *
      * @return true when every allocation and copy was recorded.
      */
-    bool upload(BufferManager& buffers, VkCommandBuffer commandBuffer,
+    bool upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
                 const MeshUploadData& data,
                 std::shared_ptr<Material> material);
 

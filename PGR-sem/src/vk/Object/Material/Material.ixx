@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -24,7 +24,7 @@ public:
     Material& operator=(Material&&) noexcept = default;
 
     /// Allocates on first call, then updates the same record in-place.
-    bool upload(BufferManager& buffers, VkCommandBuffer commandBuffer);
+    bool upload(BufferManager& buffers, vk::CommandBuffer commandBuffer);
 
     /**
      * First half of upload(): reserves the record slot if absent, then writes
@@ -35,7 +35,7 @@ public:
                                MappedSpan<std::byte>& outUpload);
 
     /// Second half of upload(): records the copy prepare() set up.
-    void record(VkCommandBuffer commandBuffer,
+    void record(vk::CommandBuffer commandBuffer,
                 const MappedSpan<std::byte>& upload) const;
 
     [[nodiscard]] bool uploaded() const {

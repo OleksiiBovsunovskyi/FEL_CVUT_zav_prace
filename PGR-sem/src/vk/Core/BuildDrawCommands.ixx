@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -20,7 +20,7 @@ public:
     BuildDrawCommands(const BuildDrawCommands&) = delete;
     BuildDrawCommands& operator=(const BuildDrawCommands&) = delete;
 
-    [[nodiscard]] bool init(VkDevice device, ShaderLoader& shaders,
+    [[nodiscard]] bool init(vk::Device device, ShaderLoader& shaders,
                             const std::filesystem::path& shaderPath);
 
     /**
@@ -29,7 +29,7 @@ public:
      * @param push buffer addresses plus the object count, which the tail
      *        invocations of the last group exit on.
      */
-    void record(VkCommandBuffer commandBuffer,
+    void record(vk::CommandBuffer commandBuffer,
                 const BuildDrawCommandsPush& push) const;
 
     void destroy();
@@ -37,7 +37,7 @@ public:
 private:
     static constexpr uint32_t WORKGROUP_SIZE = 64;
 
-    VkDevice         device_         = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
-    VkPipeline       pipeline_       = VK_NULL_HANDLE;
+    vk::Device         device_         = nullptr;
+    vk::PipelineLayout pipelineLayout_ = nullptr;
+    vk::Pipeline       pipeline_       = nullptr;
 };

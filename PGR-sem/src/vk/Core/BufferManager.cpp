@@ -1,6 +1,6 @@
 module;
-#include <vulkan/vulkan.h>
-#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.hpp>
 
 #include <array>
 #include <cstddef>
@@ -24,11 +24,11 @@ constexpr size_t index(FrameSlotBufferKind kind) {
 
 /// Runtime form of the traits, for the loops that walk every buffer.
 struct BufferSpec {
-    const char*              name       = "";
-    VkBufferUsageFlags       usage      = 0;
-    VmaMemoryUsage           memory     = VMA_MEMORY_USAGE_AUTO;
-    VmaAllocationCreateFlags flags      = 0;
-    bool                     warnIfHost = false;
+    const char*                name       = "";
+    vk::BufferUsageFlags       usage      = {};
+    vma::MemoryUsage           memory     = vma::MemoryUsage::eAuto;
+    vma::AllocationCreateFlags flags      = {};
+    bool                       warnIfHost = false;
 };
 
 /* Instantiating over the whole enum is what makes a missing traits row a
@@ -50,7 +50,7 @@ constexpr auto FRAME_SPECS = specsOf<FrameSlotBufferTraits, FrameSlotBufferKind>
 
 constexpr BufferSpec UPLOAD_SPEC{
     "upload",
-    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    vk::BufferUsageFlagBits::eTransferSrc,
     HostDeviceReadableBuffer::memory,
     HostDeviceReadableBuffer::flags,
     HostDeviceReadableBuffer::warnIfHost,
@@ -117,66 +117,64 @@ bool BufferManager::init(VulkanContext& ctx, const GPUBufferCapacities& c) {
     return true;
 }
 
-bool BufferManager::createBuffer(MegaBuffer& out, VkDeviceSize capacity,
-                              VkBufferUsageFlags usage, VmaMemoryUsage memory,
-                              VmaAllocationCreateFlags flags, bool warnIfHost,
+bool BufferManager::createBuffer(MegaBuffer& out, vk::DeviceSize capacity,
+                              vk::BufferUsageFlags usage, vma::MemoryUsage memory,
+                              vma::AllocationCreateFlags flags, bool warnIfHost,
                               const char* debugName) {
     if (capacity == 0) {
         logError(std::string("BufferManager: zero capacity for ") + debugName);
         return false;
     }
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType       = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    vk::BufferCreateInfo bufferInfo{};
     bufferInfo.size        = capacity;
     bufferInfo.usage       = usage;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    bufferInfo.sharingMode = vk::SharingMode::eExclusive;
 
-    VmaAllocationCreateInfo allocationInfo{};
+    vma::AllocationCreateInfo allocationInfo{};
     allocationInfo.usage = memory;
     allocationInfo.flags = flags;
 
-    VmaAllocationInfo resultInfo{};
-    const VkResult result = vmaCreateBuffer(
-        allocator_, &bufferInfo, &allocationInfo,
+    vma::AllocationInfo resultInfo{};
+    const vk::Result result = allocator_.createBuffer(
+        &bufferInfo, &allocationInfo,
         &out.buffer, &out.allocation, &resultInfo);
-    if (result != VK_SUCCESS) {
+    if (result != vk::Result::eSuccess) {
         logError(std::string("BufferManager: vmaCreateBuffer failed for ") +
-                 debugName + ": VkResult " + std::to_string(result));
+                 debugName + ": VkResult " + vk::to_string(result));
         out = {};
         return false;
     }
 
     out.capacity = bufferInfo.size;
     out.mapped   = resultInfo.pMappedData;
-    vmaSetAllocationName(allocator_, out.allocation, debugName);
+    allocator_.setAllocationName(out.allocation, debugName);
 
     /* DeviceHostMapped asks for VRAM the CPU can write; without BAR space VMA
      * hands back host memory instead, and every shader read then crosses PCIe. */
     if (warnIfHost) {
-        VkMemoryPropertyFlags properties = 0;
-        vmaGetAllocationMemoryProperties(allocator_, out.allocation, &properties);
-        if ((properties & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) == 0) {
+        const vk::MemoryPropertyFlags properties =
+            allocator_.getAllocationMemoryProperties(out.allocation);
+        if (!(properties & vk::MemoryPropertyFlagBits::eDeviceLocal)) {
             logError(std::string("BufferManager: ") + debugName +
                      " asked for device-local mapped memory and got host memory; "
                      "shader reads of it cross PCIe");
         }
     }
 
-    VmaVirtualBlockCreateInfo virtualBlockInfo{};
+    vma::VirtualBlockCreateInfo virtualBlockInfo{};
     virtualBlockInfo.size = out.capacity;   // byte-addressed
-    if (vmaCreateVirtualBlock(&virtualBlockInfo, &out.virtualBlock) != VK_SUCCESS) {
+    if (vma::createVirtualBlock(&virtualBlockInfo, &out.virtualBlock) != vk::Result::eSuccess) {
         logError(std::string("BufferManager: vmaCreateVirtualBlock failed for ") +
                  debugName);
         destroyBuffer(out);
         return false;
     }
 
-    if ((usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) != 0) {
-        VkBufferDeviceAddressInfo addressInfo{};
-        addressInfo.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    if (!!(usage & vk::BufferUsageFlagBits::eShaderDeviceAddress)) {
+        vk::BufferDeviceAddressInfo addressInfo{};
         addressInfo.buffer = out.buffer;
-        out.deviceAddress  = vkGetBufferDeviceAddress(device_, &addressInfo);
+        out.deviceAddress  = device_.getBufferAddress(addressInfo);
         if (out.deviceAddress == 0) {
             logError(std::string("BufferManager: no device address for ") + debugName);
             destroyBuffer(out);
@@ -189,11 +187,11 @@ bool BufferManager::createBuffer(MegaBuffer& out, VkDeviceSize capacity,
 
 void BufferManager::destroyBuffer(MegaBuffer& buffer) {
     if (buffer.virtualBlock) {
-        vmaClearVirtualBlock(buffer.virtualBlock);
-        vmaDestroyVirtualBlock(buffer.virtualBlock);
+        buffer.virtualBlock.clearVirtualBlock();
+        buffer.virtualBlock.destroy();
     }
     if (buffer.buffer)
-        vmaDestroyBuffer(allocator_, buffer.buffer, buffer.allocation);
+        allocator_.destroyBuffer(buffer.buffer, buffer.allocation);
     buffer = {};
 }
 
@@ -210,23 +208,23 @@ void BufferManager::shutdown() {
     for (auto& buffer : staticBuffers_)
         destroyBuffer(buffer);
 
-    device_           = VK_NULL_HANDLE;
+    device_           = nullptr;
     allocator_        = nullptr;
     retirementSerial_ = 0;
 }
 
 BufferManager::RawAllocation BufferManager::allocate(
-    MegaBuffer& buffer, VkDeviceSize bytes, VkDeviceSize alignment) {
+    MegaBuffer& buffer, vk::DeviceSize bytes, vk::DeviceSize alignment) {
     if (!buffer.virtualBlock || bytes == 0) return {};
 
-    VmaVirtualAllocationCreateInfo allocationInfo{};
+    vma::VirtualAllocationCreateInfo allocationInfo{};
     allocationInfo.size      = bytes;
     allocationInfo.alignment = alignment;
 
-    VmaVirtualAllocation allocation = VK_NULL_HANDLE;
-    VkDeviceSize offset = 0;
-    if (vmaVirtualAllocate(buffer.virtualBlock, &allocationInfo,
-                           &allocation, &offset) != VK_SUCCESS)
+    vma::VirtualAllocation allocation = nullptr;
+    vk::DeviceSize offset = 0;
+    if (buffer.virtualBlock.virtualAllocate(&allocationInfo,
+                           &allocation, &offset) != vk::Result::eSuccess)
         return {};
 
     return RawAllocation{
@@ -239,7 +237,7 @@ BufferManager::RawAllocation BufferManager::allocate(
 }
 
 BufferManager::RawAllocation BufferManager::allocateStaticRaw(
-    StaticBufferKind kind, VkDeviceSize bytes, VkDeviceSize alignment) {
+    StaticBufferKind kind, vk::DeviceSize bytes, vk::DeviceSize alignment) {
     if (kind == StaticBufferKind::Count) return {};
 
     RawAllocation raw = allocate(staticBuffers_[index(kind)], bytes, alignment);
@@ -251,7 +249,7 @@ BufferManager::RawAllocation BufferManager::allocateStaticRaw(
 
 BufferManager::RawAllocation BufferManager::allocateFrameRaw(
     uint32_t frameIndex, FrameSlotBufferKind kind,
-    VkDeviceSize bytes, VkDeviceSize alignment) {
+    vk::DeviceSize bytes, vk::DeviceSize alignment) {
     if (frameIndex >= frameSlotBuffers_.size() || kind == FrameSlotBufferKind::Count)
         return {};
 
@@ -263,8 +261,8 @@ BufferManager::RawAllocation BufferManager::allocateFrameRaw(
     return raw;
 }
 
-MappedSpan<std::byte> BufferManager::allocateUpload(VkDeviceSize bytes,
-                                                 VkDeviceSize alignment) {
+MappedSpan<std::byte> BufferManager::allocateUpload(vk::DeviceSize bytes,
+                                                 vk::DeviceSize alignment) {
     if (bytes > upload_.capacity) {
         logError("BufferManager: upload request of " + std::to_string(bytes) +
                  " bytes exceeds the whole " + std::to_string(upload_.capacity) +
@@ -284,7 +282,7 @@ MappedSpan<std::byte> BufferManager::allocateUpload(VkDeviceSize bytes,
         raw, static_cast<uint32_t>(bytes));
 }
 
-VkDeviceAddress BufferManager::staticBaseAddress(StaticBufferKind kind) const {
+vk::DeviceAddress BufferManager::staticBaseAddress(StaticBufferKind kind) const {
     if (kind == StaticBufferKind::Count) return 0;
     return staticBuffers_[index(kind)].deviceAddress;
 }
@@ -294,16 +292,16 @@ BufferUsage BufferManager::staticUsage(StaticBufferKind kind) const {
 
     const MegaBuffer& buffer = staticBuffers_[index(kind)];
 
-    VmaStatistics statistics{};
+    vma::Statistics statistics{};
     if (buffer.virtualBlock)
-        vmaGetVirtualBlockStatistics(buffer.virtualBlock, &statistics);
+        statistics = buffer.virtualBlock.getVirtualBlockStatistics();
 
     return BufferUsage{STATIC_SPECS[index(kind)].name, buffer.capacity,
                        statistics.allocationBytes};
 }
 
-void BufferManager::retire(VmaVirtualBlock block,
-                        VmaVirtualAllocation allocation) {
+void BufferManager::retire(vma::VirtualBlock block,
+                        vma::VirtualAllocation allocation) {
     if (!initialized() || !block || !allocation) return;
     retired_.push_back({block, allocation, retirementSerial_});
 }
@@ -312,7 +310,7 @@ void BufferManager::collect(uint64_t completedSerial) {
     auto out = retired_.begin();
     for (auto it = retired_.begin(); it != retired_.end(); ++it) {
         if (it->serial <= completedSerial)
-            vmaVirtualFree(it->block, it->virtualAllocation);
+            it->block.virtualFree(it->virtualAllocation);
         else
             *out++ = *it;
     }
@@ -322,9 +320,9 @@ void BufferManager::collect(uint64_t completedSerial) {
 void BufferManager::resetFrame(uint32_t frameIndex) {
     if (frameIndex >= frameSlotBuffers_.size()) return;
     for (auto& buffer : frameSlotBuffers_[frameIndex])
-        if (buffer.virtualBlock) vmaClearVirtualBlock(buffer.virtualBlock);
+        if (buffer.virtualBlock) buffer.virtualBlock.clearVirtualBlock();
 }
 
 void BufferManager::resetUpload() {
-    if (upload_.virtualBlock) vmaClearVirtualBlock(upload_.virtualBlock);
+    if (upload_.virtualBlock) upload_.virtualBlock.clearVirtualBlock();
 }

@@ -1,10 +1,11 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -36,9 +37,9 @@ static_assert(DEPTH_CLEAR == 0.0f,
               "plane is 0 and DEPTH_CLEAR must clear to it; VkUtil's "
               "DEPTH_COMPARE_OP has to be a GREATER one to match");
 
-void check(VkResult r, const char* what) {
-    if (r != VK_SUCCESS)
-        throw std::runtime_error(std::string(what) + " failed: VkResult " + std::to_string(r));
+void check(vk::Result r, const char* what) {
+    if (r != vk::Result::eSuccess)
+        throw std::runtime_error(std::string(what) + " failed: " + vk::to_string(r));
 }
 
 } // namespace
@@ -104,7 +105,7 @@ void VulkanApp::run() {
     window_.setDrawCallback([this] {
         scene_.tick(elapseFrame());
         updateCamera();
-        frames_.drawFrame([this](VkCommandBuffer cmd, const RenderTarget& target) {
+        frames_.drawFrame([this](vk::CommandBuffer cmd, const RenderTarget_Old& target) {
             recordFrame(cmd, target);
         });
         //Lost device is not recoverable
@@ -119,41 +120,39 @@ void VulkanApp::run() {
 
 void VulkanApp::initImGuiVulkan() {
     /* One combined image sampler per texture; only the font atlas so far. */
-    const VkDescriptorPoolSize poolSize{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 16 };
+    const vk::DescriptorPoolSize poolSize{ vk::DescriptorType::eCombinedImageSampler, 16 };
 
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags         = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    vk::DescriptorPoolCreateInfo poolInfo{};
+    poolInfo.flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
     poolInfo.maxSets       = 16;
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes    = &poolSize;
-    check(vkCreateDescriptorPool(device_, &poolInfo, nullptr, &imguiPool_),
+    check(device_.createDescriptorPool(&poolInfo, nullptr, &imguiPool_),
           "vkCreateDescriptorPool (ImGui)");
 
-    const VkFormat colorFormat = swapchain_.format();
-    VkPipelineRenderingCreateInfo renderingInfo{};
-    renderingInfo.sType                   = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    const vk::Format colorFormat = swapchain_.format();
+    vk::PipelineRenderingCreateInfo renderingInfo{};
     renderingInfo.colorAttachmentCount    = 1;
     renderingInfo.pColorAttachmentFormats = &colorFormat;
     /**
      * ImGui does not depth test, but its pipeline must declare the same
-     * attachments as the VkRenderingInfo it is recorded into.
+     * attachments as the vk::RenderingInfo it is recorded into.
      */
     renderingInfo.depthAttachmentFormat   = DEPTH_FORMAT;
 
     ImGui_ImplVulkan_InitInfo info{};
-    info.Instance        = ctx_.instance();
-    info.PhysicalDevice  = ctx_.physicalDevice();
-    info.Device          = device_;
+    info.Instance        = static_cast<VkInstance>(ctx_.instance());
+    info.PhysicalDevice  = static_cast<VkPhysicalDevice>(ctx_.physicalDevice());
+    info.Device          = static_cast<VkDevice>(device_);
     info.QueueFamily     = ctx_.graphicsQueueFamily();
-    info.Queue           = ctx_.graphicsQueue();
-    info.DescriptorPool  = imguiPool_;
+    info.Queue           = static_cast<VkQueue>(ctx_.graphicsQueue());
+    info.DescriptorPool  = static_cast<VkDescriptorPool>(imguiPool_);
     info.MinImageCount   = swapchain_.minImageCount();
     info.ImageCount      = swapchain_.imageCount();
     info.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
     info.UseDynamicRendering       = true;
-    info.PipelineRenderingCreateInfo = renderingInfo;
-    info.CheckVkResultFn = [](VkResult r) { check(r, "ImGui Vulkan backend"); };
+    info.PipelineRenderingCreateInfo = static_cast<VkPipelineRenderingCreateInfo>(renderingInfo);
+    info.CheckVkResultFn = [](VkResult r) { check(static_cast<vk::Result>(r), "ImGui Vulkan backend"); };
 
     if (!ImGui_ImplVulkan_Init(&info))
         throw std::runtime_error("ImGui_ImplVulkan_Init failed");
@@ -271,7 +270,7 @@ VulkanApp::FrameSpans VulkanApp::allocateFrameSpans(uint32_t frameIndex,
     };
 }
 
-void VulkanApp::recordBuildDrawCommands(VkCommandBuffer cmd,
+void VulkanApp::recordBuildDrawCommands(vk::CommandBuffer cmd,
                                         const FrameSpans& spans,
                                         const glm::mat4& viewProj,
                                         uint32_t instanceCount) const {
@@ -279,10 +278,10 @@ void VulkanApp::recordBuildDrawCommands(VkCommandBuffer cmd,
 
     /* The counter is the target of the shader's atomicAdd. */
     barrier(cmd,
-            VK_PIPELINE_STAGE_2_CLEAR_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-            VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
-                VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT);
+            vk::PipelineStageFlagBits2::eClear, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eComputeShader,
+            vk::AccessFlagBits2::eShaderStorageRead |
+                vk::AccessFlagBits2::eShaderStorageWrite);
 
     BuildDrawCommandsPush push{};
     push.viewProj     = viewProj;
@@ -300,17 +299,17 @@ void VulkanApp::recordBuildDrawCommands(VkCommandBuffer cmd,
      * hazard from the command fetch.
      */
     barrier(cmd,
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT,
-            VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT |
-                VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT,
-            VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |
-                VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+            vk::PipelineStageFlagBits2::eComputeShader,
+            vk::AccessFlagBits2::eShaderStorageWrite,
+            vk::PipelineStageFlagBits2::eDrawIndirect |
+                vk::PipelineStageFlagBits2::eMeshShaderEXT,
+            vk::AccessFlagBits2::eIndirectCommandRead |
+                vk::AccessFlagBits2::eShaderStorageRead);
 }
 
-MeshDrawPush VulkanApp::makeMeshDrawPush(const FrameSpans& spans,
-                                         const glm::mat4& viewProj) const {
-    MeshDrawPush push{};
+GPUMeshDrawPush VulkanApp::makeMeshDrawPush(const FrameSpans& spans,
+                                            const glm::mat4& viewProj) const {
+    GPUMeshDrawPush push{};
     push.viewProj  = viewProj;
     push.drawData  = spans.drawData.gpu.data;
     push.instances = spans.instances.gpu.data;
@@ -318,7 +317,7 @@ MeshDrawPush VulkanApp::makeMeshDrawPush(const FrameSpans& spans,
     return push;
 }
 
-void VulkanApp::buildDrawCommands(VkCommandBuffer cmd, VkExtent2D extent) {
+void VulkanApp::buildDrawCommands(vk::CommandBuffer cmd, vk::Extent2D extent) {
     const uint32_t frame = frames_.frameIndex();
     buffers_.resetFrame(frame);
     pendingDraw_ = {};
@@ -352,43 +351,40 @@ void VulkanApp::buildDrawCommands(VkCommandBuffer cmd, VkExtent2D extent) {
     pendingDraw_.push        = makeMeshDrawPush(spans, viewProj);
 }
 
-void VulkanApp::recordFrame(VkCommandBuffer cmd, const RenderTarget& target) {
+void VulkanApp::recordFrame(vk::CommandBuffer cmd, const RenderTarget_Old& target) {
     buildDrawCommands(cmd, target.extent);
 
-    VkRenderingAttachmentInfo colorAttachment{};
-    colorAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    vk::RenderingAttachmentInfo colorAttachment{};
     colorAttachment.imageView   = target.view;
-    colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.clearValue.color = { { 0.2f, 0.1f, 0.3f, 1.0f } };  // same as the GL target
+    colorAttachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    colorAttachment.loadOp      = vk::AttachmentLoadOp::eClear;
+    colorAttachment.storeOp     = vk::AttachmentStoreOp::eStore;
+    colorAttachment.clearValue.color = std::array<float, 4>{ 0.2f, 0.1f, 0.3f, 1.0f };  // same as the GL target
 
-    VkRenderingAttachmentInfo depthAttachment{};
-    depthAttachment.sType       = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+    vk::RenderingAttachmentInfo depthAttachment{};
     depthAttachment.imageView   = target.depthView;
-    depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-    depthAttachment.loadOp      = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
+    depthAttachment.loadOp      = vk::AttachmentLoadOp::eClear;
     // Nothing reads depth back yet, so it need not survive the pass.
-    depthAttachment.storeOp     = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.storeOp     = vk::AttachmentStoreOp::eDontCare;
     depthAttachment.clearValue.depthStencil.depth = DEPTH_CLEAR;
 
-    VkRenderingInfo rendering{};
-    rendering.sType                = VK_STRUCTURE_TYPE_RENDERING_INFO;
-    rendering.renderArea           = VkRect2D{ {0, 0}, target.extent };
+    vk::RenderingInfo rendering{};
+    rendering.renderArea           = vk::Rect2D{ {0, 0}, target.extent };
     rendering.layerCount           = 1;
     rendering.colorAttachmentCount = 1;
     rendering.pColorAttachments    = &colorAttachment;
     rendering.pDepthAttachment     = &depthAttachment;
 
-    vkCmdBeginRendering(cmd, &rendering);
+    cmd.beginRendering(rendering);
 
     meshDraw_.record(cmd, target.extent, pendingDraw_.push,
                      pendingDraw_.commands, pendingDraw_.count,
                      pendingDraw_.instanceCount);
 
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(cmd));
 
-    vkCmdEndRendering(cmd);
+    cmd.endRendering();
 }
 
 void VulkanApp::cleanup() {
@@ -402,8 +398,8 @@ void VulkanApp::cleanup() {
         imguiVulkanInitialized_ = false;
     }
     if (imguiPool_) {
-        vkDestroyDescriptorPool(device_, imguiPool_, nullptr);
-        imguiPool_ = VK_NULL_HANDLE;
+        device_.destroyDescriptorPool(imguiPool_);
+        imguiPool_ = nullptr;
     }
 
     /* Meshes retire buffer ranges on destruction; must precede shutdown. */

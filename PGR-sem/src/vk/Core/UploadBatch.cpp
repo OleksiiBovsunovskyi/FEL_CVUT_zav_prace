@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <string>
 
@@ -9,10 +9,10 @@ import Logger;
 
 namespace {
 
-bool ok(VkResult r, const char* what) {
-    if (r == VK_SUCCESS) return true;
+bool ok(vk::Result r, const char* what) {
+    if (r == vk::Result::eSuccess) return true;
     logError(std::string("UploadBatch: ") + what + " failed: VkResult " +
-             std::to_string(r));
+             vk::to_string(r));
     return false;
 }
 
@@ -36,33 +36,30 @@ bool UploadBatch::init(VulkanContext& ctx, BufferManager& buffers) {
     buffers_ = &buffers;
     device_  = ctx.device();
 
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    vk::CommandPoolCreateInfo poolInfo{};
     /* Short-lived, re-recorded per batch. */
-    poolInfo.flags            = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT |
-                                VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.flags            = vk::CommandPoolCreateFlagBits::eTransient |
+                                vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
     poolInfo.queueFamilyIndex = ctx.graphicsQueueFamily();
-    if (!ok(vkCreateCommandPool(device_, &poolInfo, nullptr, &commandPool_),
+    if (!ok(device_.createCommandPool(&poolInfo, nullptr, &commandPool_),
             "vkCreateCommandPool")) {
         destroy();
         return false;
     }
 
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    vk::CommandBufferAllocateInfo allocInfo{};
     allocInfo.commandPool        = commandPool_;
-    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.level              = vk::CommandBufferLevel::ePrimary;
     allocInfo.commandBufferCount = 1;
-    if (!ok(vkAllocateCommandBuffers(device_, &allocInfo, &commandBuffer_),
+    if (!ok(device_.allocateCommandBuffers(&allocInfo, &commandBuffer_),
             "vkAllocateCommandBuffers")) {
         destroy();
         return false;
     }
 
     /* Unsignalled; begin() resets it and nothing waits before the first submit. */
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    if (!ok(vkCreateFence(device_, &fenceInfo, nullptr, &fence_), "vkCreateFence")) {
+    vk::FenceCreateInfo fenceInfo{};
+    if (!ok(device_.createFence(&fenceInfo, nullptr, &fence_), "vkCreateFence")) {
         destroy();
         return false;
     }
@@ -70,24 +67,24 @@ bool UploadBatch::init(VulkanContext& ctx, BufferManager& buffers) {
     return true;
 }
 
-VkCommandBuffer UploadBatch::begin() {
+vk::CommandBuffer UploadBatch::begin() {
     if (!commandBuffer_) {
         logError("UploadBatch: begin called before init");
-        return VK_NULL_HANDLE;
+        return nullptr;
     }
     if (recording_) {
         logError("UploadBatch: begin called while a batch is already open");
-        return VK_NULL_HANDLE;
+        return nullptr;
     }
 
-    if (!ok(vkResetCommandBuffer(commandBuffer_, 0), "vkResetCommandBuffer"))
-        return VK_NULL_HANDLE;
+    if (!ok(static_cast<vk::Result>(vkResetCommandBuffer(static_cast<VkCommandBuffer>(commandBuffer_), 0)),
+            "vkResetCommandBuffer"))
+        return nullptr;
 
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    if (!ok(vkBeginCommandBuffer(commandBuffer_, &beginInfo), "vkBeginCommandBuffer"))
-        return VK_NULL_HANDLE;
+    vk::CommandBufferBeginInfo beginInfo{};
+    beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    if (!ok(commandBuffer_.begin(&beginInfo), "vkBeginCommandBuffer"))
+        return nullptr;
 
     recording_ = true;
     return commandBuffer_;
@@ -100,26 +97,25 @@ bool UploadBatch::submitAndWait() {
     }
     recording_ = false;
 
-    if (!ok(vkEndCommandBuffer(commandBuffer_), "vkEndCommandBuffer"))
+    if (!ok(static_cast<vk::Result>(vkEndCommandBuffer(static_cast<VkCommandBuffer>(commandBuffer_))),
+            "vkEndCommandBuffer"))
         return false;
 
-    if (!ok(vkResetFences(device_, 1, &fence_), "vkResetFences"))
+    if (!ok(device_.resetFences(1, &fence_), "vkResetFences"))
         return false;
 
-    VkCommandBufferSubmitInfo cmdInfo{};
-    cmdInfo.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    vk::CommandBufferSubmitInfo cmdInfo{};
     cmdInfo.commandBuffer = commandBuffer_;
 
-    VkSubmitInfo2 submit{};
-    submit.sType                  = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+    vk::SubmitInfo2 submit{};
     submit.commandBufferInfoCount = 1;
     submit.pCommandBufferInfos    = &cmdInfo;
 
-    if (!ok(vkQueueSubmit2(ctx_->graphicsQueue(), 1, &submit, fence_),
+    if (!ok(ctx_->graphicsQueue().submit2(1, &submit, fence_),
             "vkQueueSubmit2"))
         return false;
 
-    if (!ok(vkWaitForFences(device_, 1, &fence_, VK_TRUE, UINT64_MAX),
+    if (!ok(device_.waitForFences(1, &fence_, vk::True, UINT64_MAX),
             "vkWaitForFences"))
         return false;
 
@@ -130,17 +126,17 @@ bool UploadBatch::submitAndWait() {
 
 void UploadBatch::destroy() {
     if (fence_) {
-        vkDestroyFence(device_, fence_, nullptr);
-        fence_ = VK_NULL_HANDLE;
+        device_.destroyFence(fence_);
+        fence_ = nullptr;
     }
     /* Frees the command buffer with it. */
     if (commandPool_) {
-        vkDestroyCommandPool(device_, commandPool_, nullptr);
-        commandPool_   = VK_NULL_HANDLE;
-        commandBuffer_ = VK_NULL_HANDLE;
+        device_.destroyCommandPool(commandPool_);
+        commandPool_   = nullptr;
+        commandBuffer_ = nullptr;
     }
     recording_ = false;
-    device_    = VK_NULL_HANDLE;
+    device_    = nullptr;
     buffers_   = nullptr;
     ctx_       = nullptr;
 }

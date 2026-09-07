@@ -1,6 +1,6 @@
 module;
-#include <vulkan/vulkan.h>
-#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.hpp>
 
 #include <array>
 #include <cstdint>
@@ -13,10 +13,10 @@ module FrameRunner;
 
 import Logger;
 
-bool FrameRunner::checkResult(VkResult r, const char* what) {
-    if (r == VK_SUCCESS) return true;
+bool FrameRunner::checkResult(vk::Result r, const char* what) {
+    if (r == vk::Result::eSuccess) return true;
 
-    if (r == VK_ERROR_DEVICE_LOST) {
+    if (r == vk::Result::eErrorDeviceLost) {
         if (!deviceLost_) {
             deviceLost_ = true;
             logError(std::string("FrameRunner: device lost during ") + what +
@@ -25,15 +25,15 @@ bool FrameRunner::checkResult(VkResult r, const char* what) {
         return false;
     }
 
-    logError(std::string("FrameRunner: ") + what + " failed: VkResult " + std::to_string(r));
+    logError(std::string("FrameRunner: ") + what + " failed: VkResult " + vk::to_string(r));
     return false;
 }
 
-bool FrameRunner::checkFatal(VkResult r, const char* what) {
+bool FrameRunner::checkFatal(vk::Result r, const char* what) {
     if (checkResult(r, what)) return true;
     if (deviceLost_) return false;   /* handled; the app closes */
     throw std::runtime_error(std::string("FrameRunner: ") + what +
-                             " failed mid-frame: VkResult " + std::to_string(r));
+                             " failed mid-frame: VkResult " + vk::to_string(r));
 }
 
 bool FrameRunner::checkImageCount() const {
@@ -59,45 +59,43 @@ bool FrameRunner::init(VulkanContext& ctx, Swapchain& swapchain) {
 bool FrameRunner::recreateDepthImages() {
     destroyDepthImages();
 
-    const VkExtent2D extent = swapchain_->extent();
+    const vk::Extent2D extent = swapchain_->extent();
     if (extent.width == 0 || extent.height == 0) {
         logError("FrameRunner: refusing to create a zero-sized depth image");
         return false;
     }
 
     for (DepthImage& depth : depthImages_) {
-        VkImageCreateInfo imageInfo{};
-        imageInfo.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-        imageInfo.imageType     = VK_IMAGE_TYPE_2D;
+        vk::ImageCreateInfo imageInfo{};
+        imageInfo.imageType     = vk::ImageType::e2D;
         imageInfo.format        = DEPTH_FORMAT;
-        imageInfo.extent        = VkExtent3D{extent.width, extent.height, 1};
+        imageInfo.extent        = vk::Extent3D{extent.width, extent.height, 1};
         imageInfo.mipLevels     = 1;
         imageInfo.arrayLayers   = 1;
-        imageInfo.samples       = VK_SAMPLE_COUNT_1_BIT;
-        imageInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.samples       = vk::SampleCountFlagBits::e1;
+        imageInfo.tiling        = vk::ImageTiling::eOptimal;
             /* SAMPLED: a compute pass will build a hierarchical-Z from it. */
-        imageInfo.usage         = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-                                  VK_IMAGE_USAGE_SAMPLED_BIT;
-        imageInfo.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
-        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        imageInfo.usage         = vk::ImageUsageFlagBits::eDepthStencilAttachment |
+                                  vk::ImageUsageFlagBits::eSampled;
+        imageInfo.sharingMode   = vk::SharingMode::eExclusive;
+        imageInfo.initialLayout = vk::ImageLayout::eUndefined;
 
-        VmaAllocationCreateInfo allocInfo{};
-        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        vma::AllocationCreateInfo allocInfo{};
+        allocInfo.usage = vma::MemoryUsage::eAutoPreferDevice;
 
-        if (!checkResult(vmaCreateImage(ctx_->allocator(), &imageInfo, &allocInfo,
-                                        &depth.image, &depth.allocation, nullptr),
+        if (!checkResult(ctx_->allocator().createImage(&imageInfo, &allocInfo,
+                                                        &depth.image, &depth.allocation, nullptr),
                          "vmaCreateImage (depth)"))
             return false;
 
-        VkImageViewCreateInfo viewInfo{};
-        viewInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        vk::ImageViewCreateInfo viewInfo{};
         viewInfo.image    = depth.image;
-        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.viewType = vk::ImageViewType::e2D;
         viewInfo.format   = DEPTH_FORMAT;
         viewInfo.subresourceRange =
-            VkImageSubresourceRange{VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+            vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1};
 
-        if (!checkResult(vkCreateImageView(device_, &viewInfo, nullptr, &depth.view),
+        if (!checkResult(device_.createImageView(&viewInfo, nullptr, &depth.view),
                          "vkCreateImageView (depth)"))
             return false;
     }
@@ -106,55 +104,49 @@ bool FrameRunner::recreateDepthImages() {
 
 void FrameRunner::destroyDepthImages() {
     for (DepthImage& depth : depthImages_) {
-        if (depth.view) vkDestroyImageView(device_, depth.view, nullptr);
+        if (depth.view) device_.destroyImageView(depth.view);
         if (depth.image)
-            vmaDestroyImage(ctx_->allocator(), depth.image, depth.allocation);
+            ctx_->allocator().destroyImage(depth.image, depth.allocation);
         depth = {};
     }
 }
 
 bool FrameRunner::createCommandObjects() {
-    VkCommandPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    vk::CommandPoolCreateInfo poolInfo{};
     /* Re-recorded from scratch every frame. */
-    poolInfo.flags            = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
     poolInfo.queueFamilyIndex = ctx_->graphicsQueueFamily();
-    if (!checkResult(vkCreateCommandPool(device_, &poolInfo, nullptr, &commandPool_), "vkCreateCommandPool"))
+    if (!checkResult(device_.createCommandPool(&poolInfo, nullptr, &commandPool_), "vkCreateCommandPool"))
         return false;
 
-    VkCommandBufferAllocateInfo allocInfo{};
-    allocInfo.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    vk::CommandBufferAllocateInfo allocInfo{};
     allocInfo.commandPool        = commandPool_;
-    allocInfo.level              = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.level              = vk::CommandBufferLevel::ePrimary;
     allocInfo.commandBufferCount = FRAMES_IN_FLIGHT;
-    return checkResult(vkAllocateCommandBuffers(device_, &allocInfo, commandBuffers_.data()),
+    return checkResult(device_.allocateCommandBuffers(&allocInfo, commandBuffers_.data()),
               "vkAllocateCommandBuffers");
 }
 
 bool FrameRunner::createSyncObjects() {
-    VkSemaphoreCreateInfo semInfo{};
-    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vk::SemaphoreCreateInfo semInfo{};
 
-    VkFenceCreateInfo fenceInfo{};
-    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;   /* frame 0 must not block */
+    vk::FenceCreateInfo fenceInfo{};
+    fenceInfo.flags = vk::FenceCreateFlagBits::eSignaled;   /* frame 0 must not block */
 
     for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
-        if (!checkResult(vkCreateSemaphore(device_, &semInfo, nullptr, &imageAvailable_[i]), "vkCreateSemaphore"))
+        if (!checkResult(device_.createSemaphore(&semInfo, nullptr, &imageAvailable_[i]), "vkCreateSemaphore"))
             return false;
-        if (!checkResult(vkCreateFence(device_, &fenceInfo, nullptr, &inFlightFences_[i]), "vkCreateFence"))
+        if (!checkResult(device_.createFence(&fenceInfo, nullptr, &inFlightFences_[i]), "vkCreateFence"))
             return false;
     }
 
-    VkSemaphoreTypeCreateInfo timelineType{};
-    timelineType.sType         = VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO;
-    timelineType.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
+    vk::SemaphoreTypeCreateInfo timelineType{};
+    timelineType.semaphoreType = vk::SemaphoreType::eTimeline;
     timelineType.initialValue  = 0;   /* 0 = nothing submitted yet */
 
-    VkSemaphoreCreateInfo timelineInfo{};
-    timelineInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vk::SemaphoreCreateInfo timelineInfo{};
     timelineInfo.pNext = &timelineType;
-    if (!checkResult(vkCreateSemaphore(device_, &timelineInfo, nullptr, &timeline_),
+    if (!checkResult(device_.createSemaphore(&timelineInfo, nullptr, &timeline_),
                      "vkCreateSemaphore (timeline)"))
         return false;
 
@@ -165,7 +157,7 @@ uint64_t FrameRunner::getCompletedSerial() const {
     if (!timeline_) return 0;
 
     uint64_t value = 0;
-    if (vkGetSemaphoreCounterValue(device_, timeline_, &value) != VK_SUCCESS)
+    if (device_.getSemaphoreCounterValue(timeline_, &value) != vk::Result::eSuccess)
         return 0;
     return value;
 }
@@ -174,24 +166,22 @@ bool FrameRunner::waitForSerial(uint64_t serial, uint64_t timeoutNs) const {
     if (!timeline_) return false;
     if (serial == 0) return true;
 
-    VkSemaphoreWaitInfo wait{};
-    wait.sType          = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO;
+    vk::SemaphoreWaitInfo wait{};
     wait.semaphoreCount = 1;
     wait.pSemaphores    = &timeline_;
     wait.pValues        = &serial;
 
-    return vkWaitSemaphores(device_, &wait, timeoutNs) == VK_SUCCESS;
+    return device_.waitSemaphores(&wait, timeoutNs) == vk::Result::eSuccess;
 }
 
 bool FrameRunner::recreateRenderFinishedSemaphores() {
-    for (VkSemaphore s : renderFinished_)
-        vkDestroySemaphore(device_, s, nullptr);
-    renderFinished_.assign(swapchain_->imageCount(), VK_NULL_HANDLE);
+    for (vk::Semaphore s : renderFinished_)
+        device_.destroySemaphore(s);
+    renderFinished_.assign(swapchain_->imageCount(), nullptr);
 
-    VkSemaphoreCreateInfo semInfo{};
-    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vk::SemaphoreCreateInfo semInfo{};
     for (auto& s : renderFinished_) {
-        if (!checkResult(vkCreateSemaphore(device_, &semInfo, nullptr, &s), "vkCreateSemaphore"))
+        if (!checkResult(device_.createSemaphore(&semInfo, nullptr, &s), "vkCreateSemaphore"))
             return false;
     }
     return true;
@@ -221,47 +211,47 @@ bool FrameRunner::recreateSwapchain() {
 void FrameRunner::drawFrame(const RecordFn& record) {
     if (deviceLost_) return;
 
-    VkFence fence = inFlightFences_[currentFrame_];
-    if (!checkResult(vkWaitForFences(device_, 1, &fence, VK_TRUE, UINT64_MAX), "vkWaitForFences"))
+    vk::Fence fence = inFlightFences_[currentFrame_];
+    if (!checkResult(device_.waitForFences(1, &fence, vk::True, UINT64_MAX), "waitForFences"))
         return;
 
     uint32_t imageIndex = 0;
-    const VkResult acquire =
-        vkAcquireNextImageKHR(device_, swapchain_->handle(), UINT64_MAX,
-                              imageAvailable_[currentFrame_], VK_NULL_HANDLE, &imageIndex);
+    const vk::Result acquire =
+        device_.acquireNextImageKHR(swapchain_->handle(), UINT64_MAX,
+                                    imageAvailable_[currentFrame_], nullptr, &imageIndex);
 
-    if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
+    if (acquire == vk::Result::eErrorOutOfDateKHR) {
         recreateSwapchain();
         return;   // this frame is lost; the next one draws at the new size
     }
-    if (acquire != VK_SUCCESS && acquire != VK_SUBOPTIMAL_KHR) {
+    if (acquire != vk::Result::eSuccess && acquire != vk::Result::eSuboptimalKHR) {
         checkResult(acquire, "vkAcquireNextImageKHR");
         return;
     }
 
     /* The fence is now unsignalled; only the submit below signals it again. */
-    if (!checkFatal(vkResetFences(device_, 1, &fence), "vkResetFences"))
+    if (!checkFatal(device_.resetFences(1, &fence), "vkResetFences"))
         return;
 
-    VkCommandBuffer cmd = commandBuffers_[currentFrame_];
-    if (!checkFatal(vkResetCommandBuffer(cmd, 0), "vkResetCommandBuffer"))
+    vk::CommandBuffer cmd = commandBuffers_[currentFrame_];
+    if (!checkFatal(static_cast<vk::Result>(vkResetCommandBuffer(static_cast<VkCommandBuffer>(cmd), 0)),
+                    "vkResetCommandBuffer"))
         return;
 
     if (!recordAndSubmit(cmd, imageIndex, record))
         return;
 
-    const VkSwapchainKHR swapchainHandle = swapchain_->handle();
+    const vk::SwapchainKHR swapchainHandle = swapchain_->handle();
 
-    VkPresentInfoKHR present{};
-    present.sType              = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    vk::PresentInfoKHR present{};
     present.waitSemaphoreCount = 1;
     present.pWaitSemaphores    = &renderFinished_[imageIndex];
     present.swapchainCount     = 1;
     present.pSwapchains        = &swapchainHandle;
     present.pImageIndices      = &imageIndex;
 
-    const VkResult presentRes = vkQueuePresentKHR(ctx_->graphicsQueue(), &present);
-    if (presentRes == VK_ERROR_OUT_OF_DATE_KHR || presentRes == VK_SUBOPTIMAL_KHR ||
+    const vk::Result presentRes = ctx_->graphicsQueue().presentKHR(&present);
+    if (presentRes == vk::Result::eErrorOutOfDateKHR || presentRes == vk::Result::eSuboptimalKHR ||
         framebufferResized_) {
         framebufferResized_ = false;
         recreateSwapchain();
@@ -272,35 +262,34 @@ void FrameRunner::drawFrame(const RecordFn& record) {
     currentFrame_ = (currentFrame_ + 1) % FRAMES_IN_FLIGHT;
 }
 
-bool FrameRunner::recordAndSubmit(VkCommandBuffer cmd, uint32_t imageIndex,
+bool FrameRunner::recordAndSubmit(vk::CommandBuffer cmd, uint32_t imageIndex,
                                   const RecordFn& record) {
-    VkCommandBufferBeginInfo begin{};
-    begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    if (!checkFatal(vkBeginCommandBuffer(cmd, &begin), "vkBeginCommandBuffer"))
+    vk::CommandBufferBeginInfo begin{};
+    if (!checkFatal(cmd.begin(&begin), "vkBeginCommandBuffer"))
         return false;
 
-    VkImage image = swapchain_->image(imageIndex);
+    vk::Image image = swapchain_->image(imageIndex);
 
     /* UNDEFINED: the whole image is either cleared or overdrawn. */
     transitionImage(cmd, image,
-                    VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, 0,
-                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+                    vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+                    vk::PipelineStageFlagBits2::eTopOfPipe, {},
+                    vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                    vk::AccessFlagBits2::eColorAttachmentWrite);
 
     /* Depth is cleared every frame. */
     const DepthImage& depth = depthImages_[currentFrame_];
     transitionImage(cmd, depth.image,
-                    VK_IMAGE_LAYOUT_UNDEFINED,
-                    VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, 0,
-                    VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT |
-                        VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                    VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                    VK_IMAGE_ASPECT_DEPTH_BIT);
+                    vk::ImageLayout::eUndefined,
+                    vk::ImageLayout::eDepthAttachmentOptimal,
+                    vk::PipelineStageFlagBits2::eTopOfPipe, {},
+                    vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                        vk::PipelineStageFlagBits2::eLateFragmentTests,
+                    vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+                        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                    vk::ImageAspectFlagBits::eDepth);
 
-    const RenderTarget target{
+    const RenderTarget_Old target{
         image,
         swapchain_->view(imageIndex),
         swapchain_->format(),
@@ -312,40 +301,31 @@ bool FrameRunner::recordAndSubmit(VkCommandBuffer cmd, uint32_t imageIndex,
     if (record) record(cmd, target);
 
     transitionImage(cmd, image,
-                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                    VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0);
+                    vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::ePresentSrcKHR,
+                    vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                    vk::AccessFlagBits2::eColorAttachmentWrite,
+                    vk::PipelineStageFlagBits2::eBottomOfPipe, {});
 
-    if (!checkFatal(vkEndCommandBuffer(cmd), "vkEndCommandBuffer"))
+    if (!checkFatal(static_cast<vk::Result>(vkEndCommandBuffer(static_cast<VkCommandBuffer>(cmd))),
+                    "vkEndCommandBuffer"))
         return false;
 
-    VkSemaphoreSubmitInfo wait{};
-    wait.sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO;
+    vk::SemaphoreSubmitInfo wait{};
     wait.semaphore = imageAvailable_[currentFrame_];
-    wait.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+    wait.stageMask = vk::PipelineStageFlagBits2::eColorAttachmentOutput;
 
     /*** This frame's serial. */
-    const VkSemaphoreSubmitInfo signals[2]{
-        {
-            .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = renderFinished_[imageIndex],
-            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-        },
-        {
-            .sType     = VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO,
-            .semaphore = timeline_,
-            .value     = submittedSerial_ + 1,
-            .stageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-        },
-    };
+    vk::SemaphoreSubmitInfo signals[2]{};
+    signals[0].semaphore = renderFinished_[imageIndex];
+    signals[0].stageMask = vk::PipelineStageFlagBits2::eAllCommands;
+    signals[1].semaphore = timeline_;
+    signals[1].value     = submittedSerial_ + 1;
+    signals[1].stageMask = vk::PipelineStageFlagBits2::eAllCommands;
 
-    VkCommandBufferSubmitInfo cmdInfo{};
-    cmdInfo.sType         = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+    vk::CommandBufferSubmitInfo cmdInfo{};
     cmdInfo.commandBuffer = cmd;
 
-    VkSubmitInfo2 submit{};
-    submit.sType                    = VK_STRUCTURE_TYPE_SUBMIT_INFO_2;
+    vk::SubmitInfo2 submit{};
     submit.waitSemaphoreInfoCount   = 1;
     submit.pWaitSemaphoreInfos      = &wait;
     submit.commandBufferInfoCount   = 1;
@@ -354,7 +334,7 @@ bool FrameRunner::recordAndSubmit(VkCommandBuffer cmd, uint32_t imageIndex,
     submit.pSignalSemaphoreInfos    = signals;
 
     if (!checkFatal(
-            vkQueueSubmit2(ctx_->graphicsQueue(), 1, &submit, inFlightFences_[currentFrame_]),
+            ctx_->graphicsQueue().submit2(1, &submit, inFlightFences_[currentFrame_]),
             "vkQueueSubmit2"))
         return false;
 
@@ -368,22 +348,22 @@ void FrameRunner::destroy() {
 
     destroyDepthImages();
 
-    for (VkSemaphore s : renderFinished_)
-        vkDestroySemaphore(device_, s, nullptr);
+    for (vk::Semaphore s : renderFinished_)
+        device_.destroySemaphore(s);
     renderFinished_.clear();
 
     if (timeline_) {
-        vkDestroySemaphore(device_, timeline_, nullptr);
-        timeline_ = VK_NULL_HANDLE;
+        device_.destroySemaphore(timeline_);
+        timeline_ = nullptr;
     }
 
     for (uint32_t i = 0; i < FRAMES_IN_FLIGHT; ++i) {
-        vkDestroySemaphore(device_, imageAvailable_[i], nullptr);
-        vkDestroyFence(device_, inFlightFences_[i], nullptr);
+        device_.destroySemaphore(imageAvailable_[i]);
+        device_.destroyFence(inFlightFences_[i]);
     }
-    imageAvailable_.fill(VK_NULL_HANDLE);
-    inFlightFences_.fill(VK_NULL_HANDLE);
+    imageAvailable_.fill(nullptr);
+    inFlightFences_.fill(nullptr);
 
-    vkDestroyCommandPool(device_, commandPool_, nullptr);
-    commandPool_ = VK_NULL_HANDLE;
+    device_.destroyCommandPool(commandPool_);
+    commandPool_ = nullptr;
 }

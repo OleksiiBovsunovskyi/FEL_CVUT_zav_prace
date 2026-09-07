@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <span>
 #include <utility>
@@ -21,49 +21,55 @@ import VK_Buffers;
  * unchecked.
  */
 export constexpr float DEPTH_CLEAR = 0.0f;
-export constexpr VkCompareOp DEPTH_COMPARE_OP = VK_COMPARE_OP_GREATER_OR_EQUAL;
+export constexpr vk::CompareOp DEPTH_COMPARE_OP = vk::CompareOp::eGreaterOrEqual;
 
-export constexpr VkFormat DEPTH_FORMAT = VK_FORMAT_D32_SFLOAT;
+export constexpr vk::Format DEPTH_FORMAT = vk::Format::eD32Sfloat;
 
 static_assert(DEPTH_CLEAR >= 0.0f && DEPTH_CLEAR <= 1.0f,
-              "VkClearDepthStencilValue::depth must be within [0,1] unless "
+              "vk::ClearDepthStencilValue::depth must be within [0,1] unless "
               "VK_EXT_depth_range_unrestricted is enabled; the validation "
               "layers do not report this");
 
-static_assert((DEPTH_COMPARE_OP == VK_COMPARE_OP_GREATER ||
-               DEPTH_COMPARE_OP == VK_COMPARE_OP_GREATER_OR_EQUAL)
+static_assert((DEPTH_COMPARE_OP == vk::CompareOp::eGreater ||
+               DEPTH_COMPARE_OP == vk::CompareOp::eGreaterOrEqual)
                   == (DEPTH_CLEAR == 0.0f),
               "DEPTH_CLEAR must be the far plane - 0 for a GREATER compare op, "
               "1 for a LESS one - or every fragment passes the depth test");
 
-static_assert(DEPTH_FORMAT == VK_FORMAT_D32_SFLOAT ||
-              DEPTH_FORMAT == VK_FORMAT_D32_SFLOAT_S8_UINT,
+static_assert(DEPTH_FORMAT == vk::Format::eD32Sfloat ||
+              DEPTH_FORMAT == vk::Format::eD32SfloatS8Uint,
               "reverse-Z needs a float depth format; a UNORM one distributes "
               "precision evenly and gains nothing from the flip");
 
 
-export struct RenderTarget {
-    VkImage     image  = VK_NULL_HANDLE;
-    VkImageView view   = VK_NULL_HANDLE;
-    VkFormat    format = VK_FORMAT_UNDEFINED;
-    VkExtent2D  extent{};
+/*
+ * TODO: the flat per-frame attachment bundle recordFrame receives. It holds two
+ * attachments at once (colour and depth) where the RenderTarget class holds one
+ * image, so it is not a rename away from that class. Deferred geometry adds
+ * albedo, normal, ORM and HDR colour, at which point this either grows four
+ * fields or is replaced by whatever recordFrame is given instead.
+ */
+export struct RenderTarget_Old {
+    vk::Image     image{};
+    vk::ImageView view{};
+    vk::Format    format = vk::Format::eUndefined;
+    vk::Extent2D  extent{};
 
     /**
      * Already in DEPTH_ATTACHMENT_OPTIMAL. Optional; a pass without depth omits
      * it and builds its pipeline with depthAttachmentFormat = UNDEFINED.
      */
-    VkImageView depthView   = VK_NULL_HANDLE;
-    VkFormat    depthFormat = VK_FORMAT_UNDEFINED;
+    vk::ImageView depthView{};
+    vk::Format    depthFormat = vk::Format::eUndefined;
 };
 
 /// synchronization2 image layout transition.
-export inline void transitionImage(VkCommandBuffer cmd, VkImage image,
-                                   VkImageLayout oldLayout, VkImageLayout newLayout,
-                                   VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                                   VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess,
-                                   VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT) {
-    VkImageMemoryBarrier2 barrier{};
-    barrier.sType         = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+export inline void transitionImage(vk::CommandBuffer cmd, vk::Image image,
+                                   vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
+                                   vk::PipelineStageFlags2 srcStage, vk::AccessFlags2 srcAccess,
+                                   vk::PipelineStageFlags2 dstStage, vk::AccessFlags2 dstAccess,
+                                   vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor) {
+    vk::ImageMemoryBarrier2 barrier{};
     barrier.srcStageMask  = srcStage;
     barrier.srcAccessMask = srcAccess;
     barrier.dstStageMask  = dstStage;
@@ -71,55 +77,51 @@ export inline void transitionImage(VkCommandBuffer cmd, VkImage image,
     barrier.oldLayout     = oldLayout;
     barrier.newLayout     = newLayout;
     barrier.image         = image;
-    barrier.subresourceRange = VkImageSubresourceRange{ aspect, 0, 1, 0, 1 };
+    barrier.subresourceRange = vk::ImageSubresourceRange{ aspect, 0, 1, 0, 1 };
 
-    VkDependencyInfo dep{};
-    dep.sType                   = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    vk::DependencyInfo dep{};
     dep.imageMemoryBarrierCount = 1;
     dep.pImageMemoryBarriers    = &barrier;
 
-    vkCmdPipelineBarrier2(cmd, &dep);
+    cmd.pipelineBarrier2(dep);
 }
 
 /// synchronization2 barrier covering every buffer write in the given stages.
-export inline void barrier(VkCommandBuffer cmd,
-                           VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                           VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
-    VkMemoryBarrier2 memoryBarrier{};
-    memoryBarrier.sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+export inline void barrier(vk::CommandBuffer cmd,
+                           vk::PipelineStageFlags2 srcStage, vk::AccessFlags2 srcAccess,
+                           vk::PipelineStageFlags2 dstStage, vk::AccessFlags2 dstAccess) {
+    vk::MemoryBarrier2 memoryBarrier{};
     memoryBarrier.srcStageMask  = srcStage;
     memoryBarrier.srcAccessMask = srcAccess;
     memoryBarrier.dstStageMask  = dstStage;
     memoryBarrier.dstAccessMask = dstAccess;
 
-    VkDependencyInfo dep{};
-    dep.sType              = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    vk::DependencyInfo dep{};
     dep.memoryBarrierCount = 1;
     dep.pMemoryBarriers    = &memoryBarrier;
 
-    vkCmdPipelineBarrier2(cmd, &dep);
+    cmd.pipelineBarrier2(dep);
 }
 
 /// The same barrier narrowed to specific ranges.
-export inline void barrier(VkCommandBuffer cmd,
+export inline void barrier(vk::CommandBuffer cmd,
                            std::span<const BufferRegion> regions,
-                           VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess,
-                           VkPipelineStageFlags2 dstStage, VkAccessFlags2 dstAccess) {
+                           vk::PipelineStageFlags2 srcStage, vk::AccessFlags2 srcAccess,
+                           vk::PipelineStageFlags2 dstStage, vk::AccessFlags2 dstAccess) {
     if (regions.empty()) return;
 
-    std::vector<VkBufferMemoryBarrier2> barriers;
+    std::vector<vk::BufferMemoryBarrier2> barriers;
     barriers.reserve(regions.size());
     for (const BufferRegion& region : regions) {
         if (!region) continue;
 
-        VkBufferMemoryBarrier2 entry{};
-        entry.sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        vk::BufferMemoryBarrier2 entry{};
         entry.srcStageMask        = srcStage;
         entry.srcAccessMask       = srcAccess;
         entry.dstStageMask        = dstStage;
         entry.dstAccessMask       = dstAccess;
-        entry.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        entry.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        entry.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+        entry.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
         entry.buffer              = region.buffer;
         entry.offset              = region.offset;
         entry.size                = region.size;
@@ -127,40 +129,39 @@ export inline void barrier(VkCommandBuffer cmd,
     }
     if (barriers.empty()) return;
 
-    VkDependencyInfo dep{};
-    dep.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+    vk::DependencyInfo dep{};
     dep.bufferMemoryBarrierCount = static_cast<uint32_t>(barriers.size());
     dep.pBufferMemoryBarriers    = barriers.data();
 
-    vkCmdPipelineBarrier2(cmd, &dep);
+    cmd.pipelineBarrier2(dep);
 }
 
 /**
  * Records a copy of the whole source range. The sizes must match; a mismatch
  * is a caller bug, so nothing is recorded.
  */
-export inline void copy(VkCommandBuffer cmd, const BufferRegion& src,
+export inline void copy(vk::CommandBuffer cmd, const BufferRegion& src,
                         const BufferRegion& dst) {
     if (!src || !dst || src.size != dst.size) return;
 
-    const VkBufferCopy region{src.offset, dst.offset, src.size};
-    vkCmdCopyBuffer(cmd, src.buffer, dst.buffer, 1, &region);
+    const vk::BufferCopy region{src.offset, dst.offset, src.size};
+    cmd.copyBuffer(src.buffer, dst.buffer, 1, &region);
 }
 
 /// Fills a range with zeroes. The offset and size must be 4-byte aligned.
-export inline void zero(VkCommandBuffer cmd, const BufferRegion& region) {
+export inline void zero(vk::CommandBuffer cmd, const BufferRegion& region) {
     if (!region) return;
-    vkCmdFillBuffer(cmd, region.buffer, region.offset, region.size, 0);
+    cmd.fillBuffer(region.buffer, region.offset, region.size, 0);
 }
 
 /// Full-target viewport and scissor, in the reverse-Z depth range.
-export inline std::pair<VkViewport, VkRect2D> viewportAndScissor(
-    VkExtent2D extent) {
-    const VkViewport viewport{
-        .x = 0.0f, .y = 0.0f,
-        .width    = static_cast<float>(extent.width),
-        .height   = static_cast<float>(extent.height),
-        .minDepth = 0.0f, .maxDepth = 1.0f,
+export inline std::pair<vk::Viewport, vk::Rect2D> viewportAndScissor(
+    vk::Extent2D extent) {
+    const vk::Viewport viewport{
+        0.0f, 0.0f,
+        static_cast<float>(extent.width),
+        static_cast<float>(extent.height),
+        0.0f, 1.0f,
     };
-    return {viewport, VkRect2D{{0, 0}, extent}};
+    return {viewport, vk::Rect2D{{0, 0}, extent}};
 }

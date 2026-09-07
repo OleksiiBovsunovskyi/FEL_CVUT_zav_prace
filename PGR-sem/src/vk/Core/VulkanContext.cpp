@@ -1,6 +1,7 @@
 module;
 #include <VkBootstrap.h>
-#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.hpp>
 
 #include <functional>
 #include <string>
@@ -11,9 +12,9 @@ import Logger;
 
 namespace {
 
-bool ok(VkResult r, const char* what) {
-    if (r == VK_SUCCESS) return true;
-    logError(std::string(what) + " failed: VkResult " + std::to_string(r));
+bool ok(vk::Result r, const char* what) {
+    if (r == vk::Result::eSuccess) return true;
+    logError(std::string(what) + " failed: " + vk::to_string(r));
     return false;
 }
 
@@ -199,20 +200,20 @@ bool VulkanContext::selectAndCreateDevice() {
 }
 
 bool VulkanContext::createAllocator() {
-    VmaAllocatorCreateInfo info{};
+    vma::AllocatorCreateInfo info{};
     info.physicalDevice   = vkbDevice_.physical_device;
     info.device           = vkbDevice_.device;
     info.instance         = vkbInstance_.instance;
     info.vulkanApiVersion = VK_API_VERSION_1_3;
     /* Must match the device feature; VMA needs it for address-taken memory. */
-    info.flags            = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    info.flags            = vma::AllocatorCreateFlagBits::eBufferDeviceAddress;
 
-    return ok(vmaCreateAllocator(&info, &allocator_), "vmaCreateAllocator");
+    return ok(vma::createAllocator(&info, &allocator_), "vma::createAllocator");
 }
 
 void VulkanContext::shutdown() {
     if (allocator_) {
-        vmaDestroyAllocator(allocator_);
+        allocator_.destroy();
         allocator_ = nullptr;
     }
     if (vkbDevice_.device) {

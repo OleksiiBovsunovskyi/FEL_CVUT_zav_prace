@@ -1,6 +1,6 @@
 module;
-#include <vulkan/vulkan.h>
-#include <vk_mem_alloc.h>
+#include <vulkan/vulkan.hpp>
+#include <vk_mem_alloc.hpp>
 
 #include <array>
 #include <cstddef>
@@ -42,14 +42,14 @@ public:
 
     /// @return true while this owns a range.
     [[nodiscard]] explicit operator bool() const {
-        return virtualAllocation_ != VK_NULL_HANDLE;
+        return virtualAllocation_ != nullptr;
     }
 
 private:
     friend class BufferManager;
 
-    DeviceArray(DeviceSpan<T> span, BufferManager* owner, VmaVirtualBlock block,
-                VmaVirtualAllocation allocation)
+    DeviceArray(DeviceSpan<T> span, BufferManager* owner, vma::VirtualBlock block,
+                vma::VirtualAllocation allocation)
         : span_(span), owner_(owner), block_(block),
           virtualAllocation_(allocation) {}
 
@@ -63,36 +63,36 @@ private:
         std::swap(virtualAllocation_, other.virtualAllocation_);
     }
 
-    DeviceSpan<T>        span_{};
-    BufferManager*          owner_             = nullptr;
-    VmaVirtualBlock      block_             = VK_NULL_HANDLE;
-    VmaVirtualAllocation virtualAllocation_ = VK_NULL_HANDLE;
+    DeviceSpan<T>          span_{};
+    BufferManager*         owner_             = nullptr;
+    vma::VirtualBlock      block_             = nullptr;
+    vma::VirtualAllocation virtualAllocation_ = nullptr;
 };
 
 /// Bytes in use out of a buffer's capacity. Debug reporting only.
 export struct BufferUsage {
-    const char*  name     = "";
-    VkDeviceSize capacity = 0;
-    VkDeviceSize used     = 0;
+    const char*    name     = "";
+    vk::DeviceSize capacity = 0;
+    vk::DeviceSize used     = 0;
 };
 
 /**
  * Byte capacities, defaulted from the traits. A zero opts the buffer out.
  */
 export struct GPUBufferCapacities {
-    std::array<VkDeviceSize, STATIC_BUFFER_COUNT> staticBytes{
+    std::array<vk::DeviceSize, STATIC_BUFFER_COUNT> staticBytes{
         StaticBufferTraits<StaticBufferKind::MeshData>::capacity,
         StaticBufferTraits<StaticBufferKind::Materials>::capacity,
     };
-    std::array<VkDeviceSize, FRAME_SLOT_BUFFER_COUNT> frameBytes{
+    std::array<vk::DeviceSize, FRAME_SLOT_BUFFER_COUNT> frameBytes{
         FrameSlotBufferTraits<FrameSlotBufferKind::MeshInstances>::capacity,
         FrameSlotBufferTraits<FrameSlotBufferKind::DrawData>::capacity,
         FrameSlotBufferTraits<FrameSlotBufferKind::MeshTaskCommands>::capacity,
         FrameSlotBufferTraits<FrameSlotBufferKind::MeshTaskCommandCount>::capacity,
     };
 
-    VkDeviceSize upload         = 32ull << 20;
-    uint32_t     framesInFlight = 2;
+    vk::DeviceSize upload         = 32ull << 20;
+    uint32_t       framesInFlight = 2;
 };
 
 /**
@@ -138,11 +138,11 @@ public:
      */
     template <StaticBufferKind Kind>
     [[nodiscard]] DeviceArray<StaticRecord<Kind>> allocateStatic(
-        uint32_t count, VkDeviceSize alignment = alignof(StaticRecord<Kind>)) {
+        uint32_t count, vk::DeviceSize alignment = alignof(StaticRecord<Kind>)) {
         using Record = StaticRecord<Kind>;
 
         const RawAllocation raw = allocateStaticRaw(
-            Kind, VkDeviceSize{count} * sizeof(Record), alignment);
+            Kind, vk::DeviceSize{count} * sizeof(Record), alignment);
         if (!raw.region) return {};
 
         return DeviceArray<Record>{
@@ -161,12 +161,12 @@ public:
     template <FrameSlotBufferKind Kind>
     [[nodiscard]] FrameSlotSpan<Kind> allocateFrame(
         uint32_t frameIndex, uint32_t count,
-        VkDeviceSize alignment = alignof(FrameSlotRecord<Kind>)) {
+        vk::DeviceSize alignment = alignof(FrameSlotRecord<Kind>)) {
         using Record = FrameSlotRecord<Kind>;
         using Buffer = typename FrameSlotBufferTraits<Kind>::Buffer;
 
         const RawAllocation raw = allocateFrameRaw(
-            frameIndex, Kind, VkDeviceSize{count} * sizeof(Record), alignment);
+            frameIndex, Kind, vk::DeviceSize{count} * sizeof(Record), alignment);
         if (!raw.region) return {};
 
         return spanOf<Buffer, Record>(raw, count);
@@ -181,7 +181,7 @@ public:
      *         uploadCapacity().
      */
     [[nodiscard]] MappedSpan<std::byte> allocateUpload(
-        VkDeviceSize bytes, VkDeviceSize alignment = 16);
+        vk::DeviceSize bytes, vk::DeviceSize alignment = 16);
 
     /**
      * @return the address of a whole static buffer, for the shaders that index
@@ -196,7 +196,7 @@ public:
     [[nodiscard]] BufferUsage staticUsage(StaticBufferKind kind) const;
 
     /// @return total upload bytes. A larger single request can never be met.
-    [[nodiscard]] VkDeviceSize uploadCapacity() const { return upload_.capacity; }
+    [[nodiscard]] vk::DeviceSize uploadCapacity() const { return upload_.capacity; }
 
     /**
      * Releases every range in one frame slot. Requires that slot's fence to
@@ -228,32 +228,32 @@ public:
     void collect(uint64_t completedSerial);
 
     /// Called by DeviceArray on destruction. Not part of the allocation API.
-    void retire(VmaVirtualBlock block, VmaVirtualAllocation allocation);
+    void retire(vma::VirtualBlock block, vma::VirtualAllocation allocation);
 
 private:
     struct MegaBuffer {
-        VkBuffer        buffer        = VK_NULL_HANDLE;
-        VmaAllocation   allocation    = nullptr;
-        VmaVirtualBlock virtualBlock  = VK_NULL_HANDLE;
-        VkDeviceSize    capacity      = 0;
-        VkDeviceAddress deviceAddress = 0;
-        void*           mapped        = nullptr;
+        vk::Buffer        buffer        = nullptr;
+        vma::Allocation   allocation    = nullptr;
+        vma::VirtualBlock virtualBlock  = nullptr;
+        vk::DeviceSize    capacity      = 0;
+        vk::DeviceAddress deviceAddress = 0;
+        void*             mapped        = nullptr;
     };
 
     /* Byte-addressed in every buffer: nothing indexes a mega-buffer by record
      * any more, so the virtual blocks count bytes and strides are gone. */
     struct RawAllocation {
-        BufferRegion         region{};
-        VkDeviceAddress      address           = 0;
-        void*                host              = nullptr;
-        VmaVirtualBlock      block             = VK_NULL_HANDLE;
-        VmaVirtualAllocation virtualAllocation = VK_NULL_HANDLE;
+        BufferRegion           region{};
+        vk::DeviceAddress      address           = 0;
+        void*                  host              = nullptr;
+        vma::VirtualBlock      block             = nullptr;
+        vma::VirtualAllocation virtualAllocation = nullptr;
     };
 
     struct RetiredAllocation {
-        VmaVirtualBlock      block             = VK_NULL_HANDLE;
-        VmaVirtualAllocation virtualAllocation = VK_NULL_HANDLE;
-        uint64_t             serial            = 0;
+        vma::VirtualBlock      block             = nullptr;
+        vma::VirtualAllocation virtualAllocation = nullptr;
+        uint64_t               serial            = 0;
     };
 
     using StaticBuffers = std::array<MegaBuffer, STATIC_BUFFER_COUNT>;
@@ -272,23 +272,23 @@ private:
     }
 
     [[nodiscard]] RawAllocation allocateStaticRaw(
-        StaticBufferKind kind, VkDeviceSize bytes, VkDeviceSize alignment);
+        StaticBufferKind kind, vk::DeviceSize bytes, vk::DeviceSize alignment);
     [[nodiscard]] RawAllocation allocateFrameRaw(
         uint32_t frameIndex, FrameSlotBufferKind kind,
-        VkDeviceSize bytes, VkDeviceSize alignment);
+        vk::DeviceSize bytes, vk::DeviceSize alignment);
     [[nodiscard]] RawAllocation allocate(
-        MegaBuffer& buffer, VkDeviceSize bytes, VkDeviceSize alignment);
+        MegaBuffer& buffer, vk::DeviceSize bytes, vk::DeviceSize alignment);
 
-    [[nodiscard]] VkDeviceAddress staticBaseAddress(StaticBufferKind kind) const;
+    [[nodiscard]] vk::DeviceAddress staticBaseAddress(StaticBufferKind kind) const;
 
-    bool createBuffer(MegaBuffer& out, VkDeviceSize capacity,
-                      VkBufferUsageFlags usage, VmaMemoryUsage memory,
-                      VmaAllocationCreateFlags flags, bool warnIfHost,
+    bool createBuffer(MegaBuffer& out, vk::DeviceSize capacity,
+                      vk::BufferUsageFlags usage, vma::MemoryUsage memory,
+                      vma::AllocationCreateFlags flags, bool warnIfHost,
                       const char* debugName);
     void destroyBuffer(MegaBuffer& buffer);
 
-    VmaAllocator allocator_ = nullptr;
-    VkDevice     device_    = VK_NULL_HANDLE;
+    vma::Allocator allocator_ = nullptr;
+    vk::Device     device_    = nullptr;
 
     StaticBuffers                  staticBuffers_{};
     std::vector<FrameBuffers>      frameSlotBuffers_;
@@ -302,6 +302,6 @@ void DeviceArray<T>::release() {
     if (owner_ && virtualAllocation_) owner_->retire(block_, virtualAllocation_);
     span_              = {};
     owner_             = nullptr;
-    block_             = VK_NULL_HANDLE;
-    virtualAllocation_ = VK_NULL_HANDLE;
+    block_             = nullptr;
+    virtualAllocation_ = nullptr;
 }

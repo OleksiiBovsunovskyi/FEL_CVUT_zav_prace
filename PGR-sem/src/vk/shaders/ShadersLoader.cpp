@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <cstring>
@@ -31,32 +31,31 @@ bool readBinaryFile(const fs::path& path, std::string& out) {
 
 } // namespace
 
-VkShaderModule ShaderLoader::createModule(const std::vector<uint32_t>& spirv,
-                                          const std::string& debugName) const {
-    VkShaderModuleCreateInfo info{};
-    info.sType    = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+vk::ShaderModule ShaderLoader::createModule(const std::vector<uint32_t>& spirv,
+                                            const std::string& debugName) const {
+    vk::ShaderModuleCreateInfo info{};
     info.codeSize = spirv.size() * sizeof(uint32_t);   // in bytes, not words
     info.pCode    = spirv.data();
 
-    VkShaderModule module = VK_NULL_HANDLE;
-    const VkResult r = vkCreateShaderModule(device_, &info, nullptr, &module);
-    if (r != VK_SUCCESS) {
+    vk::ShaderModule module = nullptr;
+    const vk::Result r = device_.createShaderModule(&info, nullptr, &module);
+    if (r != vk::Result::eSuccess) {
         logError("ShaderLoader: vkCreateShaderModule failed for " + debugName +
-                 ": VkResult " + std::to_string(r));
-        return VK_NULL_HANDLE;
+                 ": VkResult " + vk::to_string(r));
+        return nullptr;
     }
     return module;
 }
 
-VkShaderModule ShaderLoader::load(const fs::path& path) const {
+vk::ShaderModule ShaderLoader::load(const fs::path& path) const {
     std::string bytes;
     if (!readBinaryFile(path, bytes)) {
         logError("ShaderLoader: cannot open " + path.string());
-        return VK_NULL_HANDLE;
+        return nullptr;
     }
     if (bytes.empty() || bytes.size() % sizeof(uint32_t) != 0) {
         logError("ShaderLoader: " + path.string() + " is not a whole number of SPIR-V words");
-        return VK_NULL_HANDLE;
+        return nullptr;
     }
 
     std::vector<uint32_t> spirv(bytes.size() / sizeof(uint32_t));

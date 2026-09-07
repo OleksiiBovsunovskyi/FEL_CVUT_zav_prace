@@ -1,18 +1,18 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module Pipeline;
 
 /**
  * Creates a compute pipeline with the supplied layout.
  *
- * @return VK_NULL_HANDLE on failure, after logging.
+ * @return nullptr on failure, after logging.
  */
-export [[nodiscard]] VkPipeline createComputePipeline(
-    VkDevice device, VkPipelineLayout layout, VkShaderModule shader);
+export [[nodiscard]] vk::Pipeline createComputePipeline(
+    vk::Device device, vk::PipelineLayout layout, vk::ShaderModule shader);
 
-export [[nodiscard]] VkPipelineShaderStageCreateInfo shaderStage(
-    VkShaderStageFlagBits stage, VkShaderModule module);
+export [[nodiscard]] vk::PipelineShaderStageCreateInfo shaderStage(
+    vk::ShaderStageFlagBits stage, vk::ShaderModule module);
 
 /**
  * Creates a mesh-shader graphics pipeline for dynamic rendering: no vertex
@@ -20,9 +20,9 @@ export [[nodiscard]] VkPipelineShaderStageCreateInfo shaderStage(
  *
  * @param colorFormat format of the single colour attachment.
  * @param depthFormat format of the depth attachment.
- * @return VK_NULL_HANDLE on failure, after logging.
+ * @return nullptr on failure, after logging.
  */
-export [[nodiscard]] VkPipeline createMeshPipeline(
-    VkDevice device, VkPipelineLayout layout,
-    VkShaderModule meshShader, VkShaderModule fragmentShader,
-    VkFormat colorFormat, VkFormat depthFormat);
+export [[nodiscard]] vk::Pipeline createMeshPipeline(
+    vk::Device device, vk::PipelineLayout layout,
+    vk::ShaderModule meshShader, vk::ShaderModule fragmentShader,
+    vk::Format colorFormat, vk::Format depthFormat);

@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cmath>
 #include <cstdint>
@@ -345,7 +345,7 @@ std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
          * One batch per primitive: a GPU round trip each, with the upload buffer empty on
          * entry so a large primitive is never starved by its predecessors.
          */
-        VkCommandBuffer cmd = batch.begin();
+        vk::CommandBuffer cmd = batch.begin();
         if (!cmd) return nullptr;
 
         auto mesh = std::make_shared<Mesh>();

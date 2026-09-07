@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -20,18 +20,18 @@ public:
     ShaderLoader(const ShaderLoader&)            = delete;
     ShaderLoader& operator=(const ShaderLoader&) = delete;
 
-    void init(VkDevice device) { device_ = device; }
+    void init(vk::Device device) { device_ = device; }
 
-    /// @return VK_NULL_HANDLE when the file is missing or not whole SPIR-V words.
-    [[nodiscard]] VkShaderModule load(const std::filesystem::path& path) const;
+    /// @return nullptr when the file is missing or not whole SPIR-V words.
+    [[nodiscard]] vk::ShaderModule load(const std::filesystem::path& path) const;
 
-    [[nodiscard]] VkShaderModule createModule(const std::vector<uint32_t>& spirv,
-                                              const std::string& debugName) const;
+    [[nodiscard]] vk::ShaderModule createModule(const std::vector<uint32_t>& spirv,
+                                                const std::string& debugName) const;
 
-    void destroy(VkShaderModule module) const {
-        if (module) vkDestroyShaderModule(device_, module, nullptr);
+    void destroy(vk::ShaderModule module) const {
+        if (module) device_.destroyShaderModule(module);
     }
 
 private:
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = nullptr;
 };

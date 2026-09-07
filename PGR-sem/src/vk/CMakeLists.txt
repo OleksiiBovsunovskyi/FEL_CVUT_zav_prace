@@ -20,10 +20,13 @@ FetchContent_Declare(vk-bootstrap
 )
 
 # VMA: device memory suballocation. Header-only; compiled in vma_impl.cpp.
+# VulkanMemoryAllocator-Hpp carries VMA itself as a submodule and adds the
+# vma:: bindings over it, so it declares GPUOpen::VulkanMemoryAllocator too.
 FetchContent_Declare(vma
-        GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
-        GIT_TAG        v3.1.0
+        GIT_REPOSITORY https://github.com/YaaZ/VulkanMemoryAllocator-Hpp.git
+        GIT_TAG        v3.4.0+2
         GIT_SHALLOW    TRUE
+        GIT_SUBMODULES_RECURSE TRUE
 )
 
 # fastgltf: glTF 2.0 / GLB scene importer. Keep its optional targets out of the
@@ -57,7 +60,12 @@ FetchContent_Declare(meshoptimizer
         GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(vk-bootstrap vma fastgltf meshoptimizer glm)
+FetchContent_MakeAvailable(vk-bootstrap vma fastgltf meshoptimizer)
+
+# glm 1.0.1 asks for CMake 3.6; CMake 4 deprecates anything below 3.10.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
+FetchContent_MakeAvailable(glm)
+unset(CMAKE_POLICY_VERSION_MINIMUM)
 
 # ---------------------------------------------------------------------------
 # Dear ImGui, Vulkan renderer backend. The `imgui` target from the parent
@@ -207,6 +215,7 @@ add_executable(pgr-vk
         Object/Object.cpp
         # Compile-time checks; no runtime presence.
         Tests/TestEventsHandling.cpp
+        Tests/TestRenderTarget.cpp
         Object/RenderComponent.cpp
         Object/CameraComponent.cpp
         Scene/Scene.cpp
@@ -261,6 +270,8 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/MeshLoader/ClusterLODGenerator.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/MeshLoader/GltfLoader.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/shaders/ShadersLoader.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/RenderTarget/RenderTarget.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/Image/Image.ixx"
         "${PGR_SRC_ROOT}/Logging/Logger.ixx"
 )
 
@@ -270,6 +281,7 @@ target_link_libraries(pgr-vk PRIVATE
         Vulkan::Vulkan
         vk-bootstrap::vk-bootstrap
         GPUOpen::VulkanMemoryAllocator
+        VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
         fastgltf::fastgltf
         glfw
         imgui-vk

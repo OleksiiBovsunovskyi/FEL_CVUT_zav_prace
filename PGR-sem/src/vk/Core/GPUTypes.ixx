@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -19,17 +19,17 @@ export module GPUTypes;
 /**
  * Device address of an array of T, and the C++ spelling of a `T*` in a shader.
  *
- * A plain VkDeviceAddress makes every buffer the same type, so swapping two
+ * A plain vk::DeviceAddress makes every buffer the same type, so swapping two
  * push constant fields compiles and reads garbage on the GPU. Naming the
  * pointee makes that a compile error. Obtained from a DeviceSpan or MappedSpan
  * handed out by BufferManager.
  */
 export template <typename T>
 struct GpuPtr {
-    VkDeviceAddress address = 0;
+    vk::DeviceAddress address = 0;
 };
 
-static_assert(sizeof(GpuPtr<float>) == sizeof(VkDeviceAddress));
+static_assert(sizeof(GpuPtr<float>) == sizeof(vk::DeviceAddress));
 
 /**
  * Device address of a T[count]. The shader-facing form of a range; a bare
@@ -213,7 +213,7 @@ export struct alignas(16) GPUDrawData {
 static_assert(sizeof(GPUDrawData) == 16);
 
 /// Written by build_draw_commands.comp, consumed by vkCmdDrawMeshTasksIndirect*.
-export using GPUMeshTaskCommand = VkDrawMeshTasksIndirectCommandEXT;
+export using GPUMeshTaskCommand = vk::DrawMeshTasksIndirectCommandEXT;
 
 static_assert(sizeof(GPUMeshTaskCommand) == 12);
 
@@ -233,15 +233,15 @@ export struct alignas(16) BuildDrawCommandsPush {
 static_assert(sizeof(BuildDrawCommandsPush) == 112);
 
 /**
- * Arguments to mesh.mesh. Geometry is reached through the mesh header a
+ * Arguments to mesh.slang. Geometry is reached through the mesh header a
  * GPUDrawData points at, so only the two per-frame arrays and the material
  * table need a base here.
  */
-export struct MeshDrawPush {
+export struct GPUMeshDrawPush {
     glm::mat4           viewProj{1.0f};
     GpuPtr<GPUDrawData> drawData;
     GpuPtr<GPUMeshInstance>   instances;
     GpuPtr<GPUMaterial> materials;
 };
 
-static_assert(sizeof(MeshDrawPush) == 88);
+static_assert(sizeof(GPUMeshDrawPush) == 88);

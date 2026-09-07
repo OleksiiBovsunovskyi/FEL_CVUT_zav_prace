@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -123,7 +123,7 @@ private:
     struct PendingDraw {
         BufferRegion commands{};
         BufferRegion count{};
-        MeshDrawPush push{};
+        GPUMeshDrawPush push{};
         uint32_t     instanceCount = 0;
     };
     PendingDraw pendingDraw_;
@@ -153,10 +153,10 @@ private:
     glm::vec3             sceneCenter_{0.0f};
     float                 sceneRadius_ = 1.0f;
 
-    VkDevice device_ = VK_NULL_HANDLE;
+    vk::Device device_ = nullptr;
 
-    VkDescriptorPool imguiPool_ = VK_NULL_HANDLE;
-    bool             imguiVulkanInitialized_ = false;
+    vk::DescriptorPool imguiPool_ = nullptr;
+    bool               imguiVulkanInitialized_ = false;
 
     /**
      * Renderer half of the ImGui setup; AppWindow already created the context
@@ -205,14 +205,14 @@ private:
      *
      * @param instanceCount invocations to dispatch, one per instance.
      */
-    void recordBuildDrawCommands(VkCommandBuffer cmd, const FrameSpans& spans,
+    void recordBuildDrawCommands(vk::CommandBuffer cmd, const FrameSpans& spans,
                                  const glm::mat4& viewProj,
                                  uint32_t instanceCount) const;
 
     /// @return the mesh pass push constants: this frame's two arrays plus the
     ///         Materials base the fragment shader indexes.
-    [[nodiscard]] MeshDrawPush makeMeshDrawPush(const FrameSpans& spans,
-                                                const glm::mat4& viewProj) const;
+    [[nodiscard]] GPUMeshDrawPush makeMeshDrawPush(const FrameSpans& spans,
+                                                   const glm::mat4& viewProj) const;
 
 
     /**
@@ -221,9 +221,9 @@ private:
      * The frame slot's fence has signalled by the time drawFrame() records, so
      * last frame's ranges are free to reuse.
      */
-    void buildDrawCommands(VkCommandBuffer cmd, VkExtent2D extent);
+    void buildDrawCommands(vk::CommandBuffer cmd, vk::Extent2D extent);
 
-    void recordFrame(VkCommandBuffer cmd, const RenderTarget& target);
+    void recordFrame(vk::CommandBuffer cmd, const RenderTarget_Old& target);
 
     void cleanup();
 };

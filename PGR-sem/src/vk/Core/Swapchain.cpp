@@ -1,5 +1,6 @@
 module;
 #include <VkBootstrap.h>
+#include <vulkan/vulkan.hpp>
 
 #include <vector>
 

@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <array>
 #include <cstddef>
@@ -20,9 +20,9 @@ namespace {
 
 /* Every section starts on this boundary, so a pointer into the blob satisfies
  * the alignment of the record it addresses. */
-constexpr VkDeviceSize SECTION_ALIGNMENT = 16;
+constexpr vk::DeviceSize SECTION_ALIGNMENT = 16;
 
-constexpr VkDeviceSize alignUp(VkDeviceSize value) {
+constexpr vk::DeviceSize alignUp(vk::DeviceSize value) {
     return (value + SECTION_ALIGNMENT - 1) & ~(SECTION_ALIGNMENT - 1);
 }
 
@@ -31,16 +31,16 @@ constexpr VkDeviceSize alignUp(VkDeviceSize value) {
  * allocated, so a rejected mesh costs nothing.
  */
 struct BlobLayout {
-    VkDeviceSize meshlets             = 0;
-    VkDeviceSize meshletVertexIndices = 0;
-    VkDeviceSize meshletTriangles     = 0;
-    VkDeviceSize vertices             = 0;
-    VkDeviceSize size                 = 0;
+    vk::DeviceSize meshlets             = 0;
+    vk::DeviceSize meshletVertexIndices = 0;
+    vk::DeviceSize meshletTriangles     = 0;
+    vk::DeviceSize vertices             = 0;
+    vk::DeviceSize size                 = 0;
 };
 
 BlobLayout layoutOf(const MeshUploadData& data) {
     BlobLayout layout{};
-    VkDeviceSize cursor = alignUp(sizeof(GPUMeshHeader));
+    vk::DeviceSize cursor = alignUp(sizeof(GPUMeshHeader));
 
     layout.meshlets = cursor;
     cursor = alignUp(cursor + data.meshlets.size() * sizeof(GPUMeshlet));
@@ -62,7 +62,7 @@ BlobLayout layoutOf(const MeshUploadData& data) {
 
 /// Copies one section into the blob image being built in the upload buffer.
 template <typename T>
-void writeSection(std::byte* blob, VkDeviceSize offset,
+void writeSection(std::byte* blob, vk::DeviceSize offset,
                   std::span<const T> values) {
     if (values.empty()) return;
     std::memcpy(blob + offset, values.data(), values.size() * sizeof(T));
@@ -79,7 +79,7 @@ MeshDataPointer Mesh::header() const {
     return MeshDataPointer{blob_.span().gpu.data.address};
 }
 
-bool Mesh::upload(BufferManager& buffers, VkCommandBuffer commandBuffer,
+bool Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
                   const MeshUploadData& data,
                   std::shared_ptr<Material> material) {
 
@@ -112,7 +112,7 @@ bool Mesh::upload(BufferManager& buffers, VkCommandBuffer commandBuffer,
 
     /* The blob is assembled in the upload buffer, pointers and all, then moved
      * across in one copy. */
-    const VkDeviceAddress base = blob.span().gpu.data.address;
+    const vk::DeviceAddress base = blob.span().gpu.data.address;
 
     GPUMeshHeader header{};
     header.vertices = GpuPtr<GPUVertex>{base + layout.vertices};
@@ -146,12 +146,12 @@ bool Mesh::upload(BufferManager& buffers, VkCommandBuffer commandBuffer,
 
     const std::array<BufferRegion, 1> written{blob.span().region};
     barrier(commandBuffer, written,
-            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_COMPUTE_SHADER_BIT |
-                VK_PIPELINE_STAGE_2_TASK_SHADER_BIT_EXT |
-                VK_PIPELINE_STAGE_2_MESH_SHADER_BIT_EXT |
-                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-            VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eComputeShader |
+                vk::PipelineStageFlagBits2::eTaskShaderEXT |
+                vk::PipelineStageFlagBits2::eMeshShaderEXT |
+                vk::PipelineStageFlagBits2::eFragmentShader,
+            vk::AccessFlagBits2::eShaderStorageRead);
 
     blob_         = std::move(blob);
     material_     = std::move(material);

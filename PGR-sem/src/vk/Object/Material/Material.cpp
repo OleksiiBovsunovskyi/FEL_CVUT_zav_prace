@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <array>
 #include <cstddef>
@@ -16,7 +16,7 @@ namespace {
 
 /* A power of two that sizeof(GPUMaterial) is a multiple of, so consecutive
  * records pack without a gap and stay indexable. */
-constexpr VkDeviceSize MATERIAL_ALIGNMENT = 16;
+constexpr vk::DeviceSize MATERIAL_ALIGNMENT = 16;
 
 static_assert(sizeof(GPUMaterial) % MATERIAL_ALIGNMENT == 0);
 
@@ -45,7 +45,7 @@ GPUMaterial Material::gpuData() const {
 GPUMaterialIndex Material::gpuIndex() const {
     if (!gpuRecord_) return {};
 
-    const VkDeviceSize offset = gpuRecord_.span().region.offset;
+    const vk::DeviceSize offset = gpuRecord_.span().region.offset;
     /* Records are allocated one at a time and sizeof(GPUMaterial) is a
      * multiple of the alignment, so every record lands on a record boundary. */
     if (offset % sizeof(GPUMaterial) != 0) {
@@ -74,7 +74,7 @@ bool Material::prepare(BufferManager& buffers, MappedSpan<std::byte>& outUpload)
     return true;
 }
 
-void Material::record(VkCommandBuffer commandBuffer,
+void Material::record(vk::CommandBuffer commandBuffer,
                       const MappedSpan<std::byte>& upload) const {
     const BufferRegion destination = gpuRecord_.span().region;
 
@@ -82,12 +82,12 @@ void Material::record(VkCommandBuffer commandBuffer,
 
     const std::array<BufferRegion, 1> written{destination};
     barrier(commandBuffer, written,
-            VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-            VK_ACCESS_2_SHADER_STORAGE_READ_BIT);
+            vk::PipelineStageFlagBits2::eTransfer, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader,
+            vk::AccessFlagBits2::eShaderStorageRead);
 }
 
-bool Material::upload(BufferManager& buffers, VkCommandBuffer commandBuffer) {
+bool Material::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer) {
     MappedSpan<std::byte> upload{};
     if (!prepare(buffers, upload)) return false;
     record(commandBuffer, upload);

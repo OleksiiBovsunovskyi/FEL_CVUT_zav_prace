@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -15,7 +15,7 @@ BuildDrawCommands::~BuildDrawCommands() {
         logError("BuildDrawCommands: destroy() was not called before destruction");
 }
 
-bool BuildDrawCommands::init(VkDevice device, ShaderLoader& shaders,
+bool BuildDrawCommands::init(vk::Device device, ShaderLoader& shaders,
                              const std::filesystem::path& shaderPath) {
     if (device_) {
         logError("BuildDrawCommands: init called twice");
@@ -24,23 +24,21 @@ bool BuildDrawCommands::init(VkDevice device, ShaderLoader& shaders,
 
     device_ = device;
 
-    const VkPushConstantRange pushRange{
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
-        .offset     = 0,
-        .size       = sizeof(BuildDrawCommandsPush),
-    };
+    vk::PushConstantRange pushRange{};
+    pushRange.stageFlags = vk::ShaderStageFlagBits::eCompute;
+    pushRange.offset     = 0;
+    pushRange.size       = sizeof(BuildDrawCommandsPush);
 
-    VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    vk::PipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges    = &pushRange;
-    if (vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
+    if (device_.createPipelineLayout(&layoutInfo, nullptr, &pipelineLayout_) != vk::Result::eSuccess) {
         logError("BuildDrawCommands: vkCreatePipelineLayout failed");
         destroy();
         return false;
     }
 
-    VkShaderModule shader = shaders.load(shaderPath);
+    vk::ShaderModule shader = shaders.load(shaderPath);
     if (!shader) {
         logError("BuildDrawCommands: failed to load " + shaderPath.string());
         destroy();
@@ -57,26 +55,26 @@ bool BuildDrawCommands::init(VkDevice device, ShaderLoader& shaders,
     return true;
 }
 
-void BuildDrawCommands::record(VkCommandBuffer commandBuffer,
+void BuildDrawCommands::record(vk::CommandBuffer commandBuffer,
                                const BuildDrawCommandsPush& push) const {
     if (!pipeline_ || push.instanceCount == 0) return;
 
     const uint32_t groupCount =
         (push.instanceCount + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE;
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_);
-    vkCmdPushConstants(commandBuffer, pipelineLayout_, VK_SHADER_STAGE_COMPUTE_BIT,
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline_);
+    commandBuffer.pushConstants(pipelineLayout_, vk::ShaderStageFlagBits::eCompute,
                        0, sizeof(push), &push);
-    vkCmdDispatch(commandBuffer, groupCount, 1, 1);
+    commandBuffer.dispatch(groupCount, 1, 1);
 }
 
 void BuildDrawCommands::destroy() {
     if (!device_) return;
 
-    vkDestroyPipeline(device_, pipeline_, nullptr);
-    vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
+    device_.destroyPipeline(pipeline_);
+    device_.destroyPipelineLayout(pipelineLayout_);
 
-    pipeline_       = VK_NULL_HANDLE;
-    pipelineLayout_ = VK_NULL_HANDLE;
-    device_         = VK_NULL_HANDLE;
+    pipeline_       = nullptr;
+    pipelineLayout_ = nullptr;
+    device_         = nullptr;
 }

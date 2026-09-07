@@ -1,17 +1,8 @@
 import gpu_types;
 
-/// Mirror of MeshDrawPush in Core/GPUTypes.ixx.
-struct MeshDrawPush {
-    float4x4 viewProj;                  // 0
+[[vk::push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
 
-    GPUDrawData* drawData;              // 64
-    GPUMeshInstance*   instances;            // 72
-    GPUMaterial* materials;             // 80
-};                                      // 88
-
-[[vk::push_constant]] ConstantBuffer<MeshDrawPush> pc;
-
-struct MeshVertex {
+struct MeshVertex { 
     float4 position : SV_Position;
     float3 normal   : NORMAL;
     nointerpolation uint materialIndex : MATERIAL;
