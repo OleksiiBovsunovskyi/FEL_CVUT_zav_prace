@@ -164,3 +164,12 @@ $RECYCLE.BIN/
 .env.local
 *.local
 local.*
+
+# ---------------------------------------------------------------------------
+# CLion / IDE state and CMake's Visual Studio generator output
+# ---------------------------------------------------------------------------
+PGR-sem/src/.idea/
+PGR-sem/src/framework/
+PGR-sem/src/vk/Docs/
+PGR-sem/src/del.cpp
+PGR-sem/src/rt_diag.cpp
