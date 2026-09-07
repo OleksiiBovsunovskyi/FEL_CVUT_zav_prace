@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -27,10 +27,10 @@ public:
      *        VulkanContext.
      * @param colorFormat swapchain format the pass renders into.
      */
-    [[nodiscard]] bool init(VkDevice device, ShaderLoader& shaders,
+    [[nodiscard]] bool init(vk::Device device, ShaderLoader& shaders,
                             const std::filesystem::path& meshShaderPath,
                             const std::filesystem::path& fragmentShaderPath,
-                            VkFormat colorFormat, VkFormat depthFormat,
+                            vk::Format colorFormat, vk::Format depthFormat,
                             PFN_vkCmdDrawMeshTasksIndirectCountEXT drawIndirectCount);
 
     /**
@@ -42,17 +42,17 @@ public:
      * @param maxDrawCount upper bound the count is clamped against - the object
      *        count the command buffer was sized for.
      */
-    void record(VkCommandBuffer commandBuffer, VkExtent2D extent,
-                const MeshDrawPush& push,
+    void record(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
+                const GPUMeshDrawPush& push,
                 const BufferRegion& commands, const BufferRegion& count,
                 uint32_t maxDrawCount) const;
 
     void destroy();
 
 private:
-    VkDevice         device_         = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
-    VkPipeline       pipeline_       = VK_NULL_HANDLE;
+    vk::Device         device_         = nullptr;
+    vk::PipelineLayout pipelineLayout_ = nullptr;
+    vk::Pipeline       pipeline_       = nullptr;
 
     PFN_vkCmdDrawMeshTasksIndirectCountEXT drawIndirectCount_ = nullptr;
 };

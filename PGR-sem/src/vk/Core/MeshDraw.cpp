@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -16,10 +16,10 @@ MeshDraw::~MeshDraw() {
         logError("MeshDraw: destroy() was not called before destruction");
 }
 
-bool MeshDraw::init(VkDevice device, ShaderLoader& shaders,
+bool MeshDraw::init(vk::Device device, ShaderLoader& shaders,
                     const std::filesystem::path& meshShaderPath,
                     const std::filesystem::path& fragmentShaderPath,
-                    VkFormat colorFormat, VkFormat depthFormat,
+                    vk::Format colorFormat, vk::Format depthFormat,
                     PFN_vkCmdDrawMeshTasksIndirectCountEXT drawIndirectCount) {
     if (device_) {
         logError("MeshDraw: init called twice");
@@ -34,25 +34,23 @@ bool MeshDraw::init(VkDevice device, ShaderLoader& shaders,
     drawIndirectCount_ = drawIndirectCount;
 
     /* Every buffer is reached through its device address, so no descriptor sets. */
-    const VkPushConstantRange pushRange{
-        /* The fragment stage needs it too: it reads the material record. */
-        .stageFlags = VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT,
-        .offset     = 0,
-        .size       = sizeof(MeshDrawPush),
-    };
+    vk::PushConstantRange pushRange{};
+    /* The fragment stage needs it too: it reads the material record. */
+    pushRange.stageFlags = vk::ShaderStageFlagBits::eMeshEXT | vk::ShaderStageFlagBits::eFragment;
+    pushRange.offset     = 0;
+    pushRange.size       = sizeof(GPUMeshDrawPush);
 
-    VkPipelineLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    vk::PipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges    = &pushRange;
-    if (vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
+    if (device_.createPipelineLayout(&layoutInfo, nullptr, &pipelineLayout_) != vk::Result::eSuccess) {
         logError("MeshDraw: vkCreatePipelineLayout failed");
         destroy();
         return false;
     }
 
-    VkShaderModule meshShader = shaders.load(meshShaderPath);
-    VkShaderModule fragShader = shaders.load(fragmentShaderPath);
+    vk::ShaderModule meshShader = shaders.load(meshShaderPath);
+    vk::ShaderModule fragShader = shaders.load(fragmentShaderPath);
     if (meshShader && fragShader) {
         pipeline_ = createMeshPipeline(device_, pipelineLayout_, meshShader, fragShader,
                                        colorFormat, depthFormat);
@@ -70,34 +68,35 @@ bool MeshDraw::init(VkDevice device, ShaderLoader& shaders,
     return true;
 }
 
-void MeshDraw::record(VkCommandBuffer commandBuffer, VkExtent2D extent,
-                      const MeshDrawPush& push,
+void MeshDraw::record(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
+                      const GPUMeshDrawPush& push,
                       const BufferRegion& commands, const BufferRegion& count,
                       uint32_t maxDrawCount) const {
     if (!pipeline_ || !commands || !count || maxDrawCount == 0) return;
 
     const auto [viewport, scissor] = viewportAndScissor(extent);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-    vkCmdPushConstants(commandBuffer, pipelineLayout_,
-                       VK_SHADER_STAGE_MESH_BIT_EXT | VK_SHADER_STAGE_FRAGMENT_BIT,
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline_);
+    commandBuffer.setViewport(0, 1, &viewport);
+    commandBuffer.setScissor(0, 1, &scissor);
+    commandBuffer.pushConstants(pipelineLayout_,
+                       vk::ShaderStageFlagBits::eMeshEXT | vk::ShaderStageFlagBits::eFragment,
                        0, sizeof(push), &push);
 
-    drawIndirectCount_(commandBuffer, commands.buffer, commands.offset,
-                       count.buffer, count.offset,
+    drawIndirectCount_(static_cast<VkCommandBuffer>(commandBuffer),
+                       static_cast<VkBuffer>(commands.buffer), commands.offset,
+                       static_cast<VkBuffer>(count.buffer), count.offset,
                        maxDrawCount, sizeof(GPUMeshTaskCommand));
 }
 
 void MeshDraw::destroy() {
     if (!device_) return;
 
-    vkDestroyPipeline(device_, pipeline_, nullptr);
-    vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
+    device_.destroyPipeline(pipeline_);
+    device_.destroyPipelineLayout(pipelineLayout_);
 
-    pipeline_          = VK_NULL_HANDLE;
-    pipelineLayout_    = VK_NULL_HANDLE;
-    device_            = VK_NULL_HANDLE;
+    pipeline_          = nullptr;
+    pipelineLayout_    = nullptr;
+    device_            = nullptr;
     drawIndirectCount_ = nullptr;
 }
