@@ -46,8 +46,8 @@ export module VulkanApp;
  *     an atomic; the count stays on the GPU.
  *  5. makeMeshDrawPush gathers the static mega-buffer addresses the mesh shader
  *     walks, and the whole draw is published as pendingDraw_.
- *  6. recordFrame opens the render pass, issues the one indirect draw, lets
- *     ImGui record into the same pass, and closes it.
+ *  6. Renderer opens the render pass and calls back into recordDraw, which
+ *     issues the one indirect draw and lets ImGui record into the same pass.
  *
  * FrameRunner submits and presents; nothing here waits on the GPU after load.
  */
@@ -56,7 +56,9 @@ import VkWindow;
 import VulkanContext;
 import VkSwapchain;
 import FrameRunner;
+import Renderer;
 import VkUtil;
+import renderTarget;
 import ShadersLoader;
 import BufferManager;
 import UploadBatch;
@@ -108,6 +110,7 @@ private:
     VulkanContext ctx_;
     Swapchain     swapchain_;
     FrameRunner   frames_;
+    Renderer      renderer_;
     ShaderLoader  shaders_;
     BufferManager buffers_;
     UploadBatch   uploads_;
@@ -192,11 +195,11 @@ private:
     [[nodiscard]] std::vector<GPUMeshInstance> collectMeshInstances();
 
     /**
-     * @param frameIndex frame slot to allocate from.
+     * @param frameInFlight reusable resource slot to allocate from.
      * @param instanceCount instances the ranges must hold.
      * @return the four ranges, or one that tests false when any failed.
      */
-    [[nodiscard]] FrameSpans allocateFrameSpans(uint32_t frameIndex,
+    [[nodiscard]] FrameSpans allocateFrameSpans(FrameInFlightIndex frameInFlight,
                                                 uint32_t instanceCount);
 
     /**
@@ -221,9 +224,16 @@ private:
      * The frame slot's fence has signalled by the time drawFrame() records, so
      * last frame's ranges are free to reuse.
      */
-    void buildDrawCommands(vk::CommandBuffer cmd, vk::Extent2D extent);
+    void buildDrawCommands(Frame::Recording& recording);
 
-    void recordFrame(vk::CommandBuffer cmd, const RenderTarget_Old& target);
+    /**
+     * Builds this frame's draw commands, then hands the swapchain image to
+     * Renderer, which owns every other attachment.
+     */
+    void recordFrame(Frame::Recording& recording);
+
+    /// The one indirect draw plus ImGui, recorded inside Renderer's pass.
+    void recordDraw(vk::CommandBuffer cmd, vk::Extent2D extent);
 
     void cleanup();
 };

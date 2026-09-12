@@ -1,6 +1,7 @@
 module;
 #include <vulkan/vulkan.hpp>
 
+#include <cstdint>
 #include <span>
 #include <utility>
 #include <vector>
@@ -42,26 +43,6 @@ static_assert(DEPTH_FORMAT == vk::Format::eD32Sfloat ||
               "precision evenly and gains nothing from the flip");
 
 
-/*
- * TODO: the flat per-frame attachment bundle recordFrame receives. It holds two
- * attachments at once (colour and depth) where the RenderTarget class holds one
- * image, so it is not a rename away from that class. Deferred geometry adds
- * albedo, normal, ORM and HDR colour, at which point this either grows four
- * fields or is replaced by whatever recordFrame is given instead.
- */
-export struct RenderTarget_Old {
-    vk::Image     image{};
-    vk::ImageView view{};
-    vk::Format    format = vk::Format::eUndefined;
-    vk::Extent2D  extent{};
-
-    /**
-     * Already in DEPTH_ATTACHMENT_OPTIMAL. Optional; a pass without depth omits
-     * it and builds its pipeline with depthAttachmentFormat = UNDEFINED.
-     */
-    vk::ImageView depthView{};
-    vk::Format    depthFormat = vk::Format::eUndefined;
-};
 
 /// synchronization2 image layout transition.
 export inline void transitionImage(vk::CommandBuffer cmd, vk::Image image,

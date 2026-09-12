@@ -12,7 +12,9 @@ export module BufferManager;
 
 import VulkanContext;
 import GPUTypes;
+import FrameInFlightIndex;
 export import VK_Buffers;
+import Logger;
 
 export class BufferManager;
 
@@ -91,10 +93,12 @@ export struct GPUBufferCapacities {
         FrameSlotBufferTraits<FrameSlotBufferKind::MeshTaskCommandCount>::capacity,
     };
 
-    vk::DeviceSize upload         = 32ull << 20;
-    uint32_t       framesInFlight = 2;
+    vk::DeviceSize upload = 32ull << 20;
 };
 
+/*
+ * TODO: Renderers own their own framebuffers, Buffer manager should own only the "Mega buffers"
+ ***/
 /**
  * Owns every buffer the renderer uses, and suballocates ranges inside them.
  * Static ranges are individually owned and reused after deferred retirement; frame ranges are
@@ -122,11 +126,11 @@ public:
     /// Destroys every buffer. Safe to call twice.
     void shutdown();
 
+    /**
+     * Checks whether this buffer manager have been initialized.
+     * @return true after init() and before shutdown().
+     */
     [[nodiscard]] bool initialized() const { return allocator_ != nullptr; }
-
-    [[nodiscard]] uint32_t frameSlotCount() const {
-        return static_cast<uint32_t>(frameSlotBuffers_.size());
-    }
 
     /**
      * Reserves a range in a static buffer for as long as the returned array
@@ -140,10 +144,16 @@ public:
     [[nodiscard]] DeviceArray<StaticRecord<Kind>> allocateStatic(
         uint32_t count, vk::DeviceSize alignment = alignof(StaticRecord<Kind>)) {
         using Record = StaticRecord<Kind>;
-
+        
+        if (!std::has_single_bit(alignment))
+        {
+            logError("BufferManager: allocateStatic alignment must be a power of two, got " + std::to_string(alignment));
+            return DeviceArray<Record>{};
+        }
+        
         const RawAllocation raw = allocateStaticRaw(
             Kind, vk::DeviceSize{count} * sizeof(Record), alignment);
-        if (!raw.region) return {};
+        if (!raw.region) return DeviceArray<Record>{};
 
         return DeviceArray<Record>{
             spanOf<DeviceOnlyBuffer, Record>(raw, count),
@@ -151,22 +161,22 @@ public:
     }
 
     /**
-     * Reserves scratch space in one frame slot. Released only by resetFrame().
+     * Reserves a range in one frame slot. Released only by resetFrame().
      *
-     * @param frameIndex frame slot, below frameSlotCount().
+     * @param frameInFlight reusable resource slot.
      * @param count records to reserve.
      * @param alignment in bytes; must be a power of two.
      * @return an empty span on a bad argument or when the buffer is full.
      */
     template <FrameSlotBufferKind Kind>
     [[nodiscard]] FrameSlotSpan<Kind> allocateFrame(
-        uint32_t frameIndex, uint32_t count,
+        FrameInFlightIndex frameInFlight, uint32_t count,
         vk::DeviceSize alignment = alignof(FrameSlotRecord<Kind>)) {
         using Record = FrameSlotRecord<Kind>;
         using Buffer = typename FrameSlotBufferTraits<Kind>::Buffer;
 
         const RawAllocation raw = allocateFrameRaw(
-            frameIndex, Kind, vk::DeviceSize{count} * sizeof(Record), alignment);
+            frameInFlight, Kind, vk::DeviceSize{count} * sizeof(Record), alignment);
         if (!raw.region) return {};
 
         return spanOf<Buffer, Record>(raw, count);
@@ -199,12 +209,11 @@ public:
     [[nodiscard]] vk::DeviceSize uploadCapacity() const { return upload_.capacity; }
 
     /**
-     * Releases every range in one frame slot. Requires that slot's fence to
-     * have signalled.
+     * Releases every range in one frame slot.
      *
-     * @param frameIndex frame slot, below frameSlotCount().
+     * @param frameInFlight reusable resource slot.
      */
-    void resetFrame(uint32_t frameIndex);
+    void resetFrame(FrameInFlightIndex frameInFlight);
 
     /**
      * Releases every upload range. Legal only once all copies reading from it
@@ -258,6 +267,7 @@ private:
 
     using StaticBuffers = std::array<MegaBuffer, STATIC_BUFFER_COUNT>;
     using FrameBuffers  = std::array<MegaBuffer, FRAME_SLOT_BUFFER_COUNT>;
+    using FrameResources = std::array<FrameBuffers, FRAMES_IN_FLIGHT>;
 
     /// Fills in whichever span type the placement declares.
     template <typename Buffer, typename T>
@@ -274,7 +284,7 @@ private:
     [[nodiscard]] RawAllocation allocateStaticRaw(
         StaticBufferKind kind, vk::DeviceSize bytes, vk::DeviceSize alignment);
     [[nodiscard]] RawAllocation allocateFrameRaw(
-        uint32_t frameIndex, FrameSlotBufferKind kind,
+        FrameInFlightIndex frameInFlight, FrameSlotBufferKind kind,
         vk::DeviceSize bytes, vk::DeviceSize alignment);
     [[nodiscard]] RawAllocation allocate(
         MegaBuffer& buffer, vk::DeviceSize bytes, vk::DeviceSize alignment);
@@ -291,7 +301,7 @@ private:
     vk::Device     device_    = nullptr;
 
     StaticBuffers                  staticBuffers_{};
-    std::vector<FrameBuffers>      frameSlotBuffers_;
+    FrameResources                 frameSlotBuffers_{};
     MegaBuffer                     upload_{};
     std::vector<RetiredAllocation> retired_;
     uint64_t                       retirementSerial_ = 0;

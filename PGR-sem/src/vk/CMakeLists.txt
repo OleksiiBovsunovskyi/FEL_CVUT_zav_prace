@@ -203,12 +203,14 @@ add_executable(pgr-vk
         VK_Window/AppWindow.cpp
         Core/VulkanContext.cpp
         Core/Swapchain.cpp
-        Core/FrameRunner.cpp
+        Core/FrameRunner/FrameRunner.cpp
+        Rendering/Frame/Frame.cpp
         Core/BufferManager.cpp
         Core/UploadBatch.cpp
         Core/Pipeline.cpp
         Core/BuildDrawCommands.cpp
         Core/MeshDraw.cpp
+        VK_Renderer/Renderer.cpp
         Debug/ShaderPrint.cpp
         Object/DrawList.cpp
         Object/Component.cpp
@@ -216,6 +218,7 @@ add_executable(pgr-vk
         # Compile-time checks; no runtime presence.
         Tests/TestEventsHandling.cpp
         Tests/TestRenderTarget.cpp
+        Tests/TestFrame.cpp
         Object/RenderComponent.cpp
         Object/CameraComponent.cpp
         Scene/Scene.cpp
@@ -242,8 +245,9 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/VulkanContext.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Swapchain.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/VkUtil.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/FrameInFlightIndex.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/GPUTypes.ixx"
-        "${CMAKE_CURRENT_SOURCE_DIR}/Core/FrameRunner.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/FrameRunner/FrameRunner.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/VK_Buffers.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/BufferManager.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/UploadBatch.ixx"
@@ -270,7 +274,13 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/MeshLoader/ClusterLODGenerator.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/MeshLoader/GltfLoader.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/shaders/ShadersLoader.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/RenderTarget/RenderTargetBase.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/RenderTarget/RenderTarget2D.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/RenderTarget/ColorRenderTarget.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/RenderTarget/DepthRenderTarget.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/RenderTarget/RenderTarget.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/Frame/Frame.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/VK_Renderer/Renderer.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/Image/Image.ixx"
         "${PGR_SRC_ROOT}/Logging/Logger.ixx"
 )

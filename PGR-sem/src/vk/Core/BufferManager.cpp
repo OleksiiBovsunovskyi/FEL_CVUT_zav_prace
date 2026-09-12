@@ -65,40 +65,37 @@ BufferManager::~BufferManager() {
     }
 }
 
-bool BufferManager::init(VulkanContext& ctx, const GPUBufferCapacities& c) {
+bool BufferManager::init(VulkanContext& ctx, const GPUBufferCapacities& gpuBufferCapacities) {
     if (initialized()) {
         logError("BufferManager: init called twice");
         return false;
     }
-    if (c.framesInFlight == 0) {
-        logError("BufferManager: framesInFlight must be greater than zero");
-        return false;
-    }
-
     allocator_ = ctx.allocator();
     device_    = ctx.device();
-    frameSlotBuffers_.resize(c.framesInFlight);
 
     for (size_t i = 0; i < STATIC_BUFFER_COUNT; ++i) {
-        if (c.staticBytes[i] == 0) continue;   // opted out
+        if (gpuBufferCapacities.staticBytes[i] == 0) continue;   // opted out
 
         const BufferSpec& spec = STATIC_SPECS[i];
-        if (!createBuffer(staticBuffers_[i], c.staticBytes[i], spec.usage,
+        if (!createBuffer(staticBuffers_[i], gpuBufferCapacities.staticBytes[i], spec.usage,
                           spec.memory, spec.flags, spec.warnIfHost, spec.name)) {
             shutdown();
             return false;
         }
     }
 
-    for (uint32_t frame = 0; frame < c.framesInFlight; ++frame) {
+    auto frameInFlight = FrameInFlightIndex::first();
+    for (uint32_t frame = 0; frame < FRAMES_IN_FLIGHT;
+         ++frame, frameInFlight = frameInFlight.next()) {
+        auto& frameBuffers = frameInFlight.select(frameSlotBuffers_);
         for (size_t i = 0; i < FRAME_SLOT_BUFFER_COUNT; ++i) {
-            if (c.frameBytes[i] == 0) continue;   // opted out
+            if (gpuBufferCapacities.frameBytes[i] == 0) continue;   // opted out
 
             const BufferSpec& spec = FRAME_SPECS[i];
             const std::string name =
                 std::string(spec.name) + " [frame " + std::to_string(frame) + "]";
 
-            if (!createBuffer(frameSlotBuffers_[frame][i], c.frameBytes[i],
+            if (!createBuffer(frameBuffers[i], gpuBufferCapacities.frameBytes[i],
                               spec.usage, spec.memory, spec.flags,
                               spec.warnIfHost, name.c_str())) {
                 shutdown();
@@ -107,7 +104,7 @@ bool BufferManager::init(VulkanContext& ctx, const GPUBufferCapacities& c) {
         }
     }
 
-    if (!createBuffer(upload_, c.upload, UPLOAD_SPEC.usage, UPLOAD_SPEC.memory,
+    if (!createBuffer(upload_, gpuBufferCapacities.upload, UPLOAD_SPEC.usage, UPLOAD_SPEC.memory,
                       UPLOAD_SPEC.flags, UPLOAD_SPEC.warnIfHost,
                       UPLOAD_SPEC.name)) {
         shutdown();
@@ -203,7 +200,6 @@ void BufferManager::shutdown() {
     for (auto& frame : frameSlotBuffers_)
         for (auto& buffer : frame)
             destroyBuffer(buffer);
-    frameSlotBuffers_.clear();
 
     for (auto& buffer : staticBuffers_)
         destroyBuffer(buffer);
@@ -248,13 +244,12 @@ BufferManager::RawAllocation BufferManager::allocateStaticRaw(
 }
 
 BufferManager::RawAllocation BufferManager::allocateFrameRaw(
-    uint32_t frameIndex, FrameSlotBufferKind kind,
+    FrameInFlightIndex frameInFlight, FrameSlotBufferKind kind,
     vk::DeviceSize bytes, vk::DeviceSize alignment) {
-    if (frameIndex >= frameSlotBuffers_.size() || kind == FrameSlotBufferKind::Count)
-        return {};
+    if (kind == FrameSlotBufferKind::Count) return {};
 
     RawAllocation raw =
-        allocate(frameSlotBuffers_[frameIndex][index(kind)], bytes, alignment);
+        allocate(frameInFlight.select(frameSlotBuffers_)[index(kind)], bytes, alignment);
     if (!raw.region)
         logError(std::string("BufferManager: ") + FRAME_SPECS[index(kind)].name +
                  " is full for this frame");
@@ -317,9 +312,8 @@ void BufferManager::collect(uint64_t completedSerial) {
     retired_.erase(out, retired_.end());
 }
 
-void BufferManager::resetFrame(uint32_t frameIndex) {
-    if (frameIndex >= frameSlotBuffers_.size()) return;
-    for (auto& buffer : frameSlotBuffers_[frameIndex])
+void BufferManager::resetFrame(FrameInFlightIndex frameInFlight) {
+    for (auto& buffer : frameInFlight.select(frameSlotBuffers_))
         if (buffer.virtualBlock) buffer.virtualBlock.clearVirtualBlock();
 }
 

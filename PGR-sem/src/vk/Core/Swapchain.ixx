@@ -2,12 +2,16 @@ module;
 #include <VkBootstrap.h>
 #include <vulkan/vulkan.hpp>
 
+#include <memory>
 #include <vector>
 
 export module VkSwapchain;
 
 import VulkanContext;
 import VkWindow;
+export import Frame;
+
+//TODO: is this class actually needed considering Frame.ixx machinery
 
 /**
  * The images the compositor presents, plus their views and the rebuild path.
@@ -31,26 +35,40 @@ public:
 
     void destroy();
 
-    vk::SwapchainKHR handle()        const { return vkb_.swapchain; }
     vk::Format       format()        const { return static_cast<vk::Format>(vkb_.image_format); }
     vk::Extent2D     extent()        const { return vkb_.extent; }
-    uint32_t         imageCount()    const { return static_cast<uint32_t>(images_.size()); }
+    uint32_t         imageCount()    const { return static_cast<uint32_t>(frames_.size()); }
     uint32_t         minImageCount() const { return vkb_.requested_min_image_count; }
 
-    vk::Image     image(uint32_t i) const { return images_[i]; }
-    vk::ImageView view(uint32_t i)  const { return views_[i]; }
+    struct Acquisition {
+        vk::Result result;
+        Frame* frame;
+    };
 
-    const std::vector<VkImage>&     images() const { return images_; }
-    const std::vector<VkImageView>& views()  const { return views_; }
+    /**
+     * Acquires a Frame for rendering.
+     * @param imageAvailable semaphore to signal on image acquisition.
+     * @return Vulkan acquisition result and selected Frame.
+     */
+    [[nodiscard]] Acquisition acquire(vk::Semaphore imageAvailable);
+
+    /**
+     * Presents the submitted Frame after validating it belongs to this Swapchain.
+     * @param frame Frame whose image was submitted.
+     * @return Vulkan presentation result.
+     */
+    [[nodiscard]] vk::Result present(Frame& frame);
 
 private:
+    struct ImageIndex { uint32_t value; };
+
     VulkanContext*   ctx_    = nullptr;
     const AppWindow* window_ = nullptr;
 
-    vkb::Swapchain           vkb_{};
-    std::vector<VkImage>     images_;
-    std::vector<VkImageView> views_;
+    vkb::Swapchain                       vkb_{};
+    std::vector<std::unique_ptr<Frame>>   frames_;
+    bool presentationFailed_ = false;
 
     bool build();
-    void destroyViews();
+    void destroyFrames();
 };

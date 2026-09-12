@@ -73,6 +73,17 @@ void VulkanApp::init() {
     if (!frames_.init(ctx_, swapchain_))
         throw std::runtime_error("FrameRunner::init failed");
 
+    if (!renderer_.init(ctx_, swapchain_.extent()))
+        throw std::runtime_error("Renderer::init failed");
+    renderer_.setDrawCallback(
+        [this](vk::CommandBuffer cmd, vk::Extent2D extent) { recordDraw(cmd, extent); });
+
+    /* Swapchain::recreate has waited the device idle by the time this fires. */
+    frames_.setSwapchainRecreatedCallback([this](vk::Extent2D extent, vk::Format) {
+        if (!renderer_.resize(extent))
+            throw std::runtime_error("Renderer::resize failed");
+    });
+
     shaders_.init(device_);
 
     if (!buffers_.init(ctx_))
@@ -105,8 +116,8 @@ void VulkanApp::run() {
     window_.setDrawCallback([this] {
         scene_.tick(elapseFrame());
         updateCamera();
-        frames_.drawFrame([this](vk::CommandBuffer cmd, const RenderTarget_Old& target) {
-            recordFrame(cmd, target);
+        frames_.drawFrame([this](Frame::Recording& recording) {
+            recordFrame(recording);
         });
         //Lost device is not recoverable
         if (frames_.deviceLost()) window_.requestClose();
@@ -258,15 +269,15 @@ std::vector<GPUMeshInstance> VulkanApp::collectMeshInstances() {
     return instances;
 }
 
-VulkanApp::FrameSpans VulkanApp::allocateFrameSpans(uint32_t frameIndex,
-                                                      uint32_t instanceCount) {
+VulkanApp::FrameSpans VulkanApp::allocateFrameSpans(
+    FrameInFlightIndex frameInFlight, uint32_t instanceCount) {
     return {
-        buffers_.allocateFrame<FrameSlotBufferKind::MeshInstances>(frameIndex, instanceCount),
-        buffers_.allocateFrame<FrameSlotBufferKind::DrawData>(frameIndex, instanceCount),
-        buffers_.allocateFrame<FrameSlotBufferKind::MeshTaskCommands>(frameIndex,
+        buffers_.allocateFrame<FrameSlotBufferKind::MeshInstances>(frameInFlight, instanceCount),
+        buffers_.allocateFrame<FrameSlotBufferKind::DrawData>(frameInFlight, instanceCount),
+        buffers_.allocateFrame<FrameSlotBufferKind::MeshTaskCommands>(frameInFlight,
                                                                   instanceCount),
         /* One counter, and vkCmdFillBuffer needs a 4-byte aligned offset. */
-        buffers_.allocateFrame<FrameSlotBufferKind::MeshTaskCommandCount>(frameIndex, 1, 4),
+        buffers_.allocateFrame<FrameSlotBufferKind::MeshTaskCommandCount>(frameInFlight, 1, 4),
     };
 }
 
@@ -317,9 +328,11 @@ GPUMeshDrawPush VulkanApp::makeMeshDrawPush(const FrameSpans& spans,
     return push;
 }
 
-void VulkanApp::buildDrawCommands(vk::CommandBuffer cmd, vk::Extent2D extent) {
-    const uint32_t frame = frames_.frameIndex();
-    buffers_.resetFrame(frame);
+void VulkanApp::buildDrawCommands(Frame::Recording& recording) {
+    const vk::CommandBuffer cmd = recording.commandBuffer();
+    const vk::Extent2D extent = recording.extent();
+    const FrameInFlightIndex frameInFlight = recording.frameInFlight();
+    buffers_.resetFrame(frameInFlight);
     pendingDraw_ = {};
 
     /* No fallback matrix: an identity one would render as a rendering bug
@@ -331,7 +344,7 @@ void VulkanApp::buildDrawCommands(vk::CommandBuffer cmd, vk::Extent2D extent) {
     if (instances.empty()) return;
 
     const auto instanceCount = static_cast<uint32_t>(instances.size());
-    const FrameSpans spans = allocateFrameSpans(frame, instanceCount);
+    const FrameSpans spans = allocateFrameSpans(frameInFlight, instanceCount);
     if (!spans) {
         logError("buildDrawCommands: out of per-frame buffer space");
         return;
@@ -351,40 +364,17 @@ void VulkanApp::buildDrawCommands(vk::CommandBuffer cmd, vk::Extent2D extent) {
     pendingDraw_.push        = makeMeshDrawPush(spans, viewProj);
 }
 
-void VulkanApp::recordFrame(vk::CommandBuffer cmd, const RenderTarget_Old& target) {
-    buildDrawCommands(cmd, target.extent);
+void VulkanApp::recordFrame(Frame::Recording& recording) {
+    buildDrawCommands(recording);
+    renderer_.render(recording);
+}
 
-    vk::RenderingAttachmentInfo colorAttachment{};
-    colorAttachment.imageView   = target.view;
-    colorAttachment.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    colorAttachment.loadOp      = vk::AttachmentLoadOp::eClear;
-    colorAttachment.storeOp     = vk::AttachmentStoreOp::eStore;
-    colorAttachment.clearValue.color = std::array<float, 4>{ 0.2f, 0.1f, 0.3f, 1.0f };  // same as the GL target
-
-    vk::RenderingAttachmentInfo depthAttachment{};
-    depthAttachment.imageView   = target.depthView;
-    depthAttachment.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
-    depthAttachment.loadOp      = vk::AttachmentLoadOp::eClear;
-    // Nothing reads depth back yet, so it need not survive the pass.
-    depthAttachment.storeOp     = vk::AttachmentStoreOp::eDontCare;
-    depthAttachment.clearValue.depthStencil.depth = DEPTH_CLEAR;
-
-    vk::RenderingInfo rendering{};
-    rendering.renderArea           = vk::Rect2D{ {0, 0}, target.extent };
-    rendering.layerCount           = 1;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachments    = &colorAttachment;
-    rendering.pDepthAttachment     = &depthAttachment;
-
-    cmd.beginRendering(rendering);
-
-    meshDraw_.record(cmd, target.extent, pendingDraw_.push,
+void VulkanApp::recordDraw(vk::CommandBuffer cmd, vk::Extent2D extent) {
+    meshDraw_.record(cmd, extent, pendingDraw_.push,
                      pendingDraw_.commands, pendingDraw_.count,
                      pendingDraw_.instanceCount);
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(cmd));
-
-    cmd.endRendering();
 }
 
 void VulkanApp::cleanup() {
@@ -409,6 +399,7 @@ void VulkanApp::cleanup() {
     uploads_.destroy();
     buffers_.shutdown();
 
+    renderer_.destroy();
     frames_.destroy();
 
     swapchain_.destroy();
