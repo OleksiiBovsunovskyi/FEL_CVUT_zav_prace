@@ -210,6 +210,7 @@ add_executable(pgr-vk
         Core/Pipeline.cpp
         Core/BuildDrawCommands.cpp
         Core/MeshDraw.cpp
+        VK_Renderer/MeshDrawResources.cpp
         VK_Renderer/TemporaryRenderer.cpp
         VK_Renderer/Renderer.cpp
         Debug/ShaderPrint.cpp
@@ -281,6 +282,7 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/RenderTarget/DepthRenderTarget.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/RenderTarget/RenderTarget.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/Frame/Frame.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/VK_Renderer/MeshDrawResources.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/VK_Renderer/TemporaryRenderer.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/VK_Renderer/Renderer.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/Image/Image.ixx"

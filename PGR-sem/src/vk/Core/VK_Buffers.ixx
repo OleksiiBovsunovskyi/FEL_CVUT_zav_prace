@@ -26,21 +26,7 @@ export enum class StaticBufferKind : uint8_t {
 };
 
 /**
- * Duplicated per frame-in-flight, so a frame still executing is never
- * overwritten. Freed only by resetFrame().
- */
-export enum class FrameSlotBufferKind : uint8_t {
-    MeshInstances,
-    DrawData,
-    MeshTaskCommands,
-    MeshTaskCommandCount,
-    Count,
-};
-
-/**
- * Byte range of a vk::Buffer: what copyBuffer, fillBuffer, buffer barriers and
- * the indirect draw take. Carries no address and no host pointer, so it cannot
- * stand in for either.
+ * Byte range of a vk::Buffer.
  */
 export struct BufferRegion {
     vk::Buffer     buffer = nullptr;
@@ -116,8 +102,6 @@ export struct HostDeviceReadableBuffer {
 
 export constexpr size_t STATIC_BUFFER_COUNT =
     static_cast<size_t>(StaticBufferKind::Count);
-export constexpr size_t FRAME_SLOT_BUFFER_COUNT =
-    static_cast<size_t>(FrameSlotBufferKind::Count);
 
 /// Read as storage through a device address, and filled by a transfer.
 export constexpr vk::BufferUsageFlags GPU_DATA_USAGE =
@@ -130,7 +114,6 @@ export constexpr vk::BufferUsageFlags GPU_DATA_USAGE =
  * `Buffer` is the placement, and both drive the compile-time checks below.
  */
 export template <StaticBufferKind Kind> struct StaticBufferTraits;
-export template <FrameSlotBufferKind  Kind> struct FrameSlotBufferTraits;
 
 template <> struct StaticBufferTraits<StaticBufferKind::MeshData> {
     /// Heterogeneous: the GPUMeshHeader at the front carries the section pointers.
@@ -148,63 +131,7 @@ template <> struct StaticBufferTraits<StaticBufferKind::Materials> {
     static constexpr vk::DeviceSize       capacity = 4ull << 20;
 };
 
-template <> struct FrameSlotBufferTraits<FrameSlotBufferKind::MeshInstances> {
-    using Record = GPUMeshInstance;
-    using Buffer = DeviceHostMappedBuffer;
-    static constexpr const char*        name     = "mesh instances";
-    static constexpr vk::BufferUsageFlags usage    = GPU_DATA_USAGE;
-    static constexpr vk::DeviceSize       capacity = 8ull << 20;
-};
-template <> struct FrameSlotBufferTraits<FrameSlotBufferKind::DrawData> {
-    using Record = GPUDrawData;
-    using Buffer = DeviceOnlyBuffer;
-    static constexpr const char*        name     = "draw data";
-    static constexpr vk::BufferUsageFlags usage    = GPU_DATA_USAGE;
-    static constexpr vk::DeviceSize       capacity = 2ull << 20;
-};
-/// INDIRECT_BUFFER: read by vkCmdDrawMeshTasksIndirect*.
-template <> struct FrameSlotBufferTraits<FrameSlotBufferKind::MeshTaskCommands> {
-    using Record = GPUMeshTaskCommand;
-    using Buffer = DeviceOnlyBuffer;
-    static constexpr const char*        name     = "mesh task commands";
-    static constexpr vk::BufferUsageFlags usage    = GPU_DATA_USAGE |
-                                                     vk::BufferUsageFlagBits::eIndirectBuffer;
-    static constexpr vk::DeviceSize       capacity = 2ull << 20;
-};
-/// TRANSFER_DST: zeroed by vkCmdFillBuffer before each dispatch.
-template <> struct FrameSlotBufferTraits<FrameSlotBufferKind::MeshTaskCommandCount> {
-    using Record = uint32_t;
-    using Buffer = DeviceOnlyBuffer;
-    static constexpr const char*        name     = "mesh task command count";
-    static constexpr vk::BufferUsageFlags usage    = GPU_DATA_USAGE |
-                                                     vk::BufferUsageFlagBits::eIndirectBuffer;
-    static constexpr vk::DeviceSize       capacity = 4ull << 10;
-};
-
-/// The record a kind holds, so call sites name a kind and get a typed span.
+/// The record a static buffer kind holds.
 export template <StaticBufferKind Kind>
 using StaticRecord = typename StaticBufferTraits<Kind>::Record;
-export template <FrameSlotBufferKind Kind>
-using FrameSlotRecord = typename FrameSlotBufferTraits<Kind>::Record;
-
-/// DeviceSpan or MappedSpan, whichever the kind's placement produces.
-export template <FrameSlotBufferKind Kind>
-using FrameSlotSpan =
-    typename FrameSlotBufferTraits<Kind>::Buffer::template Span<FrameSlotRecord<Kind>>;
-
-namespace detail {
-
-/* A mapped buffer the shaders never see, or an unmapped one the CPU is asked
- * to write, is a contradiction the traits can catch here. */
-template <FrameSlotBufferKind Kind>
-constexpr bool frameTraitsConsistent() {
-    using Traits = FrameSlotBufferTraits<Kind>;
-    return !Traits::Buffer::hostWritable ||
-           !!(Traits::usage & vk::BufferUsageFlagBits::eTransferDst) ||
-           !!(Traits::usage & vk::BufferUsageFlagBits::eShaderDeviceAddress);
-}
-
-} // namespace detail
-
-static_assert(detail::frameTraitsConsistent<FrameSlotBufferKind::MeshInstances>());
 

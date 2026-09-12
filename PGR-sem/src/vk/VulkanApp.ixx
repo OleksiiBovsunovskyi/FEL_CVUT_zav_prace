@@ -10,46 +10,8 @@ module;
 export module VulkanApp;
 
 /**
- * Owns every renderer-wide object and the order they run in. The modules it
- * drives each own one piece and know nothing about the frame as a whole:
- * AppWindow the window and the ImGui frame, VulkanContext the device and the
- * allocator, Swapchain the presentable images, FrameRunner the pacing,
- * BufferManager the memory, BuildDrawCommands and MeshDraw one pipeline each.
- *
- * What lives here and nowhere else: the scene, the camera, the per-frame
- * GPUMeshInstance array, the push constant contents and the barriers between the two
- * passes.
- *
- * Startup, in order - each step needs the one above it:
- *
- *     AppWindow -> VulkanContext -> Swapchain -> FrameRunner -> ShaderLoader
- *     -> BufferManager -> UploadBatch -> GltfLoader -> the two pipelines -> ImGui
- *
- * Loading needs only BufferManager and UploadBatch; its place before the pipelines
- * is not a dependency. It is the only caller of allocateStatic, and it blocks
- * on the GPU once per primitive.
- *
- * Then AppWindow::mainLoop drives one callback per frame, which calls
- * FrameRunner::drawFrame, which calls back into recordFrame with a begun
- * command buffer and a target already in COLOR_ATTACHMENT_OPTIMAL:
- *
- *  1. collectMeshInstances flattens the scene into one GPUMeshInstance per drawable part.
- *     Everything after this is per-frame; geometry is already on the GPU.
- *  2. allocateFrameSpans bump-allocates this frame's four ranges. Legal
- *     because buildDrawCommands called resetFrame first, and drawFrame had
- *     already waited on that slot's fence.
- *  3. The instances are memcpy'd into the mapped MeshInstances span - the only
- *     CPU->GPU traffic left after load.
- *  4. recordBuildDrawCommands zeroes the draw counter, dispatches one compute
- *     invocation per instance, and barriers the result into DRAW_INDIRECT and
- *     MESH_SHADER. The shader frustum-tests each instance and claims a slot with
- *     an atomic; the count stays on the GPU.
- *  5. makeMeshDrawPush gathers the static mega-buffer addresses the mesh shader
- *     walks, and the whole draw is published as pendingDraw_.
- *  6. Renderer opens the render pass and calls back into recordDraw, which
- *     issues the one indirect draw and lets ImGui record into the same pass.
- *
- * FrameRunner submits and presents; nothing here waits on the GPU after load.
+ * Owns the window, Vulkan application state, scene, camera, and application-level frame input.
+ * Renderer owns mesh-draw preparation and concrete rendering.
  */
 
 import VkWindow;
@@ -65,8 +27,6 @@ import UploadBatch;
 import GltfLoader;
 import RenderComponent;
 import VkScene;
-import BuildDrawCommands;
-import MeshDraw;
 import GPUTypes;
 import ShaderPrint;
 
@@ -115,36 +75,7 @@ private:
     BufferManager buffers_;
     UploadBatch   uploads_;
     GltfLoader    loader_;
-    BuildDrawCommands buildDrawCommands_;
-    MeshDraw          meshDraw_;
-    ShaderPrint       shaderPrint_;
-
-    /** 
-     * What buildDrawCommands() produced this frame, consumed by the indirect
-     * draw in recordFrame(). instanceCount 0 means there is nothing to draw.
-     */
-    struct PendingDraw {
-        BufferRegion commands{};
-        BufferRegion count{};
-        GPUMeshDrawPush push{};
-        uint32_t     instanceCount = 0;
-    };
-    PendingDraw pendingDraw_;
-
-    /// The four per-frame ranges one draw needs, allocated together.
-    /* Which span each range is declared as is the contract: only `instances` is
-     * CPU-written, and the other three are GPU output. */
-    struct FrameSpans {
-        MappedSpan<GPUMeshInstance>    instances{};
-        DeviceSpan<GPUDrawData>        drawData{};
-        DeviceSpan<GPUMeshTaskCommand> commands{};
-        DeviceSpan<uint32_t>           count{};
-
-        /// @return true when all four were allocated.
-        [[nodiscard]] explicit operator bool() const {
-            return instances && drawData && commands && count;
-        }
-    };
+    ShaderPrint   shaderPrint_;
 
     /// A gap longer than this is a stall, not a frame; the tick gets 0 instead.
     static constexpr int MAX_FRAME_MS = 250;
@@ -195,45 +126,12 @@ private:
     [[nodiscard]] std::vector<GPUMeshInstance> collectMeshInstances();
 
     /**
-     * @param frameInFlight reusable resource slot to allocate from.
-     * @param instanceCount instances the ranges must hold.
-     * @return the four ranges, or one that tests false when any failed.
-     */
-    [[nodiscard]] FrameSpans allocateFrameSpans(FrameInFlightIndex frameInFlight,
-                                                uint32_t instanceCount);
-
-    /**
-     * Zeroes the draw counter, records the BuildDrawCommands pass and barriers
-     * its output into the indirect draw and the mesh shader.
-     *
-     * @param instanceCount invocations to dispatch, one per instance.
-     */
-    void recordBuildDrawCommands(vk::CommandBuffer cmd, const FrameSpans& spans,
-                                 const glm::mat4& viewProj,
-                                 uint32_t instanceCount) const;
-
-    /// @return the mesh pass push constants: this frame's two arrays plus the
-    ///         Materials base the fragment shader indexes.
-    [[nodiscard]] GPUMeshDrawPush makeMeshDrawPush(const FrameSpans& spans,
-                                                   const glm::mat4& viewProj) const;
-
-
-    /**
-     * Assembles this frame's draw into pendingDraw_, ready for recordFrame().
-     *
-     * The frame slot's fence has signalled by the time drawFrame() records, so
-     * last frame's ranges are free to reuse.
-     */
-    void buildDrawCommands(Frame::Recording& recording);
-
-    /**
-     * Builds this frame's draw commands, then hands the swapchain image to
-     * Renderer, which owns every other attachment.
+     * Flattens the scene, computes the view-projection matrix, and calls Renderer.
      */
     void recordFrame(Frame::Recording& recording);
 
-    /// The one indirect draw plus ImGui, recorded inside Renderer's pass.
-    void recordDraw(vk::CommandBuffer cmd, vk::Extent2D extent);
+    /// Records ImGui inside TemporaryRenderer's dynamic-rendering pass.
+    void recordImGui(vk::CommandBuffer cmd, vk::Extent2D extent);
 
     void cleanup();
 };

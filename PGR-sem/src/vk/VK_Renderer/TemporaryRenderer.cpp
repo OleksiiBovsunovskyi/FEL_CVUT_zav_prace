@@ -4,23 +4,36 @@ module;
 
 #include <array>
 #include <cstdint>
+#include <filesystem>
+
+#include <glm/glm.hpp>
 
 module TemporaryRenderer;
 
 import Logger;
 
-bool TemporaryRenderer::init(VulkanContext& ctx, vk::Extent2D extent) {
+bool TemporaryRenderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
+                             const std::filesystem::path& meshShaderPath,
+                             const std::filesystem::path& fragmentShaderPath,
+                             vk::Format colorFormat, vk::Extent2D extent) {
     for (auto& depth : depth_) {
         depth.emplace(ctx.allocator(), extent);
         if (!depth->create()) {
             logError("TemporaryRenderer::init: depth target allocation failed");
+            destroy();
             return false;
         }
+    }
+    if (!meshDraw_.init(ctx.device(), shaderLoader, meshShaderPath, fragmentShaderPath,
+                        colorFormat, DEPTH_FORMAT, ctx.cmdDrawMeshTasksIndirectCount())) {
+        destroy();
+        return false;
     }
     return true;
 }
 
 void TemporaryRenderer::destroy() {
+    meshDraw_.destroy();
     for (auto& depth : depth_) depth.reset();
 }
 
@@ -34,7 +47,10 @@ bool TemporaryRenderer::resize(vk::Extent2D extent) {
     return true;
 }
 
-void TemporaryRenderer::render(Frame::Recording& recording) {
+void TemporaryRenderer::render(Frame::Recording& recording,
+                               const PreparedMeshDraw& preparedMeshDraw,
+                               const glm::mat4& viewProjection,
+                               GpuPtr<GPUMaterial> materials) {
     const vk::CommandBuffer cmd = recording.commandBuffer();
     DepthRenderTarget& depth = *recording.select(depth_);
 
@@ -68,6 +84,17 @@ void TemporaryRenderer::render(Frame::Recording& recording) {
     rendering.pDepthAttachment = &depthAttachment;
 
     cmd.beginRendering(rendering);
+    if (preparedMeshDraw) {
+        GPUMeshDrawPush push{};
+        push.viewProj = viewProjection;
+        push.drawData = preparedMeshDraw.drawData;
+        push.instances = preparedMeshDraw.instances;
+        push.materials = materials;
+        meshDraw_.record(cmd, recording.extent(), push,
+                         preparedMeshDraw.indirectCommands,
+                         preparedMeshDraw.indirectCount,
+                         preparedMeshDraw.instanceCount);
+    }
     if (draw_) draw_(cmd, recording.extent());
     cmd.endRendering();
 }

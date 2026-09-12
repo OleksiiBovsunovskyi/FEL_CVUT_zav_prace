@@ -27,7 +27,7 @@ public:
      *        VulkanContext.
      * @param colorFormat swapchain format the pass renders into.
      */
-    [[nodiscard]] bool init(vk::Device device, ShaderLoader& shaders,
+    [[nodiscard]] bool init(vk::Device device, ShaderLoader& shaderLoader,
                             const std::filesystem::path& meshShaderPath,
                             const std::filesystem::path& fragmentShaderPath,
                             vk::Format colorFormat, vk::Format depthFormat,

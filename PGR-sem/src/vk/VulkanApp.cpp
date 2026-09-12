@@ -8,8 +8,6 @@ module;
 #include <array>
 #include <cmath>
 #include <cstdint>
-#include <cstring>
-#include <filesystem>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -28,8 +26,6 @@ namespace {
 constexpr int  WIN_WIDTH  = 1280;
 constexpr int  WIN_HEIGHT = 720;
 constexpr char WIN_TITLE[] = "PGR_VK";
-
-constexpr char SHADER_DIR[] = "Shaders";
 
 
 static_assert(DEPTH_CLEAR == 0.0f,
@@ -73,18 +69,18 @@ void VulkanApp::init() {
     if (!frames_.init(ctx_, swapchain_))
         throw std::runtime_error("FrameRunner::init failed");
 
-    if (!renderer_.init(ctx_, swapchain_.extent()))
+    shaders_.init(device_);
+
+    if (!renderer_.init(ctx_, shaders_, swapchain_.format(), swapchain_.extent()))
         throw std::runtime_error("Renderer::init failed");
     renderer_.setDrawCallback(
-        [this](vk::CommandBuffer cmd, vk::Extent2D extent) { recordDraw(cmd, extent); });
+        [this](vk::CommandBuffer cmd, vk::Extent2D extent) { recordImGui(cmd, extent); });
 
     /* Swapchain::recreate has waited the device idle by the time this fires. */
     frames_.setSwapchainRecreatedCallback([this](vk::Extent2D extent, vk::Format) {
         if (!renderer_.resize(extent))
             throw std::runtime_error("Renderer::resize failed");
     });
-
-    shaders_.init(device_);
 
     if (!buffers_.init(ctx_))
         throw std::runtime_error("BufferManager::init failed");
@@ -93,17 +89,6 @@ void VulkanApp::init() {
     if (!loader_.init(buffers_, uploads_))
         throw std::runtime_error("GltfLoader::init failed");
 
-    if (!buildDrawCommands_.init(
-            device_, shaders_,
-            std::filesystem::path(SHADER_DIR) / "build_draw_commands.spv"))
-        throw std::runtime_error("BuildDrawCommands::init failed");
-
-    if (!meshDraw_.init(device_, shaders_,
-                        std::filesystem::path(SHADER_DIR) / "mesh.spv",
-                        std::filesystem::path(SHADER_DIR) / "mesh_frag.spv",
-                        swapchain_.format(), DEPTH_FORMAT,
-                        ctx_.cmdDrawMeshTasksIndirectCount()))
-        throw std::runtime_error("MeshDraw::init failed");
     initImGuiVulkan();
 }
 
@@ -269,111 +254,23 @@ std::vector<GPUMeshInstance> VulkanApp::collectMeshInstances() {
     return instances;
 }
 
-VulkanApp::FrameSpans VulkanApp::allocateFrameSpans(
-    FrameInFlightIndex frameInFlight, uint32_t instanceCount) {
-    return {
-        buffers_.allocateFrame<FrameSlotBufferKind::MeshInstances>(frameInFlight, instanceCount),
-        buffers_.allocateFrame<FrameSlotBufferKind::DrawData>(frameInFlight, instanceCount),
-        buffers_.allocateFrame<FrameSlotBufferKind::MeshTaskCommands>(frameInFlight,
-                                                                  instanceCount),
-        /* One counter, and vkCmdFillBuffer needs a 4-byte aligned offset. */
-        buffers_.allocateFrame<FrameSlotBufferKind::MeshTaskCommandCount>(frameInFlight, 1, 4),
-    };
-}
-
-void VulkanApp::recordBuildDrawCommands(vk::CommandBuffer cmd,
-                                        const FrameSpans& spans,
-                                        const glm::mat4& viewProj,
-                                        uint32_t instanceCount) const {
-    zero(cmd, spans.count.region);
-
-    /* The counter is the target of the shader's atomicAdd. */
-    barrier(cmd,
-            vk::PipelineStageFlagBits2::eClear, vk::AccessFlagBits2::eTransferWrite,
-            vk::PipelineStageFlagBits2::eComputeShader,
-            vk::AccessFlagBits2::eShaderStorageRead |
-                vk::AccessFlagBits2::eShaderStorageWrite);
-
-    BuildDrawCommandsPush push{};
-    push.viewProj     = viewProj;
-    push.instances = spans.instances.gpu.data;
-    push.drawData     = spans.drawData.gpu.data;
-    push.commands     = spans.commands.gpu.data;
-    push.commandCount = spans.count.gpu.data;
-    push.instanceCount  = instanceCount;
-
-    buildDrawCommands_.record(cmd, push);
-
-    /**
-     * The commands and the count are fetched by the indirect draw itself;
-     * the mesh shader reads drawData as storage, which is a separate
-     * hazard from the command fetch.
-     */
-    barrier(cmd,
-            vk::PipelineStageFlagBits2::eComputeShader,
-            vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::PipelineStageFlagBits2::eDrawIndirect |
-                vk::PipelineStageFlagBits2::eMeshShaderEXT,
-            vk::AccessFlagBits2::eIndirectCommandRead |
-                vk::AccessFlagBits2::eShaderStorageRead);
-}
-
-GPUMeshDrawPush VulkanApp::makeMeshDrawPush(const FrameSpans& spans,
-                                            const glm::mat4& viewProj) const {
-    GPUMeshDrawPush push{};
-    push.viewProj  = viewProj;
-    push.drawData  = spans.drawData.gpu.data;
-    push.instances = spans.instances.gpu.data;
-    push.materials = buffers_.staticBase<StaticBufferKind::Materials>();
-    return push;
-}
-
-void VulkanApp::buildDrawCommands(Frame::Recording& recording) {
-    const vk::CommandBuffer cmd = recording.commandBuffer();
-    const vk::Extent2D extent = recording.extent();
-    const FrameInFlightIndex frameInFlight = recording.frameInFlight();
-    buffers_.resetFrame(frameInFlight);
-    pendingDraw_ = {};
-
-    /* No fallback matrix: an identity one would render as a rendering bug
-     * instead of as a missing camera. */
+void VulkanApp::recordFrame(Frame::Recording& recording) {
     const CameraComponent* camera = scene_.getActiveCamera();
-    if (!camera) return;
-
-    const std::vector<GPUMeshInstance> instances = collectMeshInstances();
-    if (instances.empty()) return;
-
-    const auto instanceCount = static_cast<uint32_t>(instances.size());
-    const FrameSpans spans = allocateFrameSpans(frameInFlight, instanceCount);
-    if (!spans) {
-        logError("buildDrawCommands: out of per-frame buffer space");
+    const GpuPtr<GPUMaterial> materials =
+        buffers_.staticBase<StaticBufferKind::Materials>();
+    if (!camera) {
+        renderer_.render(recording, {}, glm::mat4{1.0f}, materials);
         return;
     }
 
-    std::memcpy(spans.instances.host, instances.data(),
-                instances.size() * sizeof(GPUMeshInstance));
-
+    const std::vector<GPUMeshInstance> instances = collectMeshInstances();
+    const vk::Extent2D extent = recording.extent();
     const float aspect = static_cast<float>(extent.width) /
                          static_cast<float>(std::max(extent.height, 1u));
-    const glm::mat4 viewProj = camera->viewProjection(aspect);
-    recordBuildDrawCommands(cmd, spans, viewProj, instanceCount);
-
-    pendingDraw_.commands    = spans.commands.region;
-    pendingDraw_.count       = spans.count.region;
-    pendingDraw_.instanceCount = instanceCount;
-    pendingDraw_.push        = makeMeshDrawPush(spans, viewProj);
+    renderer_.render(recording, instances, camera->viewProjection(aspect), materials);
 }
 
-void VulkanApp::recordFrame(Frame::Recording& recording) {
-    buildDrawCommands(recording);
-    renderer_.render(recording);
-}
-
-void VulkanApp::recordDraw(vk::CommandBuffer cmd, vk::Extent2D extent) {
-    meshDraw_.record(cmd, extent, pendingDraw_.push,
-                     pendingDraw_.commands, pendingDraw_.count,
-                     pendingDraw_.instanceCount);
-
+void VulkanApp::recordImGui(vk::CommandBuffer cmd, vk::Extent2D) {
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(cmd));
 }
 
@@ -394,12 +291,9 @@ void VulkanApp::cleanup() {
 
     /* Meshes retire buffer ranges on destruction; must precede shutdown. */
     scene_.clearObjects();
-    meshDraw_.destroy();
-    buildDrawCommands_.destroy();
+    renderer_.destroy();
     uploads_.destroy();
     buffers_.shutdown();
-
-    renderer_.destroy();
     frames_.destroy();
 
     swapchain_.destroy();

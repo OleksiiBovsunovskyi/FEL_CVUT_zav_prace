@@ -15,7 +15,7 @@ BuildDrawCommands::~BuildDrawCommands() {
         logError("BuildDrawCommands: destroy() was not called before destruction");
 }
 
-bool BuildDrawCommands::init(vk::Device device, ShaderLoader& shaders,
+bool BuildDrawCommands::init(vk::Device device, ShaderLoader& shaderLoader,
                              const std::filesystem::path& shaderPath) {
     if (device_) {
         logError("BuildDrawCommands: init called twice");
@@ -38,7 +38,7 @@ bool BuildDrawCommands::init(vk::Device device, ShaderLoader& shaders,
         return false;
     }
 
-    vk::ShaderModule shader = shaders.load(shaderPath);
+    vk::ShaderModule shader = shaderLoader.load(shaderPath);
     if (!shader) {
         logError("BuildDrawCommands: failed to load " + shaderPath.string());
         destroy();
@@ -46,7 +46,7 @@ bool BuildDrawCommands::init(vk::Device device, ShaderLoader& shaders,
     }
 
     pipeline_ = createComputePipeline(device_, pipelineLayout_, shader);
-    shaders.destroy(shader);
+    shaderLoader.destroy(shader);
 
     if (!pipeline_) {
         destroy();

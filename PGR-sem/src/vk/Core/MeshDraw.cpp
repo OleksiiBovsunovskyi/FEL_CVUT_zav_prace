@@ -16,7 +16,7 @@ MeshDraw::~MeshDraw() {
         logError("MeshDraw: destroy() was not called before destruction");
 }
 
-bool MeshDraw::init(vk::Device device, ShaderLoader& shaders,
+bool MeshDraw::init(vk::Device device, ShaderLoader& shaderLoader,
                     const std::filesystem::path& meshShaderPath,
                     const std::filesystem::path& fragmentShaderPath,
                     vk::Format colorFormat, vk::Format depthFormat,
@@ -49,8 +49,8 @@ bool MeshDraw::init(vk::Device device, ShaderLoader& shaders,
         return false;
     }
 
-    vk::ShaderModule meshShader = shaders.load(meshShaderPath);
-    vk::ShaderModule fragShader = shaders.load(fragmentShaderPath);
+    vk::ShaderModule meshShader = shaderLoader.load(meshShaderPath);
+    vk::ShaderModule fragShader = shaderLoader.load(fragmentShaderPath);
     if (meshShader && fragShader) {
         pipeline_ = createMeshPipeline(device_, pipelineLayout_, meshShader, fragShader,
                                        colorFormat, depthFormat);
@@ -58,8 +58,8 @@ bool MeshDraw::init(vk::Device device, ShaderLoader& shaders,
         logError("MeshDraw: failed to load " + meshShaderPath.string() + " / " +
                  fragmentShaderPath.string());
     }
-    shaders.destroy(meshShader);
-    shaders.destroy(fragShader);
+    shaderLoader.destroy(meshShader);
+    shaderLoader.destroy(fragShader);
 
     if (!pipeline_) {
         destroy();

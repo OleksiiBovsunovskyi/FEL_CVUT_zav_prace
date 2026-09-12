@@ -20,7 +20,7 @@ public:
     BuildDrawCommands(const BuildDrawCommands&) = delete;
     BuildDrawCommands& operator=(const BuildDrawCommands&) = delete;
 
-    [[nodiscard]] bool init(vk::Device device, ShaderLoader& shaders,
+    [[nodiscard]] bool init(vk::Device device, ShaderLoader& shaderLoader,
                             const std::filesystem::path& shaderPath);
 
     /**

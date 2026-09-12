@@ -2,10 +2,17 @@ module;
 
 #include <vulkan/vulkan.hpp>
 
+#include <span>
+
+#include <glm/glm.hpp>
+
 export module Renderer;
 
 import VulkanContext;
 import Frame;
+import GPUTypes;
+import MeshDrawResources;
+import ShadersLoader;
 import TemporaryRenderer;
 
 /**
@@ -22,16 +29,28 @@ public:
     Renderer(const Renderer&)            = delete;
     Renderer& operator=(const Renderer&) = delete;
 
-    [[nodiscard]] bool init(VulkanContext& ctx, vk::Extent2D extent);
+    [[nodiscard]] bool init(VulkanContext& ctx, ShaderLoader& shaderLoader,
+                            vk::Format colorFormat, vk::Extent2D extent);
 
     void destroy();
 
     void setDrawCallback(DrawFn cb);
 
-    void render(Frame::Recording& recording);
+    /**
+     * Prepares shared mesh-draw resources and records the current renderer.
+     * @param recording active Frame recording interface.
+     * @param instances visible mesh instances.
+     * @param viewProjection world-to-clip matrix.
+     * @param materials base address of the Materials mega-buffer.
+     */
+    void render(Frame::Recording& recording,
+                std::span<const GPUMeshInstance> instances,
+                const glm::mat4& viewProjection,
+                GpuPtr<GPUMaterial> materials);
 
     [[nodiscard]] bool resize(vk::Extent2D extent);
 
 private:
-    TemporaryRenderer temporary_;
+    MeshDrawResources meshDrawResources_;
+    TemporaryRenderer  temporary_;
 };
