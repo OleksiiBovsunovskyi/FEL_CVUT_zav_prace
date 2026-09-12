@@ -18,10 +18,6 @@ constexpr size_t index(StaticBufferKind kind) {
     return static_cast<size_t>(kind);
 }
 
-constexpr size_t index(FrameSlotBufferKind kind) {
-    return static_cast<size_t>(kind);
-}
-
 /// Runtime form of the traits, for the loops that walk every buffer.
 struct BufferSpec {
     const char*                name       = "";
@@ -45,9 +41,6 @@ constexpr auto specsOf(std::index_sequence<Index...>) {
 
 constexpr auto STATIC_SPECS = specsOf<StaticBufferTraits, StaticBufferKind>(
     std::make_index_sequence<STATIC_BUFFER_COUNT>{});
-constexpr auto FRAME_SPECS = specsOf<FrameSlotBufferTraits, FrameSlotBufferKind>(
-    std::make_index_sequence<FRAME_SLOT_BUFFER_COUNT>{});
-
 constexpr BufferSpec UPLOAD_SPEC{
     "upload",
     vk::BufferUsageFlagBits::eTransferSrc,
@@ -81,26 +74,6 @@ bool BufferManager::init(VulkanContext& ctx, const GPUBufferCapacities& gpuBuffe
                           spec.memory, spec.flags, spec.warnIfHost, spec.name)) {
             shutdown();
             return false;
-        }
-    }
-
-    auto frameInFlight = FrameInFlightIndex::first();
-    for (uint32_t frame = 0; frame < FRAMES_IN_FLIGHT;
-         ++frame, frameInFlight = frameInFlight.next()) {
-        auto& frameBuffers = frameInFlight.select(frameSlotBuffers_);
-        for (size_t i = 0; i < FRAME_SLOT_BUFFER_COUNT; ++i) {
-            if (gpuBufferCapacities.frameBytes[i] == 0) continue;   // opted out
-
-            const BufferSpec& spec = FRAME_SPECS[i];
-            const std::string name =
-                std::string(spec.name) + " [frame " + std::to_string(frame) + "]";
-
-            if (!createBuffer(frameBuffers[i], gpuBufferCapacities.frameBytes[i],
-                              spec.usage, spec.memory, spec.flags,
-                              spec.warnIfHost, name.c_str())) {
-                shutdown();
-                return false;
-            }
         }
     }
 
@@ -197,9 +170,6 @@ void BufferManager::shutdown() {
 
     retired_.clear();
     destroyBuffer(upload_);
-    for (auto& frame : frameSlotBuffers_)
-        for (auto& buffer : frame)
-            destroyBuffer(buffer);
 
     for (auto& buffer : staticBuffers_)
         destroyBuffer(buffer);
@@ -240,19 +210,6 @@ BufferManager::RawAllocation BufferManager::allocateStaticRaw(
     if (!raw.region)
         logError(std::string("BufferManager: ") + STATIC_SPECS[index(kind)].name +
                  " is full");
-    return raw;
-}
-
-BufferManager::RawAllocation BufferManager::allocateFrameRaw(
-    FrameInFlightIndex frameInFlight, FrameSlotBufferKind kind,
-    vk::DeviceSize bytes, vk::DeviceSize alignment) {
-    if (kind == FrameSlotBufferKind::Count) return {};
-
-    RawAllocation raw =
-        allocate(frameInFlight.select(frameSlotBuffers_)[index(kind)], bytes, alignment);
-    if (!raw.region)
-        logError(std::string("BufferManager: ") + FRAME_SPECS[index(kind)].name +
-                 " is full for this frame");
     return raw;
 }
 
@@ -310,11 +267,6 @@ void BufferManager::collect(uint64_t completedSerial) {
             *out++ = *it;
     }
     retired_.erase(out, retired_.end());
-}
-
-void BufferManager::resetFrame(FrameInFlightIndex frameInFlight) {
-    for (auto& buffer : frameInFlight.select(frameSlotBuffers_))
-        if (buffer.virtualBlock) buffer.virtualBlock.clearVirtualBlock();
 }
 
 void BufferManager::resetUpload() {
