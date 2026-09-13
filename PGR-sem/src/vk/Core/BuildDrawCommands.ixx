@@ -24,7 +24,7 @@ public:
                             const std::filesystem::path& shaderPath);
 
     /**
-     * Records one compute invocation per object, in groups of 64 ///!TODO: Ask driver about line count.
+     * Records one compute invocation per object, in groups of 64 
      *
      * @param push buffer addresses plus the object count, which the tail
      *        invocations of the last group exit on.
