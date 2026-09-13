@@ -2,6 +2,9 @@ module;
 
 #include <vulkan/vulkan.hpp>
 
+#include <array>
+#include <functional>
+#include <optional>
 #include <span>
 
 #include <glm/glm.hpp>
@@ -13,15 +16,38 @@ import Frame;
 import GPUTypes;
 import MeshDrawResources;
 import ShadersLoader;
-import TemporaryRenderer;
+import ForwardRenderer;
+import renderTarget;
 
 /**
- * Owns and calls all the renderers in use, passing them frame and buffers they need.
- * Owns per frame buffers needed for rendering. (Currently only calls TemporaryRenderer).
+ * Owns per-frame depth targets shared by renderer passes.
+ * In future probably will own other targets.
+ * Stores Depth render target for all FRAMES_IN_FLIGHT, including past ones. TODO: store only 2.
+ */
+class SharedRenderTargets {
+public:
+    SharedRenderTargets() = default;
+    ~SharedRenderTargets() { destroy(); }
+
+    SharedRenderTargets(const SharedRenderTargets&)            = delete;
+    SharedRenderTargets& operator=(const SharedRenderTargets&) = delete;
+
+    [[nodiscard]] bool init(VulkanContext& ctx, vk::Extent2D extent);
+    void destroy();
+    [[nodiscard]] bool resize(vk::Extent2D extent);
+    [[nodiscard]] vk::RenderingAttachmentInfo depthAttachment(
+        Frame::Recording& recording);
+
+private:
+    std::array<std::optional<DepthRenderTarget>, FRAMES_IN_FLIGHT> depth_;
+};
+
+/**
+ * Owns shared mesh-draw resources, shared depth targets, renderers, and the draw callback.
  */
 export class Renderer {
 public:
-    using DrawFn = TemporaryRenderer::DrawFn;
+    using DrawFn = std::function<void(vk::CommandBuffer, vk::Extent2D)>;
 
     Renderer() = default;
     ~Renderer() { destroy(); }
@@ -51,6 +77,8 @@ public:
     [[nodiscard]] bool resize(vk::Extent2D extent);
 
 private:
-    MeshDrawResources meshDrawResources_;
-    TemporaryRenderer  temporary_;
+    MeshDrawResources   meshDrawResources_;
+    SharedRenderTargets sharedTargets_;
+    ForwardRenderer     forward_;
+    DrawFn              draw_;
 };

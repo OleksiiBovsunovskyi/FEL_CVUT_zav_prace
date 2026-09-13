@@ -130,7 +130,7 @@ private:
      */
     void recordFrame(Frame::Recording& recording);
 
-    /// Records ImGui inside TemporaryRenderer's dynamic-rendering pass.
+    /// Records ImGui inside ForwardRenderer's dynamic-rendering pass.
     void recordImGui(vk::CommandBuffer cmd, vk::Extent2D extent);
 
     void cleanup();
