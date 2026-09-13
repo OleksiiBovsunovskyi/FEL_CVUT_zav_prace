@@ -11,8 +11,6 @@ import VulkanContext;
 import VkWindow;
 export import Frame;
 
-//TODO: is this class actually needed considering Frame.ixx machinery
-
 /**
  * The images the compositor presents, plus their views and the rebuild path.
  */
