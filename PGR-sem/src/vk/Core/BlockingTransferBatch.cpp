@@ -3,7 +3,7 @@ module;
 
 #include <string>
 
-module UploadBatch;
+module BlockingTransferBatch;
 
 import Logger;
 
@@ -11,30 +11,25 @@ namespace {
 
 bool ok(vk::Result r, const char* what) {
     if (r == vk::Result::eSuccess) return true;
-    logError(std::string("UploadBatch: ") + what + " failed: VkResult " +
+    logError(std::string("BlockingTransferBatch: ") + what + " failed: VkResult " +
              vk::to_string(r));
     return false;
 }
 
 } // namespace
 
-UploadBatch::~UploadBatch() {
+BlockingTransferBatch::~BlockingTransferBatch() {
     destroy();
 }
 
-bool UploadBatch::init(VulkanContext& ctx, BufferManager& buffers) {
+bool BlockingTransferBatch::init(VulkanContext& ctx) {
     if (commandPool_) {
-        logError("UploadBatch: init called twice");
-        return false;
-    }
-    if (!buffers.initialized()) {
-        logError("UploadBatch: BufferManager must be initialized first");
+        logError("BlockingTransferBatch: init called twice");
         return false;
     }
 
-    ctx_     = &ctx;
-    buffers_ = &buffers;
-    device_  = ctx.device();
+    ctx_    = &ctx;
+    device_ = ctx.device();
 
     vk::CommandPoolCreateInfo poolInfo{};
     /* Short-lived, re-recorded per batch. */
@@ -67,13 +62,13 @@ bool UploadBatch::init(VulkanContext& ctx, BufferManager& buffers) {
     return true;
 }
 
-vk::CommandBuffer UploadBatch::begin() {
+vk::CommandBuffer BlockingTransferBatch::begin() {
     if (!commandBuffer_) {
-        logError("UploadBatch: begin called before init");
+        logError("BlockingTransferBatch: begin called before init");
         return nullptr;
     }
     if (recording_) {
-        logError("UploadBatch: begin called while a batch is already open");
+        logError("BlockingTransferBatch: begin called while a batch is already open");
         return nullptr;
     }
 
@@ -90,9 +85,9 @@ vk::CommandBuffer UploadBatch::begin() {
     return commandBuffer_;
 }
 
-bool UploadBatch::submitAndWait() {
+bool BlockingTransferBatch::submitAndWait() {
     if (!recording_) {
-        logError("UploadBatch: submitAndWait called without an open batch");
+        logError("BlockingTransferBatch: submitAndWait called without an open batch");
         return false;
     }
     recording_ = false;
@@ -115,16 +110,11 @@ bool UploadBatch::submitAndWait() {
             "vkQueueSubmit2"))
         return false;
 
-    if (!ok(device_.waitForFences(1, &fence_, vk::True, UINT64_MAX),
-            "vkWaitForFences"))
-        return false;
-
-    /* Every copy reading from it has completed. */
-    buffers_->resetUpload();
-    return true;
+    return ok(device_.waitForFences(1, &fence_, vk::True, UINT64_MAX),
+              "vkWaitForFences");
 }
 
-void UploadBatch::destroy() {
+void BlockingTransferBatch::destroy() {
     if (fence_) {
         device_.destroyFence(fence_);
         fence_ = nullptr;
@@ -137,6 +127,5 @@ void UploadBatch::destroy() {
     }
     recording_ = false;
     device_    = nullptr;
-    buffers_   = nullptr;
     ctx_       = nullptr;
 }

@@ -40,79 +40,17 @@ export struct PreparedMeshDraw {
 
 namespace detail {
 
-class AllocatedBuffer {
-public:
-    [[nodiscard]] bool init(VulkanContext& ctx, vk::DeviceSize capacity,
-                            vk::BufferUsageFlags usage, vma::MemoryUsage memory,
-                            vma::AllocationCreateFlags flags, bool warnIfHost,
-                            const char* name);
-    void destroy();
-
-    [[nodiscard]] vk::DeviceSize capacity() const { return capacity_; }
-    [[nodiscard]] BufferRegion region(vk::DeviceSize size) const;
-
-    template <typename T>
-    [[nodiscard]] GpuPtr<T> gpuAddress() const {
-        return GpuPtr<T>{deviceAddress_.address};
-    }
-
-    [[nodiscard]] std::byte* mapped() const { return mapped_; }
-
-private:
-    vma::Allocator  allocator_  = nullptr;
-    vk::Buffer      buffer_     = nullptr;
-    vma::Allocation allocation_ = nullptr;
-    vk::DeviceSize  capacity_   = 0;
-    GpuPtr<std::byte> deviceAddress_{};
-    std::byte*       mapped_ = nullptr;
-};
-
-class MeshInstancesBuffer {
-public:
-    [[nodiscard]] bool init(VulkanContext& ctx);
-    void destroy();
-    [[nodiscard]] MappedSpan<GPUMeshInstance> span(uint32_t instanceCount) const;
-
-private:
-    AllocatedBuffer     buffer_;
-    GPUMeshInstance*    mapped_ = nullptr;
-};
-
-class DrawDataBuffer {
-public:
-    [[nodiscard]] bool init(VulkanContext& ctx);
-    void destroy();
-    [[nodiscard]] DeviceSpan<GPUDrawData> span(uint32_t instanceCount) const;
-
-private:
-    AllocatedBuffer buffer_;
-};
-
-class MeshTaskCommandsBuffer {
-public:
-    [[nodiscard]] bool init(VulkanContext& ctx);
-    void destroy();
-    [[nodiscard]] DeviceSpan<GPUMeshTaskCommand> span(uint32_t instanceCount) const;
-
-private:
-    AllocatedBuffer buffer_;
-};
-
-class MeshTaskCommandCountBuffer {
-public:
-    [[nodiscard]] bool init(VulkanContext& ctx);
-    void destroy();
-    [[nodiscard]] DeviceSpan<uint32_t> span() const;
-
-private:
-    AllocatedBuffer buffer_;
-};
-
+/**
+ * The mesh-draw buffers one frame-in-flight slot owns.
+ * Instances are written into instanceUpload and copied into instances.
+ * drawData, commands and count are written by BuildDrawCommands.
+ */
 struct MeshDrawResourceSlot {
-    MeshInstancesBuffer        instances;
-    DrawDataBuffer             drawData;
-    MeshTaskCommandsBuffer     commands;
-    MeshTaskCommandCountBuffer count;
+    AllocatedBuffer<DeviceOnlyBuffer>         instances;
+    AllocatedBuffer<HostDeviceReadableBuffer> instanceUpload;
+    AllocatedBuffer<DeviceOnlyBuffer>         drawData;
+    AllocatedBuffer<DeviceOnlyBuffer>         commands;
+    AllocatedBuffer<DeviceOnlyBuffer>         count;
 
     [[nodiscard]] bool init(VulkanContext& ctx);
     void destroy();

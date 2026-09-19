@@ -3,8 +3,10 @@ module;
 #include <vk_mem_alloc.hpp>
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -43,16 +45,15 @@ public:
 
     /// @return true while this owns a range.
     [[nodiscard]] explicit operator bool() const {
-        return virtualAllocation_ != nullptr;
+        return bool(allocation_);
     }
 
 private:
     friend class BufferManager;
 
-    DeviceArray(DeviceSpan<T> span, BufferManager* owner, vma::VirtualBlock block,
-                vma::VirtualAllocation allocation)
-        : span_(span), owner_(owner), block_(block),
-          virtualAllocation_(allocation) {}
+    DeviceArray(DeviceSpan<T> span, BufferManager* owner, StaticBufferKind kind,
+                const SubAllocationHandle& allocation)
+        : span_(span), owner_(owner), kind_(kind), allocation_(allocation) {}
 
     /* Defined out of line: BufferManager::retire is not declared yet. */
     void release();
@@ -60,14 +61,14 @@ private:
     void swap(DeviceArray& other) noexcept {
         std::swap(span_, other.span_);
         std::swap(owner_, other.owner_);
-        std::swap(block_, other.block_);
-        std::swap(virtualAllocation_, other.virtualAllocation_);
+        std::swap(kind_, other.kind_);
+        std::swap(allocation_, other.allocation_);
     }
 
-    DeviceSpan<T>          span_{};
-    BufferManager*         owner_             = nullptr;
-    vma::VirtualBlock      block_             = nullptr;
-    vma::VirtualAllocation virtualAllocation_ = nullptr;
+    DeviceSpan<T>       span_{};
+    BufferManager*      owner_ = nullptr;
+    StaticBufferKind    kind_  = StaticBufferKind::Count;
+    SubAllocationHandle allocation_{};
 };
 
 /// Bytes in use out of a buffer's capacity. Debug reporting only.
@@ -89,7 +90,7 @@ export struct GPUBufferCapacities {
 };
 
 /**
- * Owns static mega-buffers, static range retirement, and the upload buffer.
+ * Owns the static mega-buffers, static range retirement, and the upload buffer.
  */
 export class BufferManager {
 public:
@@ -117,7 +118,7 @@ public:
      * Checks whether this buffer manager have been initialized.
      * @return true after init() and before shutdown().
      */
-    [[nodiscard]] bool initialized() const { return allocator_ != nullptr; }
+    [[nodiscard]] bool initialized() const { return initialized_; }
 
     /**
      * Reserves a range in a static buffer for as long as the returned array
@@ -131,20 +132,20 @@ public:
     [[nodiscard]] DeviceArray<StaticRecord<Kind>> allocateStatic(
         uint32_t count, vk::DeviceSize alignment = alignof(StaticRecord<Kind>)) {
         using Record = StaticRecord<Kind>;
-        
+
         if (!std::has_single_bit(alignment))
         {
             logError("BufferManager: allocateStatic alignment must be a power of two, got " + std::to_string(alignment));
             return DeviceArray<Record>{};
         }
-        
-        const RawAllocation raw = allocateStaticRaw(
+
+        const SubAllocationHandle allocation = allocateStaticRaw(
             Kind, vk::DeviceSize{count} * sizeof(Record), alignment);
-        if (!raw.region) return DeviceArray<Record>{};
+        if (!allocation) return DeviceArray<Record>{};
 
         return DeviceArray<Record>{
-            spanOf<DeviceOnlyBuffer, Record>(raw, count),
-            this, raw.block, raw.virtualAllocation};
+            StaticBuffer::spanOf<Record>(allocation, count), this, Kind,
+            allocation};
     }
 
     /**
@@ -164,18 +165,19 @@ public:
      */
     template <StaticBufferKind Kind>
     [[nodiscard]] GpuPtr<StaticRecord<Kind>> staticBase() const {
-        return GpuPtr<StaticRecord<Kind>>{staticBaseAddress(Kind)};
+        return GpuPtr<StaticRecord<Kind>>{staticBaseAddress(Kind).address};
     }
 
     /// @return name, capacity and bytes in use. Debug reporting only.
     [[nodiscard]] BufferUsage staticUsage(StaticBufferKind kind) const;
 
     /// @return total upload bytes. A larger single request can never be met.
-    [[nodiscard]] vk::DeviceSize uploadCapacity() const { return upload_.capacity; }
+    [[nodiscard]] vk::DeviceSize uploadCapacity() const { return upload_.capacity(); }
 
     /**
-     * Releases every upload range. Legal only once all copies reading from it
-     * have completed; UploadBatch guarantees that.
+     * Releases every upload range.
+     * @note Legal only once every copy reading from the upload buffer has
+     *       completed.
      */
     void resetUpload();
 
@@ -195,75 +197,35 @@ public:
     void collect(uint64_t completedSerial);
 
     /// Called by DeviceArray on destruction. Not part of the allocation API.
-    void retire(vma::VirtualBlock block, vma::VirtualAllocation allocation);
+    void retire(StaticBufferKind kind, const SubAllocationHandle& allocation);
 
 private:
-    struct MegaBuffer {
-        vk::Buffer        buffer        = nullptr;
-        vma::Allocation   allocation    = nullptr;
-        vma::VirtualBlock virtualBlock  = nullptr;
-        vk::DeviceSize    capacity      = 0;
-        vk::DeviceAddress deviceAddress = 0;
-        void*             mapped        = nullptr;
-    };
-
-    /* Byte-addressed in every buffer: nothing indexes a mega-buffer by record
-     * any more, so the virtual blocks count bytes and strides are gone. */
-    struct RawAllocation {
-        BufferRegion           region{};
-        vk::DeviceAddress      address           = 0;
-        void*                  host              = nullptr;
-        vma::VirtualBlock      block             = nullptr;
-        vma::VirtualAllocation virtualAllocation = nullptr;
-    };
+    using StaticBuffer = SubAllocatedBuffer<DeviceOnlyBuffer>;
+    using UploadBuffer = SubAllocatedBuffer<HostDeviceReadableBuffer>;
 
     struct RetiredAllocation {
-        vma::VirtualBlock      block             = nullptr;
-        vma::VirtualAllocation virtualAllocation = nullptr;
-        uint64_t               serial            = 0;
+        StaticBufferKind    kind   = StaticBufferKind::Count;
+        SubAllocationHandle allocation{};
+        uint64_t            serial = 0;
     };
 
-    using StaticBuffers = std::array<MegaBuffer, STATIC_BUFFER_COUNT>;
-
-    /// Fills in whichever span type the placement declares.
-    template <typename Buffer, typename T>
-    static typename Buffer::template Span<T> spanOf(const RawAllocation& raw,
-                                                    uint32_t count) {
-        typename Buffer::template Span<T> span{};
-        span.region = raw.region;
-        span.gpu    = GpuSpan<T>{GpuPtr<T>{raw.address}, count};
-        if constexpr (Buffer::hostWritable)
-            span.host = static_cast<T*>(raw.host);
-        return span;
-    }
-
-    [[nodiscard]] RawAllocation allocateStaticRaw(
+    [[nodiscard]] SubAllocationHandle allocateStaticRaw(
         StaticBufferKind kind, vk::DeviceSize bytes, vk::DeviceSize alignment);
-    [[nodiscard]] RawAllocation allocate(
-        MegaBuffer& buffer, vk::DeviceSize bytes, vk::DeviceSize alignment);
 
-    [[nodiscard]] vk::DeviceAddress staticBaseAddress(StaticBufferKind kind) const;
+    [[nodiscard]] GpuPtr<std::byte> staticBaseAddress(StaticBufferKind kind) const;
 
-    bool createBuffer(MegaBuffer& out, vk::DeviceSize capacity,
-                      vk::BufferUsageFlags usage, vma::MemoryUsage memory,
-                      vma::AllocationCreateFlags flags, bool warnIfHost,
-                      const char* debugName);
-    void destroyBuffer(MegaBuffer& buffer);
-
-    vma::Allocator allocator_ = nullptr;
-    vk::Device     device_    = nullptr;
-
-    StaticBuffers                  staticBuffers_{};
-    MegaBuffer                     upload_{};
-    std::vector<RetiredAllocation> retired_;
-    uint64_t                       retirementSerial_ = 0;
+    std::array<StaticBuffer, STATIC_BUFFER_COUNT> staticBuffers_{};
+    UploadBuffer                                  upload_{};
+    std::vector<RetiredAllocation>                retired_;
+    uint64_t                                      retirementSerial_ = 0;
+    bool                                          initialized_      = false;
 };
 
 template <typename T>
 void DeviceArray<T>::release() {
-    if (owner_ && virtualAllocation_) owner_->retire(block_, virtualAllocation_);
-    span_              = {};
-    owner_             = nullptr;
-    block_             = nullptr;
-    virtualAllocation_ = nullptr;
+    if (owner_ && allocation_) owner_->retire(kind_, allocation_);
+    span_       = {};
+    owner_      = nullptr;
+    kind_       = StaticBufferKind::Count;
+    allocation_ = {};
 }

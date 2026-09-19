@@ -23,7 +23,7 @@ import VkUtil;
 import renderTarget;
 import ShadersLoader;
 import BufferManager;
-import UploadBatch;
+import BlockingTransferBatch;
 import GltfLoader;
 import RenderComponent;
 import VkScene;
@@ -71,11 +71,11 @@ private:
     Swapchain     swapchain_;
     FrameRunner   frames_;
     Renderer      renderer_;
-    ShaderLoader  shaders_;
-    BufferManager buffers_;
-    UploadBatch   uploads_;
-    GltfLoader    loader_;
-    ShaderPrint   shaderPrint_;
+    ShaderLoader          shaders_;
+    BufferManager         buffers_;
+    BlockingTransferBatch transfers_;
+    GltfLoader            loader_;
+    ShaderPrint           shaderPrint_;
 
     /// A gap longer than this is a stall, not a frame; the tick gets 0 instead.
     static constexpr int MAX_FRAME_MS = 250;

@@ -84,9 +84,9 @@ void VulkanApp::init() {
 
     if (!buffers_.init(ctx_))
         throw std::runtime_error("BufferManager::init failed");
-    if (!uploads_.init(ctx_, buffers_))
-        throw std::runtime_error("UploadBatch::init failed");
-    if (!loader_.init(buffers_, uploads_))
+    if (!transfers_.init(ctx_))
+        throw std::runtime_error("BlockingTransferBatch::init failed");
+    if (!loader_.init(buffers_, transfers_))
         throw std::runtime_error("GltfLoader::init failed");
 
     initImGuiVulkan();
@@ -292,7 +292,7 @@ void VulkanApp::cleanup() {
     /* Meshes retire buffer ranges on destruction; must precede shutdown. */
     scene_.clearObjects();
     renderer_.destroy();
-    uploads_.destroy();
+    transfers_.destroy();
     buffers_.shutdown();
     frames_.destroy();
 

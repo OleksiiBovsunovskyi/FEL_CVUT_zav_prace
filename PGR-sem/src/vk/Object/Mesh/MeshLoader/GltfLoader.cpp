@@ -209,7 +209,7 @@ bool readIndices(const fastgltf::Asset& asset,
 } // namespace
 
 
-bool GltfLoader::init(BufferManager& buffers, UploadBatch& batch) {
+bool GltfLoader::init(BufferManager& buffers, BlockingTransferBatch& batch) {
     if (!buffers.initialized()) {
         logError("GltfLoader: BufferManager must be initialized first");
         return false;
@@ -225,8 +225,8 @@ std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
         logError("GltfLoader: loadModel called before init");
         return nullptr;
     }
-    BufferManager& buffers = *buffers_;
-    UploadBatch&   batch   = *batch_;
+    BufferManager&         buffers = *buffers_;
+    BlockingTransferBatch& batch   = *batch_;
 
     const std::string extension = path.extension().string();
     if (extension != ".gltf" && extension != ".glb") {
@@ -355,6 +355,7 @@ std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
             materialFor(primitive));
 
         if (!batch.submitAndWait()) return nullptr;
+        buffers.resetUpload();
         if (!uploaded) {
             logError("GltfLoader: upload failed for mesh " + std::to_string(meshIndex) +
                      " primitive " + std::to_string(primitiveIndex));

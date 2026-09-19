@@ -5,10 +5,12 @@ module;
 #include "glm/glm.hpp"
 
 #include <cstddef>
-#include <cstring>
+#include <format>
 #include <limits>
 #include <filesystem>
+#include <optional>
 #include <string>
+#include <vector>
 
 module MeshDrawResources;
 
@@ -18,184 +20,58 @@ import VkUtil;
 namespace {
 
 constexpr vk::BufferUsageFlags MESH_INSTANCES_USAGE = GPU_DATA_USAGE;
+constexpr vk::BufferUsageFlags MESH_INSTANCE_UPLOAD_USAGE =
+    vk::BufferUsageFlagBits::eTransferSrc;
 constexpr vk::BufferUsageFlags DRAW_DATA_USAGE = GPU_DATA_USAGE;
 constexpr vk::BufferUsageFlags MESH_TASK_COMMANDS_USAGE =
     GPU_DATA_USAGE | vk::BufferUsageFlagBits::eIndirectBuffer;
 constexpr vk::BufferUsageFlags MESH_TASK_COMMAND_COUNT_USAGE =
     GPU_DATA_USAGE | vk::BufferUsageFlagBits::eIndirectBuffer;
 
-constexpr vk::DeviceSize MESH_INSTANCES_CAPACITY = 8ull << 20;
-constexpr vk::DeviceSize DRAW_DATA_CAPACITY = 2ull << 20;
-constexpr vk::DeviceSize MESH_TASK_COMMANDS_CAPACITY = 2ull << 20;
+/// Instances one frame may draw. Every per-instance buffer below is sized from it.
+
+constexpr vk::DeviceSize MAX_MESH_INSTANCES = 4ull << 20;
+
+constexpr vk::DeviceSize MESH_INSTANCES_CAPACITY =
+    MAX_MESH_INSTANCES * sizeof(GPUMeshInstance);
+constexpr vk::DeviceSize DRAW_DATA_CAPACITY =
+    MAX_MESH_INSTANCES * sizeof(GPUDrawData);
+constexpr vk::DeviceSize MESH_TASK_COMMANDS_CAPACITY =
+    MAX_MESH_INSTANCES * sizeof(GPUMeshTaskCommand);
 constexpr vk::DeviceSize MESH_TASK_COMMAND_COUNT_CAPACITY = 4ull << 10;
 
-constexpr vma::AllocationCreateFlags MAPPED_FLAGS =
-    vma::AllocationCreateFlagBits::eHostAccessSequentialWrite |
-    vma::AllocationCreateFlagBits::eMapped;
+constexpr BufferAccess TRANSFER_WRITE{vk::PipelineStageFlagBits2::eAllTransfer,
+                                      vk::AccessFlagBits2::eTransferWrite};
+constexpr BufferAccess COMPUTE_READ{vk::PipelineStageFlagBits2::eComputeShader,
+                                    vk::AccessFlagBits2::eShaderStorageRead};
+constexpr BufferAccess COMPUTE_WRITE{
+    vk::PipelineStageFlagBits2::eComputeShader,
+    vk::AccessFlagBits2::eShaderStorageRead |
+        vk::AccessFlagBits2::eShaderStorageWrite};
+constexpr BufferAccess MESH_SHADER_READ{
+    vk::PipelineStageFlagBits2::eMeshShaderEXT,
+    vk::AccessFlagBits2::eShaderStorageRead};
+constexpr BufferAccess INDIRECT_READ{vk::PipelineStageFlagBits2::eDrawIndirect,
+                                     vk::AccessFlagBits2::eIndirectCommandRead};
 
-[[nodiscard]] bool fits(vk::DeviceSize capacity, uint32_t count, size_t stride) {
-    return vk::DeviceSize{count} * stride <= capacity;
+/// Keeps whichever barriers a group of AllocatedBuffer::use() calls produced.
+void keep(std::vector<vk::BufferMemoryBarrier2>& barriers,
+          std::optional<vk::BufferMemoryBarrier2> barrier) {
+    if (barrier) barriers.push_back(*barrier);
 }
 
 } // namespace
 
-bool detail::AllocatedBuffer::init(
-    VulkanContext& ctx, vk::DeviceSize capacity, vk::BufferUsageFlags usage,
-    vma::MemoryUsage memory, vma::AllocationCreateFlags flags, bool warnIfHost,
-    const char* name) {
-    if (buffer_) {
-        logError(std::string("MeshDrawResources: init called twice for ") + name);
-        return false;
-    }
-    if (capacity == 0) {
-        logError(std::string("MeshDrawResources: zero capacity for ") + name);
-        return false;
-    }
-
-    vk::BufferCreateInfo bufferInfo{};
-    bufferInfo.size        = capacity;
-    bufferInfo.usage       = usage;
-    bufferInfo.sharingMode = vk::SharingMode::eExclusive;
-
-    vma::AllocationCreateInfo allocationInfo{};
-    allocationInfo.usage = memory;
-    allocationInfo.flags = flags;
-
-    vma::AllocationInfo resultInfo{};
-    allocator_ = ctx.allocator();
-    const vk::Result result = allocator_.createBuffer(
-        &bufferInfo, &allocationInfo, &buffer_, &allocation_, &resultInfo);
-    if (result != vk::Result::eSuccess) {
-        logError(std::string("MeshDrawResources: vmaCreateBuffer failed for ") +
-                 name + ": VkResult " + vk::to_string(result));
-        destroy();
-        return false;
-    }
-
-    capacity_ = capacity;
-    mapped_ = static_cast<std::byte*>(resultInfo.pMappedData);
-    allocator_.setAllocationName(allocation_, name);
-
-    if (warnIfHost) {
-        const vk::MemoryPropertyFlags properties =
-            allocator_.getAllocationMemoryProperties(allocation_);
-        if (!(properties & vk::MemoryPropertyFlagBits::eDeviceLocal)) {
-            logError(std::string("MeshDrawResources: ") + name +
-                     " requested device-local mapped memory and received host memory");
-        }
-    }
-
-    if (usage & vk::BufferUsageFlagBits::eShaderDeviceAddress) {
-        vk::BufferDeviceAddressInfo addressInfo{};
-        addressInfo.buffer = buffer_;
-        deviceAddress_ = GpuPtr<std::byte>{ctx.device().getBufferAddress(addressInfo)};
-        if (deviceAddress_.address == 0) {
-            logError(std::string("MeshDrawResources: no device address for ") + name);
-            destroy();
-            return false;
-        }
-    }
-    return true;
-}
-
-void detail::AllocatedBuffer::destroy() {
-    if (buffer_) allocator_.destroyBuffer(buffer_, allocation_);
-    allocator_ = nullptr;
-    buffer_ = nullptr;
-    allocation_ = nullptr;
-    capacity_ = 0;
-    deviceAddress_ = {};
-    mapped_ = nullptr;
-}
-
-BufferRegion detail::AllocatedBuffer::region(vk::DeviceSize size) const {
-    if (!buffer_ || size == 0 || size > capacity_) return {};
-    return BufferRegion{buffer_, 0, size};
-}
-
-bool detail::MeshInstancesBuffer::init(VulkanContext& ctx) {
-    if (!buffer_.init(ctx, MESH_INSTANCES_CAPACITY, MESH_INSTANCES_USAGE,
-                      vma::MemoryUsage::eAuto, MAPPED_FLAGS, true,
-                      "mesh instances"))
-        return false;
-
-    mapped_ = reinterpret_cast<GPUMeshInstance*>(buffer_.mapped());
-    if (!mapped_) {
-        logError("MeshDrawResources: mesh instances allocation is not mapped");
-        destroy();
-        return false;
-    }
-    return true;
-}
-
-void detail::MeshInstancesBuffer::destroy() {
-    mapped_ = nullptr;
-    buffer_.destroy();
-}
-
-MappedSpan<GPUMeshInstance> detail::MeshInstancesBuffer::span(uint32_t instanceCount) const {
-    if (!fits(buffer_.capacity(), instanceCount, sizeof(GPUMeshInstance))) return {};
-    return MappedSpan<GPUMeshInstance>{
-        buffer_.region(vk::DeviceSize{instanceCount} * sizeof(GPUMeshInstance)),
-        GpuSpan<GPUMeshInstance>{buffer_.gpuAddress<GPUMeshInstance>(), instanceCount},
-        mapped_};
-}
-
-bool detail::DrawDataBuffer::init(VulkanContext& ctx) {
-    return buffer_.init(ctx, DRAW_DATA_CAPACITY, DRAW_DATA_USAGE,
-                        vma::MemoryUsage::eAutoPreferDevice, {}, false, "draw data");
-}
-
-void detail::DrawDataBuffer::destroy() {
-    buffer_.destroy();
-}
-
-DeviceSpan<GPUDrawData> detail::DrawDataBuffer::span(uint32_t instanceCount) const {
-    if (!fits(buffer_.capacity(), instanceCount, sizeof(GPUDrawData))) return {};
-    return DeviceSpan<GPUDrawData>{
-        buffer_.region(vk::DeviceSize{instanceCount} * sizeof(GPUDrawData)),
-        GpuSpan<GPUDrawData>{buffer_.gpuAddress<GPUDrawData>(), instanceCount}};
-}
-
-bool detail::MeshTaskCommandsBuffer::init(VulkanContext& ctx) {
-    return buffer_.init(ctx, MESH_TASK_COMMANDS_CAPACITY, MESH_TASK_COMMANDS_USAGE,
-                        vma::MemoryUsage::eAutoPreferDevice, {}, false,
-                        "mesh task commands");
-}
-
-void detail::MeshTaskCommandsBuffer::destroy() {
-    buffer_.destroy();
-}
-
-DeviceSpan<GPUMeshTaskCommand> detail::MeshTaskCommandsBuffer::span(
-    uint32_t instanceCount) const {
-    if (!fits(buffer_.capacity(), instanceCount, sizeof(GPUMeshTaskCommand))) return {};
-    return DeviceSpan<GPUMeshTaskCommand>{
-        buffer_.region(vk::DeviceSize{instanceCount} * sizeof(GPUMeshTaskCommand)),
-        GpuSpan<GPUMeshTaskCommand>{buffer_.gpuAddress<GPUMeshTaskCommand>(), instanceCount}};
-}
-
-bool detail::MeshTaskCommandCountBuffer::init(VulkanContext& ctx) {
-    return buffer_.init(ctx, MESH_TASK_COMMAND_COUNT_CAPACITY,
-                        MESH_TASK_COMMAND_COUNT_USAGE,
-                        vma::MemoryUsage::eAutoPreferDevice, {}, false,
-                        "mesh task command count");
-}
-
-void detail::MeshTaskCommandCountBuffer::destroy() {
-    buffer_.destroy();
-}
-
-DeviceSpan<uint32_t> detail::MeshTaskCommandCountBuffer::span() const {
-    constexpr uint32_t count = 1;
-    if (!fits(buffer_.capacity(), count, sizeof(uint32_t))) return {};
-    return DeviceSpan<uint32_t>{
-        buffer_.region(sizeof(uint32_t)),
-        GpuSpan<uint32_t>{buffer_.gpuAddress<uint32_t>(), count}};
-}
-
 bool detail::MeshDrawResourceSlot::init(VulkanContext& ctx) {
-    if (!instances.init(ctx) || !drawData.init(ctx) || !commands.init(ctx) || !count.init(ctx)) {
+    if (!instances.init(ctx, MESH_INSTANCES_CAPACITY, MESH_INSTANCES_USAGE,
+                        "mesh instances") ||
+        !instanceUpload.init(ctx, MESH_INSTANCES_CAPACITY,
+                             MESH_INSTANCE_UPLOAD_USAGE, "mesh instance upload") ||
+        !drawData.init(ctx, DRAW_DATA_CAPACITY, DRAW_DATA_USAGE, "draw data") ||
+        !commands.init(ctx, MESH_TASK_COMMANDS_CAPACITY, MESH_TASK_COMMANDS_USAGE,
+                       "mesh task commands") ||
+        !count.init(ctx, MESH_TASK_COMMAND_COUNT_CAPACITY,
+                    MESH_TASK_COMMAND_COUNT_USAGE, "mesh task command count")) {
         destroy();
         return false;
     }
@@ -206,6 +82,7 @@ void detail::MeshDrawResourceSlot::destroy() {
     count.destroy();
     commands.destroy();
     drawData.destroy();
+    instanceUpload.destroy();
     instances.destroy();
 }
 
@@ -236,25 +113,48 @@ PreparedMeshDraw MeshDrawResources::prepare(
 
     const uint32_t instanceCount = static_cast<uint32_t>(instances.size());
     detail::MeshDrawResourceSlot& slot = recording.select(slots_);
-    const MappedSpan<GPUMeshInstance> instanceSpan = slot.instances.span(instanceCount);
-    const DeviceSpan<GPUDrawData> drawDataSpan = slot.drawData.span(instanceCount);
-    const DeviceSpan<GPUMeshTaskCommand> commandSpan = slot.commands.span(instanceCount);
-    const DeviceSpan<uint32_t> countSpan = slot.count.span();
-    if (!instanceSpan || !drawDataSpan || !commandSpan || !countSpan) {
-        logError("MeshDrawResources::prepare: mesh-draw buffer capacity exceeded");
+
+    const DeviceSpan<GPUMeshInstance> instanceSpan =
+        slot.instances.span<GPUMeshInstance>(instanceCount);
+    const MappedSpan<GPUMeshInstance> uploadSpan =
+        slot.instanceUpload.span<GPUMeshInstance>(instanceCount);
+    const DeviceSpan<GPUDrawData> drawDataSpan =
+        slot.drawData.span<GPUDrawData>(instanceCount);
+    const DeviceSpan<GPUMeshTaskCommand> commandSpan =
+        slot.commands.span<GPUMeshTaskCommand>(instanceCount);
+    const DeviceSpan<uint32_t> countSpan = slot.count.span<uint32_t>(1);
+
+    if (!instanceSpan || !uploadSpan || !drawDataSpan || !commandSpan || !countSpan) {
+        logError(std::format(
+            "MeshDrawResources::prepare: {} instances exceeds the {} the "
+            "mesh-draw buffers hold",
+            instanceCount, MAX_MESH_INSTANCES));
         return {};
     }
 
-    std::memcpy(instanceSpan.host, instances.data(),
-                instances.size_bytes());
+    if (!slot.instanceUpload.write(instances.data(), instanceCount)) {
+        logError("MeshDrawResources::prepare: writing the instance upload buffer failed");
+        return {};
+    }
 
     const vk::CommandBuffer commandBuffer = recording.commandBuffer();
+    std::vector<vk::BufferMemoryBarrier2> barriers;
+    barriers.reserve(5);
+
+    keep(barriers, slot.instances.use(TRANSFER_WRITE));
+    keep(barriers, slot.count.use(TRANSFER_WRITE));
+    recordBarriers(commandBuffer, barriers);
+    barriers.clear();
+
+    slot.instances.upload(commandBuffer, uploadSpan.region);
     zero(commandBuffer, countSpan.region);
-    barrier(commandBuffer,
-            vk::PipelineStageFlagBits2::eClear, vk::AccessFlagBits2::eTransferWrite,
-            vk::PipelineStageFlagBits2::eComputeShader,
-            vk::AccessFlagBits2::eShaderStorageRead |
-                vk::AccessFlagBits2::eShaderStorageWrite);
+
+    keep(barriers, slot.instances.use(COMPUTE_READ));
+    keep(barriers, slot.drawData.use(COMPUTE_WRITE));
+    keep(barriers, slot.commands.use(COMPUTE_WRITE));
+    keep(barriers, slot.count.use(COMPUTE_WRITE));
+    recordBarriers(commandBuffer, barriers);
+    barriers.clear();
 
     BuildDrawCommandsPush push{};
     push.viewProj = viewProjection;
@@ -265,13 +165,11 @@ PreparedMeshDraw MeshDrawResources::prepare(
     push.instanceCount = instanceCount;
     buildDrawCommands_.record(commandBuffer, push);
 
-    barrier(commandBuffer,
-            vk::PipelineStageFlagBits2::eComputeShader,
-            vk::AccessFlagBits2::eShaderStorageWrite,
-            vk::PipelineStageFlagBits2::eDrawIndirect |
-                vk::PipelineStageFlagBits2::eMeshShaderEXT,
-            vk::AccessFlagBits2::eIndirectCommandRead |
-                vk::AccessFlagBits2::eShaderStorageRead);
+    keep(barriers, slot.instances.use(MESH_SHADER_READ));
+    keep(barriers, slot.drawData.use(MESH_SHADER_READ));
+    keep(barriers, slot.commands.use(INDIRECT_READ));
+    keep(barriers, slot.count.use(INDIRECT_READ));
+    recordBarriers(commandBuffer, barriers);
 
     return PreparedMeshDraw{instanceSpan.gpu.data, drawDataSpan.gpu.data,
                             commandSpan.region, countSpan.region, instanceCount};

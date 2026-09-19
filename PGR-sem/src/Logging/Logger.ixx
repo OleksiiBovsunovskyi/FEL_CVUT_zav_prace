@@ -1,6 +1,8 @@
 module;
 
+#include <cstdint>
 #include <string>
+#include <utility>
 #include <iostream>
 #include <chrono>
 #include <source_location>
@@ -16,6 +18,17 @@ export std::string getCurrentTime() {
     const auto now = std::chrono::system_clock::now();
     auto time = std::chrono::floor<std::chrono::seconds>(now);
     return std::format("{:%H:%M:%S}", time);
+}
+
+/// Abbreviates a count for reading: 456, 3k, 2.1m, 18.2b.
+export std::string formatCount(uint64_t count) {
+    constexpr std::pair<uint64_t, char> units[]{
+        {1'000'000'000, 'b'}, {1'000'000, 'm'}, {1'000, 'k'}};
+    for (const auto& [scale, suffix] : units)
+        if (count >= scale)
+            return std::format("{:.3g}{}",
+                               static_cast<double>(count) / scale, suffix);
+    return std::format("{}", count);
 }
 
 export void logMessage(const std::string& message,

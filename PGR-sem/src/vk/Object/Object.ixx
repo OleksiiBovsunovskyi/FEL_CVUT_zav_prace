@@ -49,10 +49,9 @@ public:
         pendingSubscriptions_.subscribe(stored);
 
         components_.back()->onWorldTransformChanged();
-        //!TODO: This seems like potential point of failure
-        /* A component added after the Object joined a Scene missed the call
-         * that lets it register itself, so it gets it here instead - and its
-         * subscriptions have somewhere to go immediately. */
+
+        /* Already in a Scene: the component is attached here, so nothing has
+         * to walk the Objects looking for one that is not. */
         if (scene_) {
             components_.back()->onAddedToScene();
             flushSubscriptions();

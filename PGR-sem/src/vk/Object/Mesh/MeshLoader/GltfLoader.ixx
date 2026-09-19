@@ -11,7 +11,7 @@ export import MultiMesh;
 export import ClusterLODGenerator;
 
 import BufferManager;
-import UploadBatch;
+import BlockingTransferBatch;
 
 export struct GltfLoadSettings {
     /**
@@ -48,7 +48,7 @@ public:
      * @param batch used for every upload; must be initialized and never left
      *        open by a caller, since loadModel opens and submits it as it goes.
      */
-    bool init(BufferManager& buffers, UploadBatch& batch);
+    bool init(BufferManager& buffers, BlockingTransferBatch& batch);
 
     /**
      * @param path a .gltf or .glb.
@@ -61,6 +61,6 @@ public:
         const GltfLoadSettings& settings = {});
 
 private:
-    BufferManager* buffers_ = nullptr;
-    UploadBatch*   batch_   = nullptr;
+    BufferManager*         buffers_ = nullptr;
+    BlockingTransferBatch* batch_   = nullptr;
 };

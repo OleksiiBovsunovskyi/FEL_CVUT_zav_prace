@@ -1,8 +1,13 @@
-/* Compile-time checks of event subscription and delivery. */
+/* Compile-time checks of event subscription and delivery, and one runtime
+ * check of component attachment: a Scene is not constexpr-constructible. */
 
 // Flags to test compile time asserts
 //#define TESTHIDDENONTICK //Should cause compilation failure. 
- 
+
+#include <cassert>
+#include <memory>
+#include <utility>
+
 import VkScene;
 
 namespace {
@@ -114,5 +119,42 @@ constexpr bool clearDropsEverySubscription() {
 static_assert(clearDropsEverySubscription(),
               "clear must empty every list, or clearObjects leaves entries "
               "pointing at destroyed Objects");
+
+/**
+ * Example of a component counting how often each hook reached it.
+ */
+struct CountingComponent : Component {
+    int added  = 0;
+    int ticked = 0;
+
+    void onTick(float) { ++ticked; }
+
+protected:
+    void onAddedToScene() override { ++added; }
+};
+
+/// Attaches one component before its Object joins and one after.
+bool attachesEachComponentOnce() {
+    Scene scene;
+
+    auto               beforeJoin = std::make_unique<Object>();
+    CountingComponent& early      = beforeJoin->addComponent(CountingComponent{});
+    scene.addObject(std::move(beforeJoin));
+
+    Object&            joined = scene.addObject(std::make_unique<Object>());
+    CountingComponent& late   = joined.addComponent(CountingComponent{});
+
+    scene.tick(1.0f);
+
+    return early.added == 1 && early.ticked == 1 &&
+           late.added == 1 && late.ticked == 1;
+}
+
+[[maybe_unused]] const bool attachmentChecked = [] {
+    const bool passed = attachesEachComponentOnce();
+    assert(passed && "a component reaches onAddedToScene exactly once, whether "
+                     "it is added before or after its Object joins the Scene");
+    return passed;
+}();
 
 } // namespace

@@ -206,7 +206,7 @@ add_executable(pgr-vk
         Core/FrameRunner/FrameRunner.cpp
         Rendering/Frame/Frame.cpp
         Core/BufferManager.cpp
-        Core/UploadBatch.cpp
+        Core/BlockingTransferBatch.cpp
         Core/Pipeline.cpp
         Core/BuildDrawCommands.cpp
         Core/MeshDraw.cpp
@@ -250,9 +250,13 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/FrameInFlightIndex.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/GPUTypes.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/FrameRunner/FrameRunner.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/Buffer/BufferTypes.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/Buffer/AllocatedBuffer.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/Buffer/SubAllocatedBuffer.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/Buffer/StaticBuffers.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/VK_Buffers.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/BufferManager.ixx"
-        "${CMAKE_CURRENT_SOURCE_DIR}/Core/UploadBatch.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/BlockingTransferBatch.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/Pipeline.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/BuildDrawCommands.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/MeshDraw.ixx"
