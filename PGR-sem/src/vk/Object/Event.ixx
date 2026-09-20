@@ -17,6 +17,33 @@ export import :Subscribers;
  */
 
 /**
+ * Every key and axis handled by input event
+ */
+export enum class Key {
+    W,
+    A,
+    S,
+    D,
+    Q,
+    E,
+    /// Cursor delta along X, in pixels, positive to the right.
+    MouseX,
+    /// Cursor delta along Y, in pixels, positive downwards.
+    MouseY,
+};
+
+/**
+ * One input transition.
+ *
+ * A digital key carries 1 on press and 0 on release; 
+ * a mouse axis carries its delta 
+ */
+export struct InputEventData {
+    Key   key;
+    float value;
+};
+
+/**
  * Handler should be public, otherwise invisible to the caller
  *
  * Handler should be declared AND EventCapable should be inherited
@@ -119,5 +146,50 @@ private:
     std::tuple<ListFor<Events>...> lists_;
 };
 
+/**
+ * Handler should be public, otherwise invisible to the caller
+ *
+ * Handler should be declared AND EventCapable should be inherited
+ */
+export template <typename T>
+concept DeclaresOnInput = requires(T& t, const InputEventData& event) {
+    t.onInput(event);
+};
+
+
+struct OnInputProbe { void onInput(); };
+
+template <typename T>
+struct MergedWithOnInputProbe : T, OnInputProbe {};
+
+/**
+ * Whether a type declares onInput at all, public or not. False for anything
+ * that cannot be derived from.
+ */
+export template <typename T>
+concept DeclaresSomeOnInput =
+    std::is_class_v<T> && !std::is_final_v<T> &&
+    !requires { &MergedWithOnInputProbe<T>::onInput; };
+
+/**
+ * Event carrying one key transition or one mouse-axis delta.
+ */
+export struct InputEvent {
+    using Signature = void(const InputEventData&);
+
+    template <typename T>
+    static constexpr bool declaresHandler = DeclaresOnInput<T>;
+
+    /// Declared, but where a subscription cannot reach it.
+    template <typename T>
+    static constexpr bool declaresHiddenHandler =
+        DeclaresSomeOnInput<T> && !DeclaresOnInput<T>;
+
+    template <typename T>
+    static constexpr void invoke(EventCapable& target, const InputEventData& event) {
+        static_cast<T&>(target).onInput(event);
+    }
+};
+
 /// The events this renderer has.
-export using AllEventSubscriptions = EventSubscriptions<TickEvent>;
+export using AllEventSubscriptions = EventSubscriptions<TickEvent, InputEvent>;

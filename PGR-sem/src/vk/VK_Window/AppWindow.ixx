@@ -32,7 +32,8 @@ public:
     void setResizeCallback(std::function<void(int, int)> cb)        { onResize_      = std::move(cb); }
     void setMouseMoveCallback(std::function<void(float, float)> cb) { onMouseMove_   = std::move(cb); }
     void setMouseButtonCallback(std::function<void(int, int)> cb)   { onMouseButton_ = std::move(cb); }
-    void setKeyDownCallback(std::function<void(unsigned char)> cb)  { onKeyDown_     = std::move(cb); }
+    /// ASCII code of the key, uppercase for letters, and whether it went down.
+    void setKeyCallback(std::function<void(unsigned char, bool)> cb) { onKey_         = std::move(cb); }
 
     /// Runs before the frame is recorded, inside the ImGui frame.
     void setUICallback(std::function<void()> cb)                    { onUI_          = std::move(cb); }
@@ -55,8 +56,6 @@ public:
 
     // --- Input / state ------------------------------------------------------
 
-    /// ASCII, case-insensitive
-    bool isKeyDown(unsigned char key) const;
     bool isUIMode()                   const { return uiMode_; }
     void setUIMode(bool enable);
 
@@ -82,13 +81,12 @@ private:
     bool uiMode_ = false;
     bool firstMouse_ = true;
     double lastMouseX_ = 0.0, lastMouseY_ = 0.0;
-    bool keys_[256] = {};
 
     std::function<void()>              onDraw_;
     std::function<void(int, int)>      onResize_;
     std::function<void(float, float)>  onMouseMove_;
     std::function<void(int, int)>      onMouseButton_;
-    std::function<void(unsigned char)> onKeyDown_;
+    std::function<void(unsigned char, bool)> onKey_;
     std::function<void()>              onUI_;
 
     static AppWindow* instance_;

@@ -6,7 +6,6 @@ module;
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_vulkan.h"
 
-#include <cctype>
 #include <string>
 
 module VkWindow;
@@ -173,11 +172,6 @@ int AppWindow::getElapsedMs() const {
     return static_cast<int>(glfwGetTime() * 1000.0);
 }
 
-bool AppWindow::isKeyDown(unsigned char key) const {
-    // GLFW reports letters as uppercase ASCII; accept either case.
-    return keys_[static_cast<unsigned char>(std::toupper(key))];
-}
-
 void AppWindow::setUIMode(bool enable) {
     uiMode_ = enable;
     applyCursorMode();
@@ -223,11 +217,10 @@ void AppWindow::onKey(int key, int action) {
     // Let ImGui have the keyboard while a widget is focused.
     if (ImGui::GetIO().WantCaptureKeyboard) return;
 
+    // GLFW codes above 255 are the named keys, which nothing maps.
     if (key < 0 || key > 255) return;
-    const auto ascii = static_cast<unsigned char>(key);
 
-    keys_[ascii] = down;
-    if (down && onKeyDown_) onKeyDown_(ascii);
+    if (onKey_) onKey_(static_cast<unsigned char>(key), down);
 }
 
 void AppWindow::onCursorPos(double x, double y) {

@@ -98,11 +98,12 @@ void VulkanApp::run() {
     /* Whatever the caller put in the scene decides where the camera sits. */
     frameScene();
 
+    input_.setupWindowInputCallbacks(window_);
     window_.setResizeCallback([this](int, int) { frames_.notifyResized(); });
     window_.setUICallback([this] { drawUI(); });
     window_.setDrawCallback([this] {
+        dispatchInput();
         scene_.tick(elapseFrame());
-        updateCamera();
         frames_.drawFrame([this](Frame::Recording& recording) {
             recordFrame(recording);
         });
@@ -167,7 +168,7 @@ void VulkanApp::drawUI() {
         ImGui::Separator();
         ImGui::TextUnformatted(window_.isUIMode() ? "UI mode  (Tab to capture the mouse)"
                                                   : "Mouse captured  (Tab for UI)");
-        ImGui::TextUnformatted("Esc quits");
+        ImGui::TextUnformatted("WASD moves, E/Q rise and fall, Esc quits");
     }
     ImGui::End();
 
@@ -205,13 +206,20 @@ void VulkanApp::frameScene() {
         sceneRadius_ = std::max(glm::length(max - min) * 0.5f, 1e-3f);
     }
 
-    if (!scene_.getActiveCamera()) {
-        auto camera = std::make_unique<Object>();
-        camera->addComponent(CameraComponent{});
-        scene_.addObject(std::move(camera));
-    }
+    CameraComponent* camera = scene_.getActiveCamera();
+    if (!camera) return;
 
-    updateCamera();
+    Object& viewer = camera->getOwner();
+    viewer.setTransform(glm::translate(
+        glm::mat4{1.0f}, sceneCenter_ + glm::vec3{0.0f, 0.0f, sceneRadius_ * 2.5f}));
+
+    if (WASDComponent* movement = viewer.getComponent<WASDComponent>())
+        movement->setSpeed(sceneRadius_ * 0.8f);
+}
+
+void VulkanApp::dispatchInput() {
+    for (const InputEventData& event : input_.pending()) scene_.input(event);
+    input_.clearPending();
 }
 
 float VulkanApp::elapseFrame() {
@@ -221,21 +229,6 @@ float VulkanApp::elapseFrame() {
 
     if (delta <= 0 || delta > MAX_FRAME_MS) return 0.0f;
     return static_cast<float>(delta) * 0.001f;
-}
-
-void VulkanApp::updateCamera() {
-    CameraComponent* camera = scene_.getActiveCamera();
-    if (!camera) return;
-
-    const float angle    = static_cast<float>(window_.getElapsedMs()) * 0.0004f;
-    const float distance = sceneRadius_ * 2.5f;
-    const glm::vec3 eye = sceneCenter_ + distance * glm::vec3{
-        std::cos(angle), 0.45f, std::sin(angle) };
-
-    /* The Object's transform is where the camera is, not what it looks like
-     * from there, so the view matrix lookAt builds is inverted back out. */
-    camera->getOwner().setTransform(glm::inverse(
-        glm::lookAt(eye, sceneCenter_, glm::vec3{0.0f, 1.0f, 0.0f})));
 }
 
 void VulkanApp::recordFrame(Frame::Recording& recording) {

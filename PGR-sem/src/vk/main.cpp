@@ -17,6 +17,7 @@ import VulkanApp;
 import VkScene;
 import RenderComponent;
 import MultiMesh;
+import Player;
 
 int main(int argc, char** argv) {
     try {
@@ -67,6 +68,10 @@ int main(int argc, char** argv) {
             objects.push_back(object.get());
             app.getScene().addObject(std::move(object));
         }
+        /* Holds the camera, so this is also what decides where the view
+         * starts; VulkanApp sizes its speed to the scene. */
+        app.getScene().addObject(std::make_unique<Player>());
+
         uint64_t vertsPerObject = 0;
         for (const MultiMeshPart& part : model->parts())
             vertsPerObject += part.mesh->vertexCount();

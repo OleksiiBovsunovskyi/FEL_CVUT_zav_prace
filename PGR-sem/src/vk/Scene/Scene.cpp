@@ -22,3 +22,11 @@ void Scene::clearObjects() {
 void Scene::tick(float deltaSeconds) {
     subscriptions_.broadcast<TickEvent>(deltaSeconds);
 }
+
+/**
+ * Broadcast input event to everyone subscribed
+ * @param event the key transition or mouse-axis delta that arrived
+ */
+void Scene::input(const InputEventData& event) {
+    subscriptions_.broadcast<InputEvent>(event);
+}

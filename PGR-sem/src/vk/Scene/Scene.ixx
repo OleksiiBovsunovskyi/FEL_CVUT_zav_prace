@@ -48,6 +48,12 @@ public:
      */
     void tick(float deltaSeconds);
 
+    /**
+     * Broadcasts one input transition to everyone that subscribed
+     * @param event the key transition or mouse-axis delta that arrived.
+     */
+    void input(const InputEventData& event);
+
     [[nodiscard]] std::size_t getObjectsCount() const { return objects_.size(); }
     [[nodiscard]] bool isEmpty() const { return objects_.empty(); }
 

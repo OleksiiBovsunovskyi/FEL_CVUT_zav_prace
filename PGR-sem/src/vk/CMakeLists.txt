@@ -278,6 +278,7 @@ add_executable(pgr-vk
         # Static-init checks; run once at program start.
         Tests/TestEventsHandling.cpp
         Tests/TestDrawList.cpp
+        Tests/TestInput.cpp
         # Compile-time checks; no runtime presence.
         Tests/TestRenderTarget.cpp
         Tests/TestFrame.cpp
@@ -334,6 +335,10 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/CameraComponent.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Scene/Scene.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/RenderComponent.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/WASDComponent.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/MouseXYComponent.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Object/Player.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Input/InputHandler.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Material/Material.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/Mesh.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Object/Mesh/MultiMesh/MultiMesh.ixx"

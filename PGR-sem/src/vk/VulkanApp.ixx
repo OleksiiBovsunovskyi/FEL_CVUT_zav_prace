@@ -27,6 +27,8 @@ import BlockingTransferBatch;
 import GltfLoader;
 import RenderComponent;
 import VkScene;
+import InputHandler;
+import WASDComponent;
 import GPUTypes;
 import ShaderPrint;
 
@@ -67,6 +69,7 @@ public:
 
 private:
     AppWindow     window_;
+    InputHandler  input_;
     VulkanContext ctx_;
     Swapchain     swapchain_;
     FrameRunner   frames_;
@@ -101,15 +104,16 @@ private:
     void drawUI();
 
     /**
-     * Measures the scene and gives it a camera if it has none. The bounds are
-     * what the orbit is sized from; the camera itself is an ordinary Object.
+     * Measures the scene, then places the active camera's Object so the whole
+     * of it is in front and sets the movement speed from its size.
+     *
+     * @note The placement leaves the Object unrotated, which is the
+     *       orientation MouseXYComponent starts from.
      */
     void frameScene();
 
-    /**
-     * !TODO: make proper player and remove orbit
-     */
-    void updateCamera();
+    /// Broadcasts everything the window reported since the previous frame.
+    void dispatchInput();
 
     /**
      * @return seconds since the previous frame, 0 when there is no previous
