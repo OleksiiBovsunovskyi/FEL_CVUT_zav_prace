@@ -68,7 +68,9 @@ vk::RenderingAttachmentInfo SharedRenderTargets::depthAttachment(
 }
 
 bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
-                    vk::Format colorFormat, vk::Extent2D extent) {
+                    vk::Format colorFormat, vk::Extent2D extent,
+                    const TextureManager& textures) {
+    textures_ = &textures;
     if (!meshDrawResources_.init(
             ctx, shaderLoader, SHADER_DIR / "build_draw_commands.spv"))
         return false;
@@ -79,7 +81,8 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
     }
     //TODO: Add mesh shader override. 
     if (!forward_.init(ctx, shaderLoader, SHADER_DIR / "mesh.spv",
-                       SHADER_DIR / "mesh_frag.spv", colorFormat, extent)) {
+                       SHADER_DIR / "mesh_frag.spv", colorFormat, extent,
+                       textures.layout())) {
         sharedTargets_.destroy();
         meshDrawResources_.destroy();
         return false;
@@ -101,13 +104,14 @@ void Renderer::render(Frame::Recording& recording,
                       std::span<const GPUMeshInstance> instances,
                       std::span<const uint32_t> changed,
                       const glm::mat4& viewProjection,
+                      const glm::vec3& cameraPosition,
                       GpuPtr<GPUMaterial> materials) {
     const PreparedMeshDraw meshDraw =
         meshDrawResources_.prepare(recording, instances, changed, viewProjection);
     const vk::RenderingAttachmentInfo depthAttachment =
         sharedTargets_.depthAttachment(recording);
-    forward_.render(recording, meshDraw, viewProjection, materials,
-                    depthAttachment, draw_);
+    forward_.render(recording, meshDraw, viewProjection, cameraPosition, materials,
+                    textures_ ? textures_->set() : nullptr, depthAttachment, draw_);
 }
 
 bool Renderer::resize(vk::Extent2D extent) {

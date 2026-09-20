@@ -12,6 +12,7 @@ export import ClusterLODGenerator;
 
 import BufferManager;
 import BlockingTransferBatch;
+import TextureManager;
 
 export struct GltfLoadSettings {
     /**
@@ -47,8 +48,10 @@ public:
      *        this.
      * @param batch used for every upload; must be initialized and never left
      *        open by a caller, since loadModel opens and submits it as it goes.
+     * @param textures where decoded images land; must outlive this.
      */
-    bool init(BufferManager& buffers, BlockingTransferBatch& batch);
+    bool init(BufferManager& buffers, BlockingTransferBatch& batch,
+              TextureManager& textures);
 
     /**
      * @param path a .gltf or .glb.
@@ -61,6 +64,7 @@ public:
         const GltfLoadSettings& settings = {});
 
 private:
-    BufferManager*         buffers_ = nullptr;
-    BlockingTransferBatch* batch_   = nullptr;
+    BufferManager*         buffers_  = nullptr;
+    BlockingTransferBatch* batch_    = nullptr;
+    TextureManager*        textures_ = nullptr;
 };

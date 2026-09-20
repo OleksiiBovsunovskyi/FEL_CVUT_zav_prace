@@ -73,7 +73,12 @@ void VulkanApp::init() {
 
     shaders_.init(device_);
 
-    if (!renderer_.init(ctx_, shaders_, swapchain_.format(), swapchain_.extent()))
+    /* Before the Renderer: the mesh pipeline layout names its set layout. */
+    if (!textures_.init(ctx_))
+        throw std::runtime_error("TextureManager::init failed");
+
+    if (!renderer_.init(ctx_, shaders_, swapchain_.format(), swapchain_.extent(),
+                        textures_))
         throw std::runtime_error("Renderer::init failed");
     renderer_.setDrawCallback(
         [this](vk::CommandBuffer cmd, vk::Extent2D extent) { recordImGui(cmd, extent); });
@@ -88,7 +93,7 @@ void VulkanApp::init() {
         throw std::runtime_error("BufferManager::init failed");
     if (!transfers_.init(ctx_))
         throw std::runtime_error("BlockingTransferBatch::init failed");
-    if (!loader_.init(buffers_, transfers_))
+    if (!loader_.init(buffers_, transfers_, textures_))
         throw std::runtime_error("GltfLoader::init failed");
 
     initImGuiVulkan();
@@ -242,7 +247,8 @@ void VulkanApp::recordFrame(Frame::Recording& recording) {
     const GpuPtr<GPUMaterial> materials =
         buffers_.staticBase<StaticBufferKind::Materials>();
     if (!camera) {
-        renderer_.render(recording, {}, changed, glm::mat4{1.0f}, materials);
+        renderer_.render(recording, {}, changed, glm::mat4{1.0f}, glm::vec3{0.0f},
+                         materials);
         return;
     }
 
@@ -250,7 +256,8 @@ void VulkanApp::recordFrame(Frame::Recording& recording) {
     const float aspect = static_cast<float>(extent.width) /
                          static_cast<float>(std::max(extent.height, 1u));
     renderer_.render(recording, drawList.getItems(), changed,
-                     camera->viewProjection(aspect), materials);
+                     camera->viewProjection(aspect), camera->worldPosition(),
+                     materials);
 }
 
 void VulkanApp::recordImGui(vk::CommandBuffer cmd, vk::Extent2D) {
@@ -275,6 +282,7 @@ void VulkanApp::cleanup() {
     /* Meshes retire buffer ranges on destruction; must precede shutdown. */
     scene_.clearObjects();
     renderer_.destroy();
+    textures_.destroy();
     transfers_.destroy();
     buffers_.shutdown();
     frames_.destroy();

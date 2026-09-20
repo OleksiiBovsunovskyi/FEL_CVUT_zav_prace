@@ -32,7 +32,8 @@ public:
                             const std::filesystem::path& meshShaderPath,
                             const std::filesystem::path& fragmentShaderPath,
                             vk::Format colorFormat, vk::Format depthFormat,
-                            PFN_vkCmdDrawMeshTasksIndirectCountEXT drawIndirectCount);
+                            PFN_vkCmdDrawMeshTasksIndirectCountEXT drawIndirectCount,
+                            vk::DescriptorSetLayout textureLayout);
 
     /**
      * Records one indirect draw. Must be inside a render pass whose attachment
@@ -46,7 +47,7 @@ public:
     void record(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
                 const GPUMeshDrawPush& push,
                 const BufferRegion& commands, const BufferRegion& count,
-                uint32_t maxDrawCount) const;
+                uint32_t maxDrawCount, vk::DescriptorSet textureSet) const;
 
     void destroy();
 

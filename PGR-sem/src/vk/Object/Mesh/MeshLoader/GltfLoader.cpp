@@ -1,11 +1,14 @@
 module;
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -14,6 +17,8 @@ module;
 #include <fastgltf/math.hpp>
 #include <fastgltf/tools.hpp>
 #include <fastgltf/types.hpp>
+
+#include <stb_image.h>
 
 module GltfLoader;
 
@@ -90,6 +95,34 @@ void generateNormals(std::vector<GPUVertex>& vertices,
     }
 }
 
+/// @return the bytes a data source holds itself, empty when it holds none.
+std::span<const std::byte> directBytes(const fastgltf::DataSource& source) {
+    if (const auto* array = std::get_if<fastgltf::sources::Array>(&source))
+        return {array->bytes.data(), array->bytes.size()};
+    if (const auto* view = std::get_if<fastgltf::sources::ByteView>(&source))
+        return {view->bytes.data(), view->bytes.size()};
+    if (const auto* vector = std::get_if<fastgltf::sources::Vector>(&source))
+        return {vector->bytes.data(), vector->bytes.size()};
+    return {};
+}
+
+/**
+ * @return one image's encoded PNG or JPEG bytes.
+ * @note A .glb keeps them in a buffer view; LoadExternalImages puts a sidecar
+ *       file's into an array.
+ */
+std::span<const std::byte> imageBytes(const fastgltf::Asset& asset,
+                                      const fastgltf::Image& image) {
+    if (const auto* source = std::get_if<fastgltf::sources::BufferView>(&image.data)) {
+        const fastgltf::BufferView& view = asset.bufferViews[source->bufferViewIndex];
+        const std::span<const std::byte> buffer =
+            directBytes(asset.buffers[view.bufferIndex].data);
+        if (view.byteOffset + view.byteLength > buffer.size()) return {};
+        return buffer.subspan(view.byteOffset, view.byteLength);
+    }
+    return directBytes(image.data);
+}
+
 std::shared_ptr<Material> makeMaterial(const fastgltf::Material& source) {
     auto material = std::make_shared<Material>();
 
@@ -122,7 +155,7 @@ std::shared_ptr<Material> makeMaterial(const fastgltf::Material& source) {
             break;
     }
 
-    /* Textures unset: they need a bindless descriptor array. */
+    /* Texture slots are assigned by the caller, which owns the cache. */
     return material;
 }
 
@@ -208,24 +241,27 @@ bool readIndices(const fastgltf::Asset& asset,
 
 } // namespace
 
-bool GltfLoader::init(BufferManager& buffers, BlockingTransferBatch& batch) {
+bool GltfLoader::init(BufferManager& buffers, BlockingTransferBatch& batch,
+                      TextureManager& textures) {
     if (!buffers.initialized()) {
         logError("GltfLoader: BufferManager must be initialized first");
         return false;
     }
-    buffers_ = &buffers;
-    batch_   = &batch;
+    buffers_  = &buffers;
+    batch_    = &batch;
+    textures_ = &textures;
     return true;
 }
 
 std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
                                                  const GltfLoadSettings& settings) {
-    if (!buffers_ || !batch_) {
+    if (!buffers_ || !batch_ || !textures_) {
         logError("GltfLoader: loadModel called before init");
         return nullptr;
     }
-    BufferManager&         buffers = *buffers_;
-    BlockingTransferBatch& batch   = *batch_;
+    BufferManager&         buffers  = *buffers_;
+    BlockingTransferBatch& batch    = *batch_;
+    TextureManager&        textures = *textures_;
 
     const std::string extension = path.extension().string();
     if (extension != ".gltf" && extension != ".glb") {
@@ -240,9 +276,11 @@ std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
         return nullptr;
     }
 
-    // LoadExternalBuffers covers .gltf with sidecar .bin files; GenerateMeshIndices
-    // saves handling non-indexed primitives separately.
+    // LoadExternalBuffers covers .gltf with sidecar .bin files, LoadExternalImages
+    // the .png and .jpeg beside them; GenerateMeshIndices saves handling
+    // non-indexed primitives separately.
     constexpr auto options = fastgltf::Options::LoadExternalBuffers |
+                             fastgltf::Options::LoadExternalImages |
                              fastgltf::Options::GenerateMeshIndices;
 
     /**
@@ -300,6 +338,64 @@ std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
     std::vector<uint32_t>  indices;
     GeneratedClusterLOD    clusterLod;
 
+    /* (glTF image, sRGB) -> texture slot. Albedo and emissive are colour and
+     * decode as sRGB; normal and ORM carry numbers and must not, so one image
+     * sampled both ways occupies two slots. */
+    std::unordered_map<uint64_t, uint32_t> textureSlots;
+
+    auto slotForTexture = [&](size_t textureIndex, bool srgb) -> uint32_t {
+        if (textureIndex >= asset.textures.size()) return INVALID_TEXTURE_INDEX;
+
+        const fastgltf::Texture& texture = asset.textures[textureIndex];
+        if (!texture.imageIndex.has_value()) {
+            logError("GltfLoader: texture " + std::to_string(textureIndex) +
+                     " names no plain image; a KHR_texture_basisu source is parsed "
+                     "but not decoded");
+            return INVALID_TEXTURE_INDEX;
+        }
+        const size_t   imageIndex = *texture.imageIndex;
+        const uint64_t key =
+            (static_cast<uint64_t>(imageIndex) << 1) | (srgb ? 1ull : 0ull);
+        if (const auto it = textureSlots.find(key); it != textureSlots.end())
+            return it->second;
+
+        const std::span<const std::byte> encoded =
+            imageBytes(asset, asset.images[imageIndex]);
+        if (encoded.empty()) {
+            logError("GltfLoader: image " + std::to_string(imageIndex) +
+                     " has no bytes to decode");
+            return INVALID_TEXTURE_INDEX;
+        }
+
+        int width = 0, height = 0, sourceChannels = 0;
+        stbi_uc* pixels = stbi_load_from_memory(
+            reinterpret_cast<const stbi_uc*>(encoded.data()),
+            static_cast<int>(encoded.size()), &width, &height, &sourceChannels,
+            STBI_rgb_alpha);
+        if (!pixels) {
+            logError("GltfLoader: cannot decode image " + std::to_string(imageIndex) +
+                     ": " + stbi_failure_reason());
+            return INVALID_TEXTURE_INDEX;
+        }
+
+        uint32_t slot = INVALID_TEXTURE_INDEX;
+        if (const vk::CommandBuffer cmd = batch.begin()) {
+            const size_t byteCount = static_cast<size_t>(width) * height * 4;
+            slot = textures.add(
+                buffers, cmd,
+                std::span{reinterpret_cast<const std::byte*>(pixels), byteCount},
+                srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm,
+                vk::Extent2D{static_cast<uint32_t>(width),
+                             static_cast<uint32_t>(height)});
+            if (!batch.submitAndWait()) slot = INVALID_TEXTURE_INDEX;
+            buffers.resetUpload();
+        }
+        stbi_image_free(pixels);
+
+        textureSlots.emplace(key, slot);
+        return slot;
+    };
+
     auto materialFor = [&](const fastgltf::Primitive& primitive)
         -> std::shared_ptr<Material> {
         if (!primitive.materialIndex.has_value()) {
@@ -307,7 +403,26 @@ std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
             return defaultMaterial;
         }
         const size_t index = *primitive.materialIndex;
-        if (!materials[index]) materials[index] = makeMaterial(asset.materials[index]);
+        if (materials[index]) return materials[index];
+
+        const fastgltf::Material& source = asset.materials[index];
+        std::shared_ptr<Material> material = makeMaterial(source);
+
+        if (source.pbrData.baseColorTexture.has_value())
+            material->setAlbedoTexture(
+                slotForTexture(source.pbrData.baseColorTexture->textureIndex, true));
+        if (source.normalTexture.has_value())
+            material->setNormalTexture(
+                slotForTexture(source.normalTexture->textureIndex, false));
+        if (source.pbrData.metallicRoughnessTexture.has_value())
+            material->setORMTexture(
+                slotForTexture(source.pbrData.metallicRoughnessTexture->textureIndex,
+                               false));
+        if (source.emissiveTexture.has_value())
+            material->setEmissiveTexture(
+                slotForTexture(source.emissiveTexture->textureIndex, true));
+
+        materials[index] = std::move(material);
         return materials[index];
     };
 
@@ -340,6 +455,10 @@ std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
             return nullptr;
         }
 
+        /* Resolved before the batch opens: a texture it still has to decode
+         * opens a batch of its own, and only one may be open at a time. */
+        std::shared_ptr<Material> material = materialFor(primitive);
+
         /**
          * One batch per primitive: a GPU round trip each, with the upload buffer empty on
          * entry so a large primitive is never starved by its predecessors.
@@ -351,7 +470,7 @@ std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
         const bool uploaded = mesh->upload(
             buffers, cmd,
             clusterLod.uploadData(vertices, computeBounds(vertices)),
-            materialFor(primitive));
+            std::move(material));
 
         if (!batch.submitAndWait()) return nullptr;
         buffers.resetUpload();
@@ -411,6 +530,7 @@ std::shared_ptr<MultiMesh> GltfLoader::loadModel(const fs::path& path,
     }
 
     logMessage("GltfLoader: " + path.filename().string() + " -> one model, " +
-               std::to_string(model->size()) + " parts");
+               std::to_string(model->size()) + " parts, " +
+               std::to_string(textureSlots.size()) + " textures");
     return model;
 }

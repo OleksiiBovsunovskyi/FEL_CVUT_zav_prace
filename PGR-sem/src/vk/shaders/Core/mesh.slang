@@ -1,12 +1,8 @@
 import gpu_types;
+import mesh_vertex;
 
 [[vk::push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
 
-struct MeshVertex { 
-    float4 position : SV_Position;
-    float3 normal   : NORMAL;
-    nointerpolation uint materialIndex : MATERIAL;
-};
 
 // meshopt's limits, matching MESHLET_MAX_* in ClusterLODGenerator.ixx.
 static const uint MAX_VERTICES  = 64;
@@ -42,7 +38,12 @@ void meshMain(
         const GPUVertex vertex = mesh.vertices[index];
 
         verts[i].position      = mul(mvp, float4(vertex.position.xyz, 1.0));
+        verts[i].worldPosition = mul(instance.transform, float4(vertex.position.xyz, 1.0)).xyz;
         verts[i].normal        = normalize(mul(normalMatrix, vertex.normal.xyz));
+        // w is handedness and survives the transform unchanged.
+        verts[i].tangent       = float4(mul(normalMatrix, vertex.tangent.xyz),
+                                        vertex.tangent.w);
+        verts[i].texCoord      = vertex.texCoord;
         verts[i].materialIndex = mesh.material.value;
     }
 
@@ -51,29 +52,4 @@ void meshMain(
         const uint packed = mesh.meshletTriangles[meshlet.triangleOffset + i].packed;
         tris[i] = uint3(packed & 0xffu, (packed >> 8) & 0xffu, (packed >> 16) & 0xffu);
     }
-}
-
-// ponytail: one hardcoded light, no view vector, so Lambert only. Replace both
-// with the Lights buffer and a camera position once GPULight exists.
-static const float3 LIGHT_DIRECTION = normalize(float3(0.4, 0.8, 0.3));
-static const float  AMBIENT         = 0.15;
-
-[shader("fragment")]
-float4 fragMain(MeshVertex input) : SV_Target {
-    const GPUMaterial material = pc.materials[input.materialIndex];
-
-    if ((material.flags & MATERIAL_ALPHA_MASK) != 0 &&
-        material.albedo.a < material.alphaThreshold)
-        discard;
-
-    const float3 normal  = normalize(input.normal);
-    const float  diffuse = max(dot(normal, LIGHT_DIRECTION), 0.0);
-
-    // emissive.w is the intensity the colour is scaled by.
-    const float3 emissive = ((material.flags & MATERIAL_EMISSIVE) != 0)
-                          ? material.emissive.rgb * material.emissive.w
-                          : float3(0.0);
-
-    const float3 color = material.albedo.rgb * (AMBIENT + diffuse) + emissive;
-    return float4(color, material.albedo.a);
 }

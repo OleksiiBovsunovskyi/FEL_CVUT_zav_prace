@@ -34,12 +34,14 @@ public:
      * @param fragmentShaderPath fragment shader SPIR-V file.
      * @param colorFormat swapchain format.
      * @param extent rendering size in texels.
+     * @param textureLayout TextureManager's bindless set layout, bound as set 0.
      * @return false on pipeline creation failure.
      */
     [[nodiscard]] bool init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                             const std::filesystem::path& meshShaderPath,
                             const std::filesystem::path& fragmentShaderPath,
-                            vk::Format colorFormat, vk::Extent2D extent);
+                            vk::Format colorFormat, vk::Extent2D extent,
+                            vk::DescriptorSetLayout textureLayout);
 
     /// Destroys the mesh-draw pipeline.
     void destroy();
@@ -49,12 +51,15 @@ public:
      * @param recording active Frame recording interface.
      * @param meshDraw prepared mesh-draw resources for this recording.
      * @param viewProjection world-to-clip matrix for the mesh draw.
+     * @param cameraPosition world-space eye position, for the specular term.
      * @param materials base address of the Materials mega-buffer.
+     * @param textureSet TextureManager's bindless set.
      * @param depthAttachment depth attachment prepared for this recording.
      * @param drawCallback callback recorded inside the rendering pass.
      */
     void render(Frame::Recording& recording, const PreparedMeshDraw& meshDraw,
-                const glm::mat4& viewProjection, GpuPtr<GPUMaterial> materials,
+                const glm::mat4& viewProjection, const glm::vec3& cameraPosition,
+                GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
                 const vk::RenderingAttachmentInfo& depthAttachment,
                 const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback);
 

@@ -173,3 +173,4 @@ PGR-sem/src/framework/
 PGR-sem/src/vk/Docs/
 PGR-sem/src/del.cpp
 PGR-sem/src/rt_diag.cpp
+PGR-sem/src/vk/shaders/Core/gpu_types.slang

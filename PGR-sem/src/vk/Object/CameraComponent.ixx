@@ -42,6 +42,11 @@ public:
     /// World-to-view, recomputed whenever either transform changes.
     [[nodiscard]] const glm::mat4& getView() const { return view_; }
 
+    /// @return the eye, in world space.
+    [[nodiscard]] glm::vec3 worldPosition() const {
+        return glm::vec3(getWorldTransform()[3]);
+    }
+
     /**
      * @param aspect width / height of whatever is being rendered into;
      * @return world-to-clip.

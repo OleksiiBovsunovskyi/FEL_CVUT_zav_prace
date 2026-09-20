@@ -239,9 +239,11 @@ static_assert(sizeof(BuildDrawCommandsPush) == 112);
  */
 export struct GPUMeshDrawPush {
     glm::mat4           viewProj{1.0f};
+    //XYZ. W is unused
+    glm::vec4           cameraPosition{0.0f};
     GpuPtr<GPUDrawData> drawData;
     GpuPtr<GPUMeshInstance>   instances;
     GpuPtr<GPUMaterial> materials;
 };
 
-static_assert(sizeof(GPUMeshDrawPush) == 88);
+static_assert(sizeof(GPUMeshDrawPush) == 104);

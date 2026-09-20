@@ -31,6 +31,7 @@ import InputHandler;
 import WASDComponent;
 import GPUTypes;
 import ShaderPrint;
+import TextureManager;
 
 /**
  * The renderer: owns the window, the Vulkan objects, the scene and the two
@@ -74,6 +75,7 @@ private:
     Swapchain     swapchain_;
     FrameRunner   frames_;
     Renderer      renderer_;
+    TextureManager        textures_;
     ShaderLoader          shaders_;
     BufferManager         buffers_;
     BlockingTransferBatch transfers_;

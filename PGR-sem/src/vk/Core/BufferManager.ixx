@@ -86,7 +86,7 @@ export struct GPUBufferCapacities {
         StaticBufferTraits<StaticBufferKind::MeshData>::capacity,
         StaticBufferTraits<StaticBufferKind::Materials>::capacity,
     };
-    vk::DeviceSize upload = 32ull << 20;
+    vk::DeviceSize upload = 256ull << 20;
 };
 
 /**

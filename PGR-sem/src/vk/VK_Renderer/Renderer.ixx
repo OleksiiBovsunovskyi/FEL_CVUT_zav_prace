@@ -18,6 +18,7 @@ import MeshDrawResources;
 import ShadersLoader;
 import ForwardRenderer;
 import renderTarget;
+import TextureManager;
 
 /**
  * Owns per-frame depth targets shared by renderer passes.
@@ -55,8 +56,13 @@ public:
     Renderer(const Renderer&)            = delete;
     Renderer& operator=(const Renderer&) = delete;
 
+    /**
+     * @param textures already initialized; its set layout goes into the mesh
+     *        pipeline layout and must outlive this Renderer.
+     */
     [[nodiscard]] bool init(VulkanContext& ctx, ShaderLoader& shaderLoader,
-                            vk::Format colorFormat, vk::Extent2D extent);
+                            vk::Format colorFormat, vk::Extent2D extent,
+                            const TextureManager& textures);
 
     void destroy();
 
@@ -68,6 +74,7 @@ public:
      * @param instances every registered mesh instance, in DrawList order.
      * @param changed indices of `instances` written since the previous call.
      * @param viewProjection world-to-clip matrix.
+     * @param cameraPosition world-space eye position.
      * @param materials base address of the Materials mega-buffer.
      * @note Must be called once per recording even with no instances, or
      *       `changed` never reaches the frame-in-flight slots that owe it.
@@ -76,13 +83,15 @@ public:
                 std::span<const GPUMeshInstance> instances,
                 std::span<const uint32_t> changed,
                 const glm::mat4& viewProjection,
+                const glm::vec3& cameraPosition,
                 GpuPtr<GPUMaterial> materials);
 
     [[nodiscard]] bool resize(vk::Extent2D extent);
 
 private:
-    MeshDrawResources   meshDrawResources_;
-    SharedRenderTargets sharedTargets_;
-    ForwardRenderer     forward_;
-    DrawFn              draw_;
+    MeshDrawResources     meshDrawResources_;
+    SharedRenderTargets   sharedTargets_;
+    ForwardRenderer       forward_;
+    DrawFn                draw_;
+    const TextureManager* textures_ = nullptr;
 };

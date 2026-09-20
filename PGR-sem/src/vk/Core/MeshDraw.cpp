@@ -21,7 +21,8 @@ bool MeshDraw::init(vk::Device device, ShaderLoader& shaderLoader,
                     const std::filesystem::path& meshShaderPath,
                     const std::filesystem::path& fragmentShaderPath,
                     vk::Format colorFormat, vk::Format depthFormat,
-                    PFN_vkCmdDrawMeshTasksIndirectCountEXT drawIndirectCount) {
+                    PFN_vkCmdDrawMeshTasksIndirectCountEXT drawIndirectCount,
+                    vk::DescriptorSetLayout textureLayout) {
     if (device_) {
         logError("MeshDraw: init called twice");
         return false;
@@ -34,9 +35,8 @@ bool MeshDraw::init(vk::Device device, ShaderLoader& shaderLoader,
     device_            = device;
     drawIndirectCount_ = drawIndirectCount;
 
-    /* Every buffer is reached through its device address, so no descriptor sets. */
+    /* Buffer device addresses; the fragment stage reads the material record. */
     vk::PushConstantRange pushRange{};
-    /* The fragment stage needs it too: it reads the material record. */
     pushRange.stageFlags = vk::ShaderStageFlagBits::eMeshEXT | vk::ShaderStageFlagBits::eFragment;
     pushRange.offset     = 0;
     pushRange.size       = sizeof(GPUMeshDrawPush);
@@ -44,6 +44,9 @@ bool MeshDraw::init(vk::Device device, ShaderLoader& shaderLoader,
     vk::PipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges    = &pushRange;
+    /* Set 0 is the bindless texture array. Null layout leaves the pipeline with no set */
+    layoutInfo.setLayoutCount         = textureLayout ? 1u : 0u;
+    layoutInfo.pSetLayouts            = &textureLayout;
     if (device_.createPipelineLayout(&layoutInfo, nullptr, &pipelineLayout_) != vk::Result::eSuccess) {
         logError("MeshDraw: vkCreatePipelineLayout failed");
         destroy();
@@ -72,12 +75,15 @@ bool MeshDraw::init(vk::Device device, ShaderLoader& shaderLoader,
 void MeshDraw::record(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
                       const GPUMeshDrawPush& push,
                       const BufferRegion& commands, const BufferRegion& count,
-                      uint32_t maxDrawCount) const {
+                      uint32_t maxDrawCount, vk::DescriptorSet textureSet) const {
     if (!pipeline_ || !commands || !count || maxDrawCount == 0) return;
 
     const auto [viewport, scissor] = viewportAndScissor(extent);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline_);
+    if (textureSet)
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                         pipelineLayout_, 0, 1, &textureSet, 0, nullptr);
     commandBuffer.setViewport(0, 1, &viewport);
     commandBuffer.setScissor(0, 1, &scissor);
     commandBuffer.pushConstants(pipelineLayout_,

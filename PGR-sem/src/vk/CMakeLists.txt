@@ -52,6 +52,13 @@ FetchContent_Declare(glm
         GIT_SHALLOW    TRUE
 )
 
+# stb, for stb_image.h. No release tags and no CMakeLists, so it is pinned to a
+# commit and FetchContent only populates it.
+FetchContent_Declare(stb
+        GIT_REPOSITORY https://github.com/nothings/stb.git
+        GIT_TAG        2c980bb59875b0d32144a71867fbdebb2f77cd20
+)
+
 set(MESHOPT_BUILD_DEMO OFF CACHE BOOL "" FORCE)
 set(MESHOPT_BUILD_GLTFPACK OFF CACHE BOOL "" FORCE)
 set(MESHOPT_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
@@ -61,7 +68,7 @@ FetchContent_Declare(meshoptimizer
         GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(vk-bootstrap vma fastgltf meshoptimizer)
+FetchContent_MakeAvailable(vk-bootstrap vma fastgltf meshoptimizer stb)
 
 # glm 1.0.1 asks for CMake 3.6; CMake 4 deprecates anything below 3.10.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
@@ -139,6 +146,17 @@ target_link_libraries(imgui-vk PUBLIC imgui Vulkan::Vulkan)
 set_property(TARGET imgui-vk PROPERTY CXX_STANDARD 20)
 
 # ---------------------------------------------------------------------------
+# stb_image, the PNG and JPEG decoder GltfLoader hands to TextureManager. The
+# header carries its own implementation, compiled here away from the module
+# flags pgr-vk carries.
+# ---------------------------------------------------------------------------
+add_library(stb_image STATIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/stb_image_impl.cpp"
+)
+target_include_directories(stb_image PUBLIC "${stb_SOURCE_DIR}")
+set_property(TARGET stb_image PROPERTY CXX_STANDARD 20)
+
+# ---------------------------------------------------------------------------
 # Slang -> SPIR-V at build time. The renderer loads only the .spv, so a broken
 # shader fails the build rather than the run.
 # ---------------------------------------------------------------------------
@@ -157,10 +175,11 @@ set(VK_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
 
 # ---------------------------------------------------------------------------
 # The GPU records are declared once, in Core/GPUTypes.ixx, and translated into
-# a Slang module the shaders import. Generating rather than mirroring them is
-# why gpu_types.slang lives in the build tree and must not be edited.
+# a Slang module the shaders import. gpu_types.slang is generated next to the
+# shaders that import it and must not be edited; slangd resolves an import only
+# from the importing file's own directory.
 # ---------------------------------------------------------------------------
-set(VK_GENERATED_SHADER_DIR "${CMAKE_CURRENT_BINARY_DIR}/shaders")
+set(VK_GENERATED_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders/Core")
 set(VK_GPU_TYPES_SLANG "${VK_GENERATED_SHADER_DIR}/gpu_types.slang")
 
 add_custom_command(
@@ -180,6 +199,7 @@ add_custom_command(
 set(VK_SLANG_MODULES
         "${VK_GPU_TYPES_SLANG}"
         "${VK_SHADER_DIR}/Utils/ShereVisibilityTest.slang"
+        "${VK_SHADER_DIR}/Core/mesh_vertex.slang"
 )
 
 set(VK_SPV_FILES "")
@@ -194,6 +214,7 @@ function(add_slang_shader SOURCE ENTRY STAGE OUTPUT_NAME)
           COMMAND "${SLANG_COMPILER}" -target spirv -profile spirv_1_6
                   -emit-spirv-directly
                   -I "${VK_SHADER_DIR}" -I "${VK_SHADER_DIR}/Utils"
+                  -I "${VK_SHADER_DIR}/Core"
                   -I "${VK_GENERATED_SHADER_DIR}"
                   "${VK_SHADER_DIR}/${SOURCE}"
                   -entry ${ENTRY} -stage ${STAGE} -o "${SPV_OUT}"
@@ -206,7 +227,7 @@ endfunction()
 
 add_slang_shader(Core/build_draw_commands.slang main     compute  build_draw_commands.spv)
 add_slang_shader(Core/mesh.slang                meshMain mesh     mesh.spv)
-add_slang_shader(Core/mesh.slang                fragMain fragment mesh_frag.spv)
+add_slang_shader(Core/mesh_frag.slang           fragMain fragment mesh_frag.spv)
 
 add_custom_target(pgr-vk-shaders DEPENDS ${VK_SPV_FILES})
 
@@ -268,6 +289,7 @@ add_executable(pgr-vk
         Core/Pipeline.cpp
         Core/BuildDrawCommands.cpp
         Core/MeshDraw.cpp
+        Rendering/Texture/TextureManager.cpp
         VK_Renderer/MeshDrawResources.cpp
         VK_Renderer/ForwardRenderer.cpp
         VK_Renderer/Renderer.cpp
@@ -355,6 +377,7 @@ target_sources(pgr-vk PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/VK_Renderer/ForwardRenderer.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/VK_Renderer/Renderer.ixx"
         "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/Image/Image.ixx"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Rendering/Texture/TextureManager.ixx"
         "${PGR_SRC_ROOT}/Logging/Logger.ixx"
 )
 
@@ -374,6 +397,7 @@ target_link_libraries(pgr-vk PRIVATE
         imgui-vk
         meshoptimizer
         glm::glm
+        stb_image
 )
 
 target_include_directories(pgr-vk PRIVATE

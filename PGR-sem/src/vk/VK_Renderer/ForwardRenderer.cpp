@@ -13,9 +13,11 @@ import VkUtil;
 bool ForwardRenderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                            const std::filesystem::path& meshShaderPath,
                            const std::filesystem::path& fragmentShaderPath,
-                           vk::Format colorFormat, vk::Extent2D) {
+                           vk::Format colorFormat, vk::Extent2D,
+                           vk::DescriptorSetLayout textureLayout) {
     if (!meshDraw_.init(ctx.device(), shaderLoader, meshShaderPath, fragmentShaderPath,
-                        colorFormat, DEPTH_FORMAT, ctx.cmdDrawMeshTasksIndirectCount())) {
+                        colorFormat, DEPTH_FORMAT, ctx.cmdDrawMeshTasksIndirectCount(),
+                        textureLayout)) {
         destroy();
         return false;
     }
@@ -32,7 +34,8 @@ bool ForwardRenderer::resize(vk::Extent2D) {
 
 void ForwardRenderer::render(
     Frame::Recording& recording, const PreparedMeshDraw& preparedMeshDraw,
-    const glm::mat4& viewProjection, GpuPtr<GPUMaterial> materials,
+    const glm::mat4& viewProjection, const glm::vec3& cameraPosition,
+    GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
     const vk::RenderingAttachmentInfo& depthAttachment,
     const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback) {
     const vk::CommandBuffer cmd = recording.commandBuffer();
@@ -53,10 +56,11 @@ void ForwardRenderer::render(
         push.drawData = preparedMeshDraw.drawData;
         push.instances = preparedMeshDraw.instances;
         push.materials = materials;
+        push.cameraPosition = glm::vec4(cameraPosition, 1.0f);
         meshDraw_.record(cmd, recording.extent(), push,
                          preparedMeshDraw.indirectCommands,
                          preparedMeshDraw.indirectCount,
-                         preparedMeshDraw.instanceCount);
+                         preparedMeshDraw.instanceCount, textureSet);
     }
     if (drawCallback) drawCallback(cmd, recording.extent());
     cmd.endRendering();

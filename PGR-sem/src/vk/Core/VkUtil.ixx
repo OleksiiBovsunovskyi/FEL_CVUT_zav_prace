@@ -47,7 +47,8 @@ export inline void transitionImage(vk::CommandBuffer cmd, vk::Image image,
                                    vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
                                    vk::PipelineStageFlags2 srcStage, vk::AccessFlags2 srcAccess,
                                    vk::PipelineStageFlags2 dstStage, vk::AccessFlags2 dstAccess,
-                                   vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor) {
+                                   vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor,
+                                   uint32_t baseMipLevel = 0, uint32_t levelCount = 1) {
     vk::ImageMemoryBarrier2 barrier{};
     barrier.srcStageMask  = srcStage;
     barrier.srcAccessMask = srcAccess;
@@ -56,7 +57,8 @@ export inline void transitionImage(vk::CommandBuffer cmd, vk::Image image,
     barrier.oldLayout     = oldLayout;
     barrier.newLayout     = newLayout;
     barrier.image         = image;
-    barrier.subresourceRange = vk::ImageSubresourceRange{ aspect, 0, 1, 0, 1 };
+    barrier.subresourceRange =
+        vk::ImageSubresourceRange{ aspect, baseMipLevel, levelCount, 0, 1 };
 
     vk::DependencyInfo dep{};
     dep.imageMemoryBarrierCount = 1;
