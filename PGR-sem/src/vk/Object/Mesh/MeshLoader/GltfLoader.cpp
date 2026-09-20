@@ -1,5 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <cmath>
 #include <cstdint>
@@ -18,6 +17,7 @@ module;
 
 module GltfLoader;
 
+import vulkan;
 import Logger;
 
 namespace fs = std::filesystem;
@@ -207,7 +207,6 @@ bool readIndices(const fastgltf::Asset& asset,
 }
 
 } // namespace
-
 
 bool GltfLoader::init(BufferManager& buffers, BlockingTransferBatch& batch) {
     if (!buffers.initialized()) {

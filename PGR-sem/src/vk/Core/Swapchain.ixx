@@ -1,12 +1,12 @@
 module;
 #include <VkBootstrap.h>
-#include <vulkan/vulkan.hpp>
 
 #include <memory>
 #include <vector>
 
 export module VkSwapchain;
 
+import vulkan;
 import VulkanContext;
 import VkWindow;
 export import Frame;

@@ -1,7 +1,6 @@
 module;
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <span>
 #include <utility>
 #include <vector>
@@ -10,18 +9,7 @@ module;
 
 export module DrawList;
 
-export import MultiMesh;
-
-/**
- * One registered piece of geometry, at the world transform of whatever
- * registered it. Each part's own transform composes on top of it.
- */
-export struct DrawItem {
-    std::shared_ptr<MultiMesh> multiMesh;
-    glm::mat4                  transform{1.0f};
-    /// Per-frame switch; a hidden entry stays registered.
-    bool                       isVisible = true;
-};
+export import GPUTypes;
 
 export class DrawList;
 
@@ -48,8 +36,11 @@ public:
     }
     ~DrawHandle() { release(); }
 
+    /**
+     * Updates transform of the entry and marks it as changed
+     * @param transform new transform to set for the entry
+     */
     void setTransform(const glm::mat4& transform);
-    void setVisible(bool visible);
 
     /// @return true while this owns an entry.
     [[nodiscard]] explicit operator bool() const { return list_ != nullptr; }
@@ -70,11 +61,11 @@ private:
 };
 
 /**
- * Everything registered as drawable, in one contiguous array.
+ * Every registered instance, in the layout the mesh-draw buffers take.
  *
  * Entries outlive frames: a component registers once and keeps its handle, so
- * a frame costs one scan and no rebuilding. Holds no Vulkan object and knows no
- * pass - an entry is geometry and a place to put it.
+ * a frame uploads only what DrawList::takeChangedIndices() reports. Holds no
+ * Vulkan object and knows no pass.
  */
 export class DrawList {
 public:
@@ -90,11 +81,32 @@ public:
     DrawList(const DrawList&)            = delete;
     DrawList& operator=(const DrawList&) = delete;
 
-    /// @return the handle that keeps the entry alive.
-    [[nodiscard]] DrawHandle add(DrawItem item);
+    /**
+     * @param instance the record the mesh-draw buffers receive.
+     * @param boundingSphere xyz = center, w = radius, in mesh space.
+     * @return the handle that keeps the entry alive.
+     */
+    [[nodiscard]] DrawHandle add(const GPUMeshInstance& instance,
+                                 const glm::vec4& boundingSphere);
 
     /// Dense, and not in registration order. Valid until the next add/remove.
-    [[nodiscard]] std::span<const DrawItem> getItems() const { return items_; }
+    [[nodiscard]] std::span<const GPUMeshInstance> getItems() const { return items_; }
+
+    /**
+     * @param index Items index in the draw list
+     * @return its bounding sphere in mesh space; xyz = center, w = radius.
+     */
+    [[nodiscard]] const glm::vec4& getItemBoundingSphere(uint32_t index) const {
+        return boundingSpheres_[index];
+    }
+
+    /**
+     * Indices of Draw list items changed since the previous call.
+     *
+     * @note Unsorted, may repeat an index, and may name an index past the end
+     *       when the entry was removed after being written. 
+     */
+    [[nodiscard]] std::span<const uint32_t> takeChangedIndices();
 
     [[nodiscard]] std::size_t getItemsCount() const { return items_.size(); }
     [[nodiscard]] bool isEmpty() const { return items_.empty(); }
@@ -103,13 +115,18 @@ private:
     friend class DrawHandle;
 
     void remove(uint32_t slot);
-    [[nodiscard]] DrawItem& at(uint32_t slot) { return items_[slotToIndex_[slot]]; }
+    void setTransform(uint32_t slot, const glm::mat4& transform);
 
-    /* Dense storage plus a slot map: the scan stays contiguous, removal is a
+    /* Dense storage plus a slot map: the upload stays contiguous, removal is a
      * swap with the last entry, and the map is what keeps handles valid across
      * that swap. */
-    std::vector<DrawItem> items_;
-    std::vector<uint32_t> slotToIndex_;
-    std::vector<uint32_t> indexToSlot_;
-    std::vector<uint32_t> freeSlots_;
+    std::vector<GPUMeshInstance> items_;
+    /// Parallel to items_.
+    std::vector<glm::vec4>       boundingSpheres_;
+    std::vector<uint32_t>        slotToIndex_;
+    std::vector<uint32_t>        indexToSlot_;
+    std::vector<uint32_t>        freeSlots_;
+    
+    std::vector<uint32_t> changedIndices_;
+    std::vector<uint32_t> consumedIndices_;
 };

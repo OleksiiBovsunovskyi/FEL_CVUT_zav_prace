@@ -1,5 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <array>
 #include <cstddef>
@@ -9,6 +8,7 @@ module;
 
 module VK_Material;
 
+import vulkan;
 import Logger;
 import VkUtil;
 

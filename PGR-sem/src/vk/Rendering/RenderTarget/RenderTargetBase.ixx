@@ -1,8 +1,5 @@
 module;
 
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.hpp>
-
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -11,6 +8,8 @@ module;
 
 export module renderTarget:RenderTarget;
 
+import vulkan;
+import vk_mem_alloc;
 import Image;
 import Logger;
 
@@ -230,7 +229,6 @@ private:
     uint32_t                arrayLayers_;
     vk::SampleCountFlagBits samples_;
 };
-
 
 /// @return true when every extent member is at least 1 and is 1 in the
 ///         dimensions imageType does not have.

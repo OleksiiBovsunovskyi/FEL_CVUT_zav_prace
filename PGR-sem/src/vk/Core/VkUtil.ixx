@@ -1,5 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <span>
@@ -8,6 +7,7 @@ module;
 
 export module VkUtil;
 
+import vulkan;
 import VK_Buffers;
 
 /**
@@ -41,8 +41,6 @@ static_assert(DEPTH_FORMAT == vk::Format::eD32Sfloat ||
               DEPTH_FORMAT == vk::Format::eD32SfloatS8Uint,
               "reverse-Z needs a float depth format; a UNORM one distributes "
               "precision evenly and gains nothing from the flip");
-
-
 
 /// synchronization2 image layout transition.
 export inline void transitionImage(vk::CommandBuffer cmd, vk::Image image,

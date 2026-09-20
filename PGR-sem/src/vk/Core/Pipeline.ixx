@@ -1,8 +1,8 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 export module Pipeline;
 
+import vulkan;
 /**
  * Creates a compute pipeline with the supplied layout.
  *

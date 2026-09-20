@@ -1,12 +1,12 @@
 module;
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.hpp>
 
 #include <cstddef>
 #include <cstdint>
 
 export module BufferTypes;
 
+import vulkan;
+import vk_mem_alloc;
 import GPUTypes;
 
 /**

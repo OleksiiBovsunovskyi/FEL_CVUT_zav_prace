@@ -1,6 +1,6 @@
 module;
+#include <vulkan/vulkan.h>
 #include <VkBootstrap.h>
-#include <vulkan/vulkan.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -9,6 +9,7 @@ module;
 
 module VkSwapchain;
 
+import vulkan;
 import Logger;
 import renderTarget;
 

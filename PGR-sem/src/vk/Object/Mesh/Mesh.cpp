@@ -1,5 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <array>
 #include <cstddef>
@@ -13,6 +12,7 @@ module;
 
 module Mesh;
 
+import vulkan;
 import Logger;
 import VkUtil;
 

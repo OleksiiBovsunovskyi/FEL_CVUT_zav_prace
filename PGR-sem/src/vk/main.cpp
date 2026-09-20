@@ -41,7 +41,7 @@ int main(int argc, char** argv) {
         //Res has small effect on performance. as well as release vs debug build. Bottelnek likelly on gpu
         //Cpu at ~5% load, while gpu on ~80. Maybe long idling due to sync
         //1M objects crash resolved, was stackoverflow due to use of Array to store objects.
-        constexpr uint64_t ObjCount = 1'000;
+        constexpr uint64_t ObjCount = 1;
         std::vector<Object*> objects;
         objects.reserve(ObjCount);
 

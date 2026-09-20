@@ -1,11 +1,11 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <string>
 
 module Pipeline;
 
+import vulkan;
 import Logger;
 import VkUtil;
 

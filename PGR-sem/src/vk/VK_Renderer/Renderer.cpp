@@ -1,7 +1,5 @@
 module;
 
-#include <vulkan/vulkan.hpp>
-
 #include <filesystem>
 #include <span>
 #include <utility>
@@ -10,6 +8,7 @@ module;
 
 module Renderer;
 
+import vulkan;
 import Logger;
 import VkUtil;
 
@@ -100,10 +99,11 @@ void Renderer::setDrawCallback(DrawFn cb) {
 
 void Renderer::render(Frame::Recording& recording,
                       std::span<const GPUMeshInstance> instances,
+                      std::span<const uint32_t> changed,
                       const glm::mat4& viewProjection,
                       GpuPtr<GPUMaterial> materials) {
     const PreparedMeshDraw meshDraw =
-        meshDrawResources_.prepare(recording, instances, viewProjection);
+        meshDrawResources_.prepare(recording, instances, changed, viewProjection);
     const vk::RenderingAttachmentInfo depthAttachment =
         sharedTargets_.depthAttachment(recording);
     forward_.render(recording, meshDraw, viewProjection, materials,

@@ -1,10 +1,11 @@
 module;
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include <string>
 
 module BlockingTransferBatch;
 
+import vulkan;
 import Logger;
 
 namespace {

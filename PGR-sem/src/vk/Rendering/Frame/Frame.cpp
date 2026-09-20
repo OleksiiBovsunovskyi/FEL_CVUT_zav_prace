@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include <exception>
 #include <stdexcept>
@@ -7,6 +7,7 @@ module;
 
 module Frame;
 
+import vulkan;
 import VkUtil;
 import Logger;
 

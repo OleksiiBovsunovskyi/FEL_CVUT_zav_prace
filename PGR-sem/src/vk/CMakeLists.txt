@@ -19,7 +19,8 @@ FetchContent_Declare(vk-bootstrap
         GIT_SHALLOW    TRUE
 )
 
-# VMA: device memory suballocation. Header-only; compiled in vma_impl.cpp.
+# VMA: device memory suballocation. Its implementation is compiled inside the
+# vk_mem_alloc module.
 # VulkanMemoryAllocator-Hpp carries VMA itself as a submodule and adds the
 # vma:: bindings over it, so it declares GPUOpen::VulkanMemoryAllocator too.
 FetchContent_Declare(vma
@@ -66,6 +67,64 @@ FetchContent_MakeAvailable(vk-bootstrap vma fastgltf meshoptimizer)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 FetchContent_MakeAvailable(glm)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
+
+# ---------------------------------------------------------------------------
+# Named-module builds of the STL, Vulkan-Hpp and VMA-Hpp.
+#
+# Declared after FetchContent_MakeAvailable(vma): VMA-Hpp defines its own module
+# target when Vulkan::HppModule already exists, and that target sets
+# CXX_MODULE_STD ON, which CMake supports only for libc++ and libstdc++.
+#
+# std.ixx is the MSVC STL's module source; clang consumes it under
+# -fms-compatibility. The two warnings it trips are about its own spelling.
+if (DEFINED ENV{VCToolsInstallDir})
+    cmake_path(SET VC_TOOLS "$ENV{VCToolsInstallDir}")
+else ()
+    file(GLOB VC_CANDIDATES "C:/Program Files/Microsoft Visual Studio/*/*/VC/Tools/MSVC/*")
+    list(SORT VC_CANDIDATES)
+    list(POP_BACK VC_CANDIDATES VC_TOOLS)
+endif ()
+if (NOT EXISTS "${VC_TOOLS}/modules/std.ixx")
+    message(FATAL_ERROR "No std.ixx under '${VC_TOOLS}/modules'. "
+            "Configure from a Visual Studio developer environment.")
+endif ()
+
+# A BMI carries every decl reachable from the interface, so importing vulkan
+# put ~40 MB in each one and clang spent ~10x longer serializing a BMI than
+# parsing the interface. Reduced BMIs drop what no importer can name.
+add_library(module_flags INTERFACE)
+target_compile_options(module_flags INTERFACE
+        $<$<COMPILE_LANGUAGE:CXX>:-fmodules-reduced-bmi>)
+
+add_library(std_module STATIC)
+target_sources(std_module PUBLIC
+        FILE_SET CXX_MODULES BASE_DIRS "${VC_TOOLS}/modules"
+        FILES "${VC_TOOLS}/modules/std.ixx")
+target_compile_features(std_module PUBLIC cxx_std_23)
+target_link_libraries(std_module PRIVATE module_flags)
+target_compile_options(std_module PRIVATE
+        -Wno-reserved-module-identifier -Wno-include-angled-in-module-purview)
+
+add_library(VulkanHppModule STATIC)
+add_library(Vulkan::HppModule ALIAS VulkanHppModule)
+target_sources(VulkanHppModule PUBLIC
+        FILE_SET CXX_MODULES BASE_DIRS "${Vulkan_INCLUDE_DIR}"
+        FILES "${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm")
+target_compile_features(VulkanHppModule PUBLIC cxx_std_23)
+target_link_libraries(VulkanHppModule PRIVATE module_flags)
+target_compile_definitions(VulkanHppModule PUBLIC VULKAN_HPP_CXX_MODULE_EXPERIMENTAL_WARNING=)
+target_link_libraries(VulkanHppModule PUBLIC Vulkan::Headers std_module)
+
+add_library(VmaHppModule STATIC)
+target_sources(VmaHppModule PUBLIC
+        FILE_SET CXX_MODULES BASE_DIRS "${vma_SOURCE_DIR}/include"
+        FILES "${vma_SOURCE_DIR}/include/vk_mem_alloc.cppm")
+target_compile_features(VmaHppModule PUBLIC cxx_std_23)
+target_link_libraries(VmaHppModule PRIVATE module_flags)
+target_link_libraries(VmaHppModule PUBLIC
+        VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
+        GPUOpen::VulkanMemoryAllocator
+        VulkanHppModule std_module)
 
 # ---------------------------------------------------------------------------
 # Dear ImGui, Vulkan renderer backend. The `imgui` target from the parent
@@ -199,7 +258,6 @@ add_custom_command(
 add_executable(pgr-vk
         main.cpp
         VulkanApp.cpp
-        vma_impl.cpp
         VK_Window/AppWindow.cpp
         Core/VulkanContext.cpp
         Core/Swapchain.cpp
@@ -217,8 +275,10 @@ add_executable(pgr-vk
         Object/DrawList.cpp
         Object/Component.cpp
         Object/Object.cpp
-        # Compile-time checks; no runtime presence.
+        # Static-init checks; run once at program start.
         Tests/TestEventsHandling.cpp
+        Tests/TestDrawList.cpp
+        # Compile-time checks; no runtime presence.
         Tests/TestRenderTarget.cpp
         Tests/TestFrame.cpp
         Object/RenderComponent.cpp
@@ -296,7 +356,11 @@ target_sources(pgr-vk PRIVATE
 add_dependencies(pgr-vk pgr-vk-shaders)
 
 target_link_libraries(pgr-vk PRIVATE
+        module_flags
         Vulkan::Vulkan
+        VulkanHppModule
+        VmaHppModule
+        std_module
         vk-bootstrap::vk-bootstrap
         GPUOpen::VulkanMemoryAllocator
         VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp
@@ -318,7 +382,9 @@ target_compile_definitions(pgr-vk PRIVATE
         GLFW_INCLUDE_NONE
 )
 
-set_property(TARGET pgr-vk PROPERTY CXX_STANDARD 20)
+# 23 is what vulkan.cppm, std.ixx and std::views::chunk_by require.
+set_property(TARGET pgr-vk PROPERTY CXX_STANDARD 23)
+set_property(TARGET pgr-vk PROPERTY CXX_STANDARD_REQUIRED ON)
 
 # Per-buffer data is keyed off StaticBufferKind/FrameBufferKind by switches with
 # no default; a missing case must fail the build, not warn.

@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan.h>
 
 #include "imgui.h"
 #include "imgui_impl_vulkan.h"
@@ -7,8 +7,10 @@ module;
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -19,6 +21,7 @@ module;
 
 module VulkanApp;
 
+import vulkan;
 import Logger;
 
 namespace {
@@ -26,7 +29,6 @@ namespace {
 constexpr int  WIN_WIDTH  = 1280;
 constexpr int  WIN_HEIGHT = 720;
 constexpr char WIN_TITLE[] = "PGR_VK";
-
 
 static_assert(DEPTH_CLEAR == 0.0f,
               "CameraComponent::viewProjection swaps near and far, so the far "
@@ -176,22 +178,23 @@ void VulkanApp::frameScene() {
     glm::vec3 min{ std::numeric_limits<float>::max() };
     glm::vec3 max{ std::numeric_limits<float>::lowest() };
 
-    for (const DrawItem& item : scene_.getDrawList().getItems()) {
-        for (const MultiMeshPart& part : item.multiMesh->parts()) {
-            const glm::mat4   world  = item.transform * part.localTransform;
-            const MeshBounds& bounds = part.mesh->bounds();
-            const glm::vec3 center =
-                glm::vec3(world * glm::vec4(bounds.center, 1.0f));
-            /* Largest axis scale; only used to place a camera. */
-            const float scale = std::max({
-                glm::length(glm::vec3(world[0])),
-                glm::length(glm::vec3(world[1])),
-                glm::length(glm::vec3(world[2])) });
-            const float radius = bounds.radius * scale;
+    const DrawList& drawList = scene_.getDrawList();
+    const std::span<const GPUMeshInstance> items = drawList.getItems();
 
-            min = glm::min(min, center - radius);
-            max = glm::max(max, center + radius);
-        }
+    for (uint32_t i = 0; i < items.size(); ++i) {
+        const glm::mat4& world  = items[i].transform;
+        const glm::vec4& sphere = drawList.getItemBoundingSphere(i);
+        const glm::vec3  center =
+            glm::vec3(world * glm::vec4(glm::vec3(sphere), 1.0f));
+        /* Largest axis scale; only used to place a camera. */
+        const float scale = std::max({
+            glm::length(glm::vec3(world[0])),
+            glm::length(glm::vec3(world[1])),
+            glm::length(glm::vec3(world[2])) });
+        const float radius = sphere.w * scale;
+
+        min = glm::min(min, center - radius);
+        max = glm::max(max, center + radius);
     }
 
     if (min.x > max.x) {
@@ -216,7 +219,6 @@ float VulkanApp::elapseFrame() {
     const int delta = now - lastFrameMs_;
     lastFrameMs_ = now;
 
-
     if (delta <= 0 || delta > MAX_FRAME_MS) return 0.0f;
     return static_cast<float>(delta) * 0.001f;
 }
@@ -236,38 +238,26 @@ void VulkanApp::updateCamera() {
         glm::lookAt(eye, sceneCenter_, glm::vec3{0.0f, 1.0f, 0.0f})));
 }
 
-std::vector<GPUMeshInstance> VulkanApp::collectMeshInstances() {
-    std::vector<GPUMeshInstance> instances;
-    for (const DrawItem& item : scene_.getDrawList().getItems()) {
-        if (!item.isVisible) continue;
-
-        for (const MultiMeshPart& part : item.multiMesh->parts()) {
-            const Mesh& mesh = *part.mesh;
-            if (!mesh.uploaded() || mesh.meshletCount() == 0) continue;
-
-            GPUMeshInstance record{};
-            record.transform = item.transform * part.localTransform;
-            record.mesh      = mesh.header();
-            instances.push_back(record);
-        }
-    }
-    return instances;
-}
-
 void VulkanApp::recordFrame(Frame::Recording& recording) {
+    DrawList& drawList = scene_.getDrawList();
+
+    /* Taken before the no-camera path returns: Renderer still has to hand it
+     * to the frame-in-flight slots, or the writes are lost. */
+    const std::span<const uint32_t> changed = drawList.takeChangedIndices();
+
     const CameraComponent* camera = scene_.getActiveCamera();
     const GpuPtr<GPUMaterial> materials =
         buffers_.staticBase<StaticBufferKind::Materials>();
     if (!camera) {
-        renderer_.render(recording, {}, glm::mat4{1.0f}, materials);
+        renderer_.render(recording, {}, changed, glm::mat4{1.0f}, materials);
         return;
     }
 
-    const std::vector<GPUMeshInstance> instances = collectMeshInstances();
     const vk::Extent2D extent = recording.extent();
     const float aspect = static_cast<float>(extent.width) /
                          static_cast<float>(std::max(extent.height, 1u));
-    renderer_.render(recording, instances, camera->viewProjection(aspect), materials);
+    renderer_.render(recording, drawList.getItems(), changed,
+                     camera->viewProjection(aspect), materials);
 }
 
 void VulkanApp::recordImGui(vk::CommandBuffer cmd, vk::Extent2D) {

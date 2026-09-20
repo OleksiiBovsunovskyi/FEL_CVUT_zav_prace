@@ -1,6 +1,7 @@
 module;
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -8,13 +9,14 @@ export module RenderComponent;
 
 export import VkScene;
 export import DrawList;
+export import MultiMesh;
 
 /**
  * Gives an Object geometry.
  *
- * Registers itself with the DrawList it is built against and unregisters when
- * it dies, so nothing ever asks it what to draw. Visibility is a flag on the
- * entry, not a re-registration.
+ * Registers one DrawList entry per drawable MultiMesh part and unregisters
+ * them when it dies, so nothing ever asks it what to draw. Hiding it drops the
+ * entries; showing it registers them again.
  */
 export class RenderComponent : public Component {
 public:
@@ -22,28 +24,31 @@ public:
     explicit RenderComponent(std::shared_ptr<MultiMesh> multiMesh)
         : multiMesh_(std::move(multiMesh)) {}
 
-
-
     [[nodiscard]] const std::shared_ptr<MultiMesh>& getMultiMesh() const {
         return multiMesh_;
     }
- 
-    /// Hides the geometry without unregistering it.
-    void setVisible(bool visible) {
-        isVisible_ = visible;
-        handle_.setVisible(visible);
-    }
+
+    void setVisible(bool visible);
 
     [[nodiscard]] bool isVisible() const { return isVisible_; }
 
 protected:
-    /// Takes the Scene's DrawList and adds the entry that makes this exist.
+    /// Takes the Scene's DrawList and adds the entries that make this exist.
     void onAddedToScene() override;
 
     void onWorldTransformChanged() override;
 
 private:
-    std::shared_ptr<MultiMesh> multiMesh_;
-    DrawHandle                 handle_;
-    bool                       isVisible_ = true;
+    /// One DrawList entry and the part transform its world matrix composes with.
+    struct RegisteredPart {
+        DrawHandle handle;
+        glm::mat4  localTransform{1.0f};
+    };
+
+    /// Adds an entry for every part whose Mesh has geometry on the GPU.
+    void registerParts();
+
+    std::shared_ptr<MultiMesh>  multiMesh_;
+    std::vector<RegisteredPart> parts_;
+    bool                        isVisible_ = true;
 };

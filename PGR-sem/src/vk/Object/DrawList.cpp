@@ -1,7 +1,7 @@
 module;
 #include <cstdint>
 #include <string>
-#include <utility>
+#include <span>
 
 #include <glm/glm.hpp>
 
@@ -16,7 +16,8 @@ DrawList::~DrawList() {
                  "Declare the DrawList before what registers in it.");
 }
 
-DrawHandle DrawList::add(DrawItem item) {
+DrawHandle DrawList::add(const GPUMeshInstance& instance,
+                         const glm::vec4& boundingSphere) {
     const auto index = static_cast<uint32_t>(items_.size());
 
     uint32_t slot = 0;
@@ -29,8 +30,10 @@ DrawHandle DrawList::add(DrawItem item) {
         slotToIndex_[slot] = index;
     }
 
-    items_.push_back(std::move(item));
+    items_.push_back(instance);
+    boundingSpheres_.push_back(boundingSphere);
     indexToSlot_.push_back(slot);
+    changedIndices_.push_back(index);
 
     return DrawHandle{*this, slot};
 }
@@ -39,17 +42,32 @@ void DrawList::remove(uint32_t slot) {
     const uint32_t index = slotToIndex_[slot];
     const auto     last  = static_cast<uint32_t>(items_.size() - 1);
 
-    /* Swap with the last entry so the scan stays dense, then repoint whichever
-     * slot owned that entry. */
+    /* Swap with the last entry so the upload stays dense, then repoint
+     * whichever slot owned that entry. */
     if (index != last) {
-        items_[index]       = std::move(items_[last]);
-        indexToSlot_[index] = indexToSlot_[last];
+        items_[index]            = items_[last];
+        boundingSpheres_[index]  = boundingSpheres_[last];
+        indexToSlot_[index]      = indexToSlot_[last];
         slotToIndex_[indexToSlot_[index]] = index;
+        changedIndices_.push_back(index);
     }
 
     items_.pop_back();
+    boundingSpheres_.pop_back();
     indexToSlot_.pop_back();
     freeSlots_.push_back(slot);
+}
+
+void DrawList::setTransform(uint32_t slot, const glm::mat4& transform) {
+    const uint32_t index = slotToIndex_[slot];
+    items_[index].transform = transform;
+    changedIndices_.push_back(index);
+}
+
+std::span<const uint32_t> DrawList::takeChangedIndices() {
+    consumedIndices_.clear();
+    consumedIndices_.swap(changedIndices_);
+    return consumedIndices_;
 }
 
 void DrawHandle::release() {
@@ -59,9 +77,5 @@ void DrawHandle::release() {
 }
 
 void DrawHandle::setTransform(const glm::mat4& transform) {
-    if (list_) list_->at(slot_).transform = transform;
-}
-
-void DrawHandle::setVisible(bool visible) {
-    if (list_) list_->at(slot_).isVisible = visible;
+    if (list_) list_->setTransform(slot_, transform);
 }

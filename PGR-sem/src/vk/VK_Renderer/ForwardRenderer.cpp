@@ -1,7 +1,5 @@
 module;
 
-#include <vulkan/vulkan.hpp>
-
 #include <array>
 #include <filesystem>
 #include <functional>
@@ -9,6 +7,7 @@ module;
 
 module ForwardRenderer;
 
+import vulkan;
 import VkUtil;
 
 bool ForwardRenderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,

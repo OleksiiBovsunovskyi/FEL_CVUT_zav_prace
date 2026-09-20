@@ -1,5 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <array>
 #include <cstdint>
@@ -8,6 +7,7 @@ module;
 
 export module FrameRunner;
 
+import vulkan;
 import VulkanContext;
 import VkSwapchain;
 import VkUtil;

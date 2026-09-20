@@ -1,13 +1,14 @@
 module;
+#include <vulkan/vulkan.h>
 #include <VkBootstrap.h>
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.hpp>
 
 #include <functional>
 #include <string>
 
 export module VulkanContext;
 
+import vulkan;
+import vk_mem_alloc;
 import VkWindow;
 
 /**

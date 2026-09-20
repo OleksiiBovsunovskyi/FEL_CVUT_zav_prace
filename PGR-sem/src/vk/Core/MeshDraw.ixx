@@ -1,11 +1,12 @@
 module;
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include <cstdint>
 #include <filesystem>
 
 export module MeshDraw;
 
+import vulkan;
 import GPUTypes;
 import ShadersLoader;
 import VK_Buffers;

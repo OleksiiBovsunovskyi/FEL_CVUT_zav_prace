@@ -1,5 +1,6 @@
 module;
-#include <vulkan/vulkan.hpp>
+
+#include <vulkan/vulkan_core.h>
 
 #include <cstdint>
 #include <limits>
@@ -7,7 +8,6 @@ module;
 #include <glm/glm.hpp>
 
 export module GPUTypes;
-
 /**
  * Every shader-facing record. VK_Buffers takes each static buffer's stride from
  * sizeof() of the record it holds.
@@ -19,17 +19,17 @@ export module GPUTypes;
 /**
  * Device address of an array of T, and the C++ spelling of a `T*` in a shader.
  *
- * A plain vk::DeviceAddress makes every buffer the same type, so swapping two
+ * A plain VkDeviceAddress makes every buffer the same type, so swapping two
  * push constant fields compiles and reads garbage on the GPU. Naming the
  * pointee makes that a compile error. Obtained from a DeviceSpan or MappedSpan
  * handed out by BufferManager.
  */
 export template <typename T>
 struct GpuPtr {
-    vk::DeviceAddress address = 0;
+    VkDeviceAddress address = 0;
 };
 
-static_assert(sizeof(GpuPtr<float>) == sizeof(vk::DeviceAddress));
+static_assert(sizeof(GpuPtr<float>) == sizeof(VkDeviceAddress));
 
 /**
  * Device address of a T[count]. The shader-facing form of a range; a bare
@@ -213,7 +213,7 @@ export struct alignas(16) GPUDrawData {
 static_assert(sizeof(GPUDrawData) == 16);
 
 /// Written by build_draw_commands.comp, consumed by vkCmdDrawMeshTasksIndirect*.
-export using GPUMeshTaskCommand = vk::DrawMeshTasksIndirectCommandEXT;
+export using GPUMeshTaskCommand = VkDrawMeshTasksIndirectCommandEXT;
 
 static_assert(sizeof(GPUMeshTaskCommand) == 12);
 

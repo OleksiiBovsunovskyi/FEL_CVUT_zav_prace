@@ -1,5 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <cstring>
@@ -10,6 +9,7 @@ module;
 
 module ShadersLoader;
 
+import vulkan;
 import Logger;
 
 namespace fs = std::filesystem;

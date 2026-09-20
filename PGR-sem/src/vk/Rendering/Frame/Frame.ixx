@@ -1,11 +1,12 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <array>
 #include <cstdint>
 #include <functional>
 
 export module Frame;
+
+import vulkan;
 export import FrameInFlightIndex;
 import renderTarget;
 import VulkanContext;

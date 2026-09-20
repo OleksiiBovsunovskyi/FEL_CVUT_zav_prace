@@ -1,5 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -8,6 +7,7 @@ module;
 
 export module ShadersLoader;
 
+import vulkan;
 /**
  * SPIR-V -> VkShaderModule. The .spv files are produced from the .slang
  * sources by slangc at build time; nothing is compiled at runtime.

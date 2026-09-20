@@ -2,10 +2,9 @@
 
 module;
 
-#include <vulkan/vulkan.hpp>
-
 module renderTarget;
 
+import vulkan;
 static_assert(!extentFitsType(vk::ImageType::e2D, {1920, 1080, 0}),
               "a zero in any dimension is not a usable extent");
 static_assert(!extentFitsType(vk::ImageType::e2D, {1920, 1080, 2}),

@@ -1,12 +1,11 @@
 module;
 
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.hpp>
-
 #include <cstdint>
 
 export module renderTarget:ColorRenderTarget;
 
+import vulkan;
+import vk_mem_alloc;
 export import :RenderTarget2D;
 import Image;
 

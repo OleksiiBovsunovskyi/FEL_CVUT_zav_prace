@@ -1,6 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.hpp>
 
 #include <array>
 #include <bit>
@@ -12,6 +10,8 @@ module;
 
 export module BufferManager;
 
+import vulkan;
+import vk_mem_alloc;
 import VulkanContext;
 import GPUTypes;
 export import VK_Buffers;

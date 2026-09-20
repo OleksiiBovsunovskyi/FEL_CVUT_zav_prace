@@ -1,5 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <filesystem>
@@ -9,6 +8,7 @@ module;
 
 export module VulkanApp;
 
+import vulkan;
 /**
  * Owns the window, Vulkan application state, scene, camera, and application-level frame input.
  * Renderer owns mesh-draw preparation and concrete rendering.
@@ -118,15 +118,8 @@ private:
     [[nodiscard]] float elapseFrame();
 
     /**
-     * Refills drawList_ from the scene, then flattens it into one GPUMeshInstance per
-     * drawable part.
-     *
-     * @return the instances to draw this frame, empty when there is nothing.
-     */
-    [[nodiscard]] std::vector<GPUMeshInstance> collectMeshInstances();
-
-    /**
-     * Flattens the scene, computes the view-projection matrix, and calls Renderer.
+     * Hands the scene's instances and what changed in them to Renderer, with
+     * the view-projection matrix.
      */
     void recordFrame(Frame::Recording& recording);
 

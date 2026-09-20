@@ -1,12 +1,12 @@
 module;
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.hpp>
 
 #include <cstddef>
 #include <cstdint>
 
 export module StaticBuffers;
 
+import vulkan;
+import vk_mem_alloc;
 import GPUTypes;
 import BufferTypes;
 
@@ -21,7 +21,6 @@ export enum class StaticBufferKind : uint8_t {
     Materials,
     Count,
 };
-
 
 export constexpr size_t STATIC_BUFFER_COUNT =
     static_cast<size_t>(StaticBufferKind::Count);

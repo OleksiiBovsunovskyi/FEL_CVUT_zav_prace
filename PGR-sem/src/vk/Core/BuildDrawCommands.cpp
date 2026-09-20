@@ -1,11 +1,12 @@
 module;
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include <cstdint>
 #include <filesystem>
 
 module BuildDrawCommands;
 
+import vulkan;
 import GPUTypes;
 import Logger;
 import Pipeline;

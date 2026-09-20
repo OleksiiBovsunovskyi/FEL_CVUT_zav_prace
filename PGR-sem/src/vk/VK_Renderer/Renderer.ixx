@@ -1,8 +1,7 @@
 module;
 
-#include <vulkan/vulkan.hpp>
-
 #include <array>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <span>
@@ -11,6 +10,7 @@ module;
 
 export module Renderer;
 
+import vulkan;
 import VulkanContext;
 import Frame;
 import GPUTypes;
@@ -65,12 +65,16 @@ public:
     /**
      * Prepares shared mesh-draw resources and records the current renderer.
      * @param recording active Frame recording interface.
-     * @param instances visible mesh instances.
+     * @param instances every registered mesh instance, in DrawList order.
+     * @param changed indices of `instances` written since the previous call.
      * @param viewProjection world-to-clip matrix.
      * @param materials base address of the Materials mega-buffer.
+     * @note Must be called once per recording even with no instances, or
+     *       `changed` never reaches the frame-in-flight slots that owe it.
      */
     void render(Frame::Recording& recording,
                 std::span<const GPUMeshInstance> instances,
+                std::span<const uint32_t> changed,
                 const glm::mat4& viewProjection,
                 GpuPtr<GPUMaterial> materials);
 

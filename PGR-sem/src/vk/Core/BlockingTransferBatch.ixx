@@ -1,8 +1,8 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 export module BlockingTransferBatch;
 
+import vulkan;
 import VulkanContext;
 
 /**

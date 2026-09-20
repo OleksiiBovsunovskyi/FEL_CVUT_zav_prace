@@ -5,10 +5,10 @@ module;
 #include <memory>
 #include <span>
 #include <type_traits>
-#include <vulkan/vulkan.hpp>
 
 module Frame;
 
+import vulkan;
 template <typename T>
 concept HasCollectionAcquire = requires(std::span<const std::unique_ptr<T>> frames,
                                         vk::Semaphore imageAvailable) {

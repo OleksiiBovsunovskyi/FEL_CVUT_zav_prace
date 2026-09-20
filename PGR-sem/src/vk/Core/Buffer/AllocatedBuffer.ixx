@@ -1,6 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -13,6 +11,8 @@ module;
 
 export module AllocatedBuffer;
 
+import vulkan;
+import vk_mem_alloc;
 import VulkanContext;
 import GPUTypes;
 import Logger;
@@ -197,6 +197,16 @@ public:
                 vk::DeviceSize offset = 0) const;
 
     /**
+     * Records several copies into this buffer.
+     * @param cmd command buffer to record into.
+     * @param source buffer to copy from.
+     * @param regions ranges to copy.
+     * @note The source must stay alive until `cmd` completes.
+     */
+    void upload(vk::CommandBuffer cmd, vk::Buffer source,
+                std::span<const vk::BufferCopy> regions) const;
+
+    /**
      * Records a copy out of this buffer.
      * @param cmd command buffer to record into.
      * @param destination host-readable range to copy into.
@@ -360,6 +370,16 @@ void AllocatedBuffer<Placement>::upload(vk::CommandBuffer cmd,
 
     const vk::BufferCopy copy{source.offset, destination.offset, source.size};
     cmd.copyBuffer(source.buffer, destination.buffer, 1, &copy);
+}
+
+template <typename Placement>
+void AllocatedBuffer<Placement>::upload(
+    vk::CommandBuffer cmd, vk::Buffer source,
+    std::span<const vk::BufferCopy> regions) const {
+    if (!buffer_ || !source || regions.empty()) return;
+
+    cmd.copyBuffer(source, buffer_, static_cast<uint32_t>(regions.size()),
+                   regions.data());
 }
 
 template <typename Placement>

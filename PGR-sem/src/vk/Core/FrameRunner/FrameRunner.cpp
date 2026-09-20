@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 
 #include <array>
 #include <cstdint>
@@ -8,6 +8,7 @@ module;
 
 module FrameRunner;
 
+import vulkan;
 import Logger;
 
 bool FrameRunner::checkResult(vk::Result result, const char* operation) {

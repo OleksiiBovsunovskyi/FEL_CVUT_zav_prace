@@ -1,7 +1,5 @@
 module;
 
-#include <vulkan/vulkan.hpp>
-
 #include <filesystem>
 #include <functional>
 
@@ -9,6 +7,7 @@ module;
 
 export module ForwardRenderer;
 
+import vulkan;
 import VulkanContext;
 import Frame;
 import GPUTypes;

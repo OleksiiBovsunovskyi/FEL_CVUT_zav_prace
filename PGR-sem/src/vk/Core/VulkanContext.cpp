@@ -1,13 +1,14 @@
 module;
+#include <vulkan/vulkan.h>
 #include <VkBootstrap.h>
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.hpp>
 
 #include <functional>
 #include <string>
 
 module VulkanContext;
 
+import vulkan;
+import vk_mem_alloc;
 import Logger;
 
 namespace {
@@ -19,7 +20,6 @@ bool ok(vk::Result r, const char* what) {
 }
 
 } // namespace
-
 
 bool VulkanContext::init(const AppWindow& window, const char* appName) {
     if (!createInstance(appName))

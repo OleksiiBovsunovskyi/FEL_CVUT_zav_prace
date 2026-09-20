@@ -1,9 +1,11 @@
 module;
-#include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
+
 #include <functional>
 
 export module VkWindow;
 
+import vulkan;
 /**
  * Window + input + ImGui host, backed by GLFW. Vulkan port of Window/AppWindow.ixx.
  */

@@ -1,5 +1,4 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +9,7 @@ module;
 
 export module Mesh;
 
+import vulkan;
 export import GPUTypes;
 export import VK_Material;
 import BufferManager;

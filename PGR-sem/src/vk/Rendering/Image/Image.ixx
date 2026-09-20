@@ -1,8 +1,5 @@
 module;
 
-#include <vulkan/vulkan.hpp>
-#include <vk_mem_alloc.hpp>
-
 #include <cassert>
 #include <cstdint>
 #include <string>
@@ -10,6 +7,8 @@ module;
 
 export module Image;
 
+import vulkan;
+import vk_mem_alloc;
 import Logger;
 
 export class Image;

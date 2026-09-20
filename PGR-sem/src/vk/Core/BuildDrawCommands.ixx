@@ -1,11 +1,11 @@
 module;
-#include <vulkan/vulkan.hpp>
 
 #include <cstdint>
 #include <filesystem>
 
 export module BuildDrawCommands;
 
+import vulkan;
 import GPUTypes;
 import ShadersLoader;
 
