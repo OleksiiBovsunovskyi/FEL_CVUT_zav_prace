@@ -35,8 +35,11 @@ void meshMain(
                         visible ? meshlet.triangleCount : 0);
     if (!visible) return;
     const float4x4 mvp = mul(pc.camera->viewProj, instance.transform);
-    // Uniform scale is assumed; a non-uniform one needs the inverse transpose.
-    const float3x3 normalMatrix = float3x3(instance.transform);
+    const float3x3 model = float3x3(instance.transform);
+    // Inverse transponse 
+    const float3x3 normalMatrix = float3x3(cross(model[1], model[2]),
+                                           cross(model[2], model[0]),
+                                           cross(model[0], model[1]));
 
     for (uint i = laneId; i < meshlet.vertexCount; i += 64) {
         const uint      index  = mesh.meshletVertexIndices[meshlet.vertexOffset + i].value;
@@ -46,7 +49,7 @@ void meshMain(
         verts[i].worldPosition = mul(instance.transform, float4(vertex.position.xyz, 1.0)).xyz;
         verts[i].normal        = normalize(mul(normalMatrix, vertex.normal.xyz));
         // w is handedness and survives the transform unchanged.
-        verts[i].tangent       = float4(mul(normalMatrix, vertex.tangent.xyz),
+        verts[i].tangent       = float4(mul(model, vertex.tangent.xyz),
                                         vertex.tangent.w);
         verts[i].texCoord      = vertex.texCoord;
         verts[i].materialIndex = mesh.material.value;
