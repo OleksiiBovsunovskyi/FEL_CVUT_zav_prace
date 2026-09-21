@@ -3,7 +3,7 @@ module;
 
 export module BlitShader;
 
-import Logger;
+import Logger.gl;
 import ShaderLoader;
 
 export class BlitShader {

@@ -2,7 +2,7 @@ module;
 #include "pgr.h"
 
 import postprocessshader;
-import Logger;
+import Logger.gl;
 
 export module PostProcessEffect;
 /**

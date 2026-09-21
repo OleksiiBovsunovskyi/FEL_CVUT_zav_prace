@@ -8,7 +8,7 @@ export module fog.postprocesseffect;
 import PostProcessEffect;
 import postprocessshader;
 import RenderBufferManager;   
-import Logger; 
+import Logger.gl; 
 
 export class FogPostProcessEffect : public IPostProcessEffect {
 public:

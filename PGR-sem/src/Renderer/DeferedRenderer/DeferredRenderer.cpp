@@ -13,7 +13,7 @@ import Model;
 import Camera;
 import LightSource;
 import ShaderLoader;
-import Logger;
+import Logger.gl;
 
 bool DeferredRenderer::loadSkybox(const char* dir) {
     static const char* names[]   = { "px", "nx", "py", "ny", "pz", "nz" };

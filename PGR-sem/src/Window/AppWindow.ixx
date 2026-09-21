@@ -4,7 +4,7 @@ module;
 
 export module Window;
 
-import Logger;
+import Logger.gl;
 
 /**
  * Window + input + ImGui host, backed by GLFW.

@@ -12,7 +12,7 @@ import Sphere;
 import boundingBox;
 import Material;
 
-import Logger;
+import Logger.gl;
 import RenderBufferManager;
 
 bool Scene::loadSkybox(std::filesystem::path dir) {

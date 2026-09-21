@@ -8,7 +8,7 @@ export module ssr.postprocesseffect;
 import PostProcessEffect;
 import postprocessshader;
 import RenderBufferManager;
-import Logger;
+import Logger.gl;
 
 export class SSRPostProcessEffect : public IPostProcessEffect {
 public:

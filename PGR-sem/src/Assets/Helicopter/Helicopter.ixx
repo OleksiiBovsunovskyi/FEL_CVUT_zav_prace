@@ -6,7 +6,7 @@ export module helicopter;
 
 import boundingBox;
 import lightsource.spotlight;
-import Logger;
+import Logger.gl;
 import Scene;
 import StaticMesh;
 

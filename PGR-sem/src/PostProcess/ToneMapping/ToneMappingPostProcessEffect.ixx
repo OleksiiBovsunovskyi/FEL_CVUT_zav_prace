@@ -6,7 +6,7 @@ export module tonemappingPPE;
 import PostProcessEffect;
 import postprocessshader;
 import RenderBufferManager;
-import Logger;
+import Logger.gl;
 export class ToneMappingPostProcessEffect : public IPostProcessEffect {
 public:
     ToneMappingPostProcessEffect(const RenderBufferManager& buffers)

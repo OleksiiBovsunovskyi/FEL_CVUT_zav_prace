@@ -7,7 +7,7 @@ export module fxaa.postprocesseffect;
 import PostProcessEffect;
 import postprocessshader;
 import RenderBufferManager;
-import Logger;
+import Logger.gl;
 
 export class FXAAPostProcessEffect : public IPostProcessEffect {
 public:

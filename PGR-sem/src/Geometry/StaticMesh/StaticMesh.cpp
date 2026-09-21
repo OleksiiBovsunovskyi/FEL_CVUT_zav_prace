@@ -11,7 +11,7 @@ module;
 module StaticMesh;
 
 import vertex;
-import Logger;
+import Logger.gl;
 import boundingBox;
 
 bool StaticMesh::load(std::filesystem::path AssetPath) {

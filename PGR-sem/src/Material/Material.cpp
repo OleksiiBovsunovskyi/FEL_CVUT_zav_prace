@@ -10,7 +10,7 @@ module;
 #include <assimp/material.h>
 #include "pgr.h"
 module Material;
-import Logger;
+import Logger.gl;
 import Model;
 
 Material::~Material() {

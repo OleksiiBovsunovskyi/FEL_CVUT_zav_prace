@@ -11,7 +11,7 @@ export module ssao.postprocesseffect;
 import PostProcessEffect;
 import postprocessshader;
 import RenderBufferManager;
-import Logger;
+import Logger.gl;
 
 export class SSAOPostProcessEffect : public IPostProcessEffect {
 public:

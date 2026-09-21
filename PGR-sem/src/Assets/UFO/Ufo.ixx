@@ -8,7 +8,7 @@ export module ufo;
 
 import QuadBeizer;
 import boundingBox;
-import Logger;
+import Logger.gl;
 import Scene;
 import StaticMesh;
 

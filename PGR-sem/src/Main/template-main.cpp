@@ -15,7 +15,7 @@ import StaticMesh;
 import Model;
 import LightSource;
 import postprocess.manager;
-import Logger;
+import Logger.gl;
 import Window;
 import helicopter;
 import ufo;

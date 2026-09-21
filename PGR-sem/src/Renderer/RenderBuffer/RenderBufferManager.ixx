@@ -6,7 +6,7 @@ module;
 
 export module RenderBufferManager;
 
-import Logger;
+import Logger.gl;
 import BlitShader;
 
 // ── Named buffers known to the rendering pipeline ─────────────────────────

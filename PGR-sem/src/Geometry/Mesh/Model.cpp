@@ -3,7 +3,7 @@ module;
 #include <limits>
 #include <vector>
 module Model;
-import Logger;
+import Logger.gl;
 
 Model::~Model() {
     if (ebo) glDeleteBuffers(1, &ebo);

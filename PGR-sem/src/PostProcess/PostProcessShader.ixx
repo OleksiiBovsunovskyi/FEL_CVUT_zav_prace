@@ -5,7 +5,7 @@ module;
 #include <iostream>
 export module postprocessshader;
 
-import Logger;
+import Logger.gl;
 import ShaderLoader;
 
 /**

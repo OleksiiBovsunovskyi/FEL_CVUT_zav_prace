@@ -5,7 +5,7 @@
 export module SunConfigParser;
 export import ConfigParser;
 
-import Logger;
+import Logger.gl;
 
 export struct SunConfig
 {

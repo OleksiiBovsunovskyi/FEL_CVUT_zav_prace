@@ -7,7 +7,7 @@ module;
 #include <chrono>
 #include <source_location>
 #include <format>
-export module Logger;
+export module Logger.gl;
 
 constexpr std::string_view RESET  = "\033[0m";
 constexpr std::string_view WHITE  = "\033[37m";

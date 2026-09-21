@@ -5,7 +5,7 @@
 #include <string>
 export module ConfigParser;
 
-import Logger;
+import Logger.gl;
 
 export enum class EConfigName
 {
