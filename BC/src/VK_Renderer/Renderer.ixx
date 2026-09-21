@@ -18,6 +18,7 @@ import MeshDrawResources;
 import ShadersLoader;
 import VK_Buffers;
 import ForwardRenderer;
+export import GpuPassTimings;
 import renderTarget;
 import TextureManager;
 
@@ -89,11 +90,17 @@ public:
 
     [[nodiscard]] bool resize(vk::Extent2D extent);
 
+    /// @return GPU time per pass of the most recently completed recording.
+    [[nodiscard]] std::span<const GpuPassTimings::Timing> timings() const {
+        return timings_.timings();
+    }
+
 private:
     MeshDrawResources     meshDrawResources_;
     PerFrameRecord<GPUCameraData> cameraPerFrameRecord_;
     SharedRenderTargets   sharedTargets_;
     ForwardRenderer       forward_;
     DrawFn                draw_;
+    GpuPassTimings        timings_;
     const TextureManager* textures_ = nullptr;
 };

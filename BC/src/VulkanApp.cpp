@@ -171,6 +171,9 @@ void VulkanApp::drawUI() {
         ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
                     1000.0f / ImGui::GetIO().Framerate);
         ImGui::Separator();
+        for (const GpuPassTimings::Timing& timing : renderer_.timings())
+            ImGui::Text("%-20s %7.3f ms", timing.name, timing.milliseconds);
+        ImGui::Separator();
         ImGui::TextUnformatted(window_.isUIMode() ? "UI mode  (Tab to capture the mouse)"
                                                   : "Mouse captured  (Tab for UI)");
         ImGui::TextUnformatted("WASD moves, E/Q rise and fall, Esc quits");

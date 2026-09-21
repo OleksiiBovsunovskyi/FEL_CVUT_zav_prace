@@ -400,6 +400,7 @@ add_executable(pgr-vk
         src/VK_Renderer/ForwardRenderer.cpp
         src/VK_Renderer/Renderer.cpp
         src/Debug/ShaderPrint.cpp
+        src/Debug/GpuPassTimings.cpp
         src/Object/DrawList.cpp
         src/Object/Component.cpp
         src/Object/Object.cpp
@@ -445,6 +446,7 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Core/ComputePass.ixx"
         "${PGR_VK_SRC}/Core/MeshDraw.ixx"
         "${PGR_VK_SRC}/Debug/ShaderPrint.ixx"
+        "${PGR_VK_SRC}/Debug/GpuPassTimings.ixx"
         "${PGR_VK_SRC}/Object/DrawList.ixx"
         # VkScene and its partitions: Component names Object and Scene, Object
         # names Component and Scene, Scene names Object and CameraComponent.

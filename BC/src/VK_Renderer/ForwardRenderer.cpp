@@ -37,7 +37,8 @@ void ForwardRenderer::render(
     GpuPtr<GPUCameraData> cameraData,
     GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
     const vk::RenderingAttachmentInfo& depthAttachment,
-    const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback) {
+    const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback,
+    GpuPassTimings& timings) {
     const vk::CommandBuffer cmd = recording.commandBuffer();
 
     const vk::RenderingAttachmentInfo colorAttachment =
@@ -60,7 +61,11 @@ void ForwardRenderer::render(
                          preparedMeshDraw.indirectCommands,
                          preparedMeshDraw.indirectCount,
                          preparedMeshDraw.instanceCount, textureSet);
+        timings.mark(cmd, "mesh draw");
     }
-    if (drawCallback) drawCallback(cmd, recording.extent());
+    if (drawCallback) {
+        drawCallback(cmd, recording.extent());
+        timings.mark(cmd, "draw callback");
+    }
     cmd.endRendering();
 }

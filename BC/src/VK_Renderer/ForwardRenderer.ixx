@@ -11,6 +11,7 @@ import vulkan;
 import VulkanContext;
 import Frame;
 import GPUTypes;
+import GpuPassTimings;
 import MeshDraw;
 import MeshDrawResources;
 import ShadersLoader;
@@ -55,12 +56,14 @@ public:
      * @param textureSet TextureManager's bindless set.
      * @param depthAttachment depth attachment prepared for this recording.
      * @param drawCallback callback recorded inside the rendering pass.
+     * @param timings marked after the mesh draw and after the callback.
      */
     void render(Frame::Recording& recording, const PreparedMeshDraw& meshDraw,
                 GpuPtr<GPUCameraData> cameraData,
                 GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
                 const vk::RenderingAttachmentInfo& depthAttachment,
-                const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback);
+                const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback,
+                GpuPassTimings& timings);
 
     /**
      * Receives the new rendering size.

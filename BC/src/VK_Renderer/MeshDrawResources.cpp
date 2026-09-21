@@ -202,7 +202,8 @@ MappedSpan<GPUMeshInstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdat
 
 PreparedMeshDraw MeshDrawResources::prepare(
     Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
-    std::span<const uint32_t> changed, GpuPtr<GPUCameraData> camera) {
+    std::span<const uint32_t> changed, GpuPtr<GPUCameraData> camera,
+    GpuPassTimings& timings) {
     /* Every slot has its own device buffer, so each one receives the change. */
     for (auto& target : slots_)
         target.indicesPendingUpload.insert(target.indicesPendingUpload.end(),
@@ -236,6 +237,8 @@ PreparedMeshDraw MeshDrawResources::prepare(
 
     zero(commandBuffer, spans.count.region);
 
+    timings.mark(commandBuffer, "scatter_instances");
+
     keep(barriers_, slot.instances.use(COMPUTE_READ));
     keep(barriers_, slot.drawData.use(COMPUTE_WRITE));
     keep(barriers_, slot.commands.use(COMPUTE_WRITE));
@@ -257,6 +260,7 @@ PreparedMeshDraw MeshDrawResources::prepare(
     keep(barriers_, slot.commands.use(INDIRECT_READ));
     keep(barriers_, slot.count.use(INDIRECT_READ));
     recordBarriers(commandBuffer, barriers_);
+    timings.mark(commandBuffer, "build_draw_commands");
 
     return PreparedMeshDraw{spans.instances.gpu.data, spans.drawData.gpu.data,
                             spans.commands.region, spans.count.region, instanceCount};

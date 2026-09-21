@@ -95,10 +95,13 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
         meshDrawResources_.destroy();
         return false;
     }
+
+    if (!timings_.init(ctx)) logError("Renderer: GPU pass timings unavailable");
     return true;
 }
 
 void Renderer::destroy() {
+    timings_.destroy();
     forward_.destroy();
     sharedTargets_.destroy();
     cameraPerFrameRecord_.destroy();
@@ -115,16 +118,19 @@ void Renderer::render(Frame::Recording& recording,
                       const glm::mat4& viewProjection,
                       const glm::vec3& cameraPosition,
                       GpuPtr<GPUMaterial> materials) {
+    timings_.beginFrame(recording);
+
     //Upload camera data
     const GpuPtr<GPUCameraData> camera = cameraPerFrameRecord_.write(
         recording.frameInFlight(),
         GPUCameraData{viewProjection, glm::vec4(cameraPosition, 1.0f)});
     const PreparedMeshDraw meshDraw =
-        meshDrawResources_.prepare(recording, instances, changed, camera);
+        meshDrawResources_.prepare(recording, instances, changed, camera, timings_);
     const vk::RenderingAttachmentInfo depthAttachment =
         sharedTargets_.depthAttachment(recording);
     forward_.render(recording, meshDraw, camera, materials,
-                    textures_ ? textures_->set() : nullptr, depthAttachment, draw_);
+                    textures_ ? textures_->set() : nullptr, depthAttachment, draw_,
+                    timings_);
 }
 
 bool Renderer::resize(vk::Extent2D extent) {

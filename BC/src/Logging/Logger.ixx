@@ -14,6 +14,16 @@ constexpr std::string_view WHITE  = "\033[37m";
 constexpr std::string_view YELLOW = "\033[33m";
 constexpr std::string_view RED    = "\033[31m";
 
+/// @return "File.cpp:123" from the location's path and line.
+std::string sourceTag(const std::source_location& loc) {
+    const std::string_view path{loc.file_name()};
+    const size_t start = path.find_last_of("/\\");
+    return std::format("{}:{}",
+                       start == std::string_view::npos ? path
+                                                       : path.substr(start + 1),
+                       loc.line());
+}
+
 export std::string getCurrentTime() {
     const auto now = std::chrono::system_clock::now();
     auto time = std::chrono::floor<std::chrono::seconds>(now);
@@ -36,7 +46,7 @@ export void logMessage(const std::string& message,
 {
     std::cout << WHITE
               << "[" << getCurrentTime() << "] "
-              << "[" << loc.file_name() << ":" << loc.line() << " " << loc.function_name() << "] "
+              << "[" << sourceTag(loc) << "] "
               << message
               << RESET << "\n";
 }
@@ -46,7 +56,7 @@ export void logWarning(const std::string& message,
 {
     std::cerr << YELLOW
               << "[" << getCurrentTime() << "] "
-              << "[" << loc.file_name() << ":" << loc.line() << " " << loc.function_name() << "] "
+              << "[" << sourceTag(loc) << "] "
               << "Warning: " << message
               << RESET << "\n";
 }
@@ -56,7 +66,7 @@ export void logError(const std::string& message,
 {
     std::cerr << RED
               << "[" << getCurrentTime() << "] "
-              << "[" << loc.file_name() << ":" << loc.line() << " " << loc.function_name() << "] "
+              << "[" << sourceTag(loc) << "] "
               << "Error: " << message
               << RESET << "\n";
 }

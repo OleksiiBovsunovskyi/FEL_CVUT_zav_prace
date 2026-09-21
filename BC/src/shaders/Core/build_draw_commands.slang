@@ -43,4 +43,5 @@ void main(uint3 threadId : SV_DispatchThreadID) {
 
     pc.drawData[slot].instanceIndex = instanceIndex;
     pc.drawData[slot].mesh        = instance.mesh;
+    
 }
