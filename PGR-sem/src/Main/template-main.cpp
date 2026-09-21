@@ -300,6 +300,23 @@ void drawUI()
         if (ImGui::Button("Animate along curve"))
             startSplineAnimation();
 
+        if (ImGui::CollapsingHeader("Post-process", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            for (int i = 0; i < IM_ARRAYSIZE(PostProcessManager::SLOTS); ++i)
+            {
+                const int slot = PostProcessManager::SLOTS[i];
+                if (ImGui::Checkbox(PostProcessManager::SLOT_NAMES[i],
+                                    ppManager.effectFlag(slot)))
+                    ppManager.setEffectEnabled(slot, ppManager.isEffectEnabled(slot));
+            }
+
+            if (ImGui::Button("All off"))
+                ppManager.setAllEffectsEnabled(false);
+            ImGui::SameLine();
+            if (ImGui::Button("All on"))
+                ppManager.setAllEffectsEnabled(true);
+        }
+
         // Replaces the old right-click GLUT menu, which GLFW has no equivalent for.
         if (ImGui::CollapsingHeader("Saved cameras"))
         {

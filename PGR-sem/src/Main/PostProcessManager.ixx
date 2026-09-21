@@ -70,6 +70,16 @@ public:
         }
     }
 
+    /// Slot ids in chain order, with the name shown for each.
+    static constexpr int         SLOTS[]      = {SLOT_SSAO, SLOT_SSR, SLOT_FOG,
+                                                 SLOT_TONEMAP, SLOT_FXAA};
+    static constexpr const char* SLOT_NAMES[] = {"SSAO", "SSR", "Fog",
+                                                 "Tone mapping", "FXAA"};
+
+    void setAllEffectsEnabled(bool enabled) {
+        for (int slot : SLOTS) setEffectEnabled(slot, enabled);
+    }
+
     [[nodiscard]] bool isEffectEnabled(int slot) const {
         switch (slot) {
             case SLOT_SSAO:    return enableSSAO;
