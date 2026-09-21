@@ -250,6 +250,7 @@ function(add_slang_shader SOURCE ENTRY STAGE OUTPUT_NAME)
 endfunction()
 
 add_slang_shader(Core/build_draw_commands.slang main     compute  build_draw_commands.spv)
+add_slang_shader(Core/scatter_instances.slang   main     compute  scatter_instances.spv)
 add_slang_shader(Core/mesh.slang                meshMain mesh     mesh.spv)
 add_slang_shader(Core/mesh_frag.slang           fragMain fragment mesh_frag.spv)
 
@@ -393,7 +394,6 @@ add_executable(pgr-vk
         src/Core/BufferManager.cpp
         src/Core/BlockingTransferBatch.cpp
         src/Core/Pipeline.cpp
-        src/Core/BuildDrawCommands.cpp
         src/Core/MeshDraw.cpp
         src/Rendering/Texture/TextureManager.cpp
         src/VK_Renderer/MeshDrawResources.cpp
@@ -442,7 +442,7 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Core/BufferManager.ixx"
         "${PGR_VK_SRC}/Core/BlockingTransferBatch.ixx"
         "${PGR_VK_SRC}/Core/Pipeline.ixx"
-        "${PGR_VK_SRC}/Core/BuildDrawCommands.ixx"
+        "${PGR_VK_SRC}/Core/ComputePass.ixx"
         "${PGR_VK_SRC}/Core/MeshDraw.ixx"
         "${PGR_VK_SRC}/Debug/ShaderPrint.ixx"
         "${PGR_VK_SRC}/Object/DrawList.ixx"

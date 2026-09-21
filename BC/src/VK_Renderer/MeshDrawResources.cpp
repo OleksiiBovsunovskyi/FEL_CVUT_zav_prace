@@ -10,7 +10,6 @@ module;
 #include <limits>
 #include <filesystem>
 #include <optional>
-#include <ranges>
 #include <string>
 #include <vector>
 
@@ -24,8 +23,10 @@ import VkUtil;
 namespace {
 
 constexpr vk::BufferUsageFlags MESH_INSTANCES_USAGE = GPU_DATA_USAGE;
-constexpr vk::BufferUsageFlags MESH_INSTANCE_UPLOAD_USAGE =
-    vk::BufferUsageFlagBits::eTransferSrc;
+/// Read as storage by scatter_instances.slang through a device address.
+constexpr vk::BufferUsageFlags MESH_INSTANCE_UPDATE_USAGE =
+    vk::BufferUsageFlagBits::eStorageBuffer |
+    vk::BufferUsageFlagBits::eShaderDeviceAddress;
 constexpr vk::BufferUsageFlags DRAW_DATA_USAGE = GPU_DATA_USAGE;
 constexpr vk::BufferUsageFlags MESH_TASK_COMMANDS_USAGE =
     GPU_DATA_USAGE | vk::BufferUsageFlagBits::eIndirectBuffer;
@@ -43,8 +44,8 @@ constexpr vk::DeviceSize MESH_TASK_COMMAND_COUNT_CAPACITY = 4ull << 10;
 /// Device bytes one instance costs across instances, drawData and commands.
 constexpr vk::DeviceSize DEVICE_BYTES_PER_INSTANCE =
     sizeof(GPUMeshInstance) + sizeof(GPUDrawData) + sizeof(GPUMeshTaskCommand);
-/// Host bytes one instance costs in instanceUpload.
-constexpr vk::DeviceSize HOST_BYTES_PER_INSTANCE = sizeof(GPUMeshInstance);
+/// Host bytes one instance costs in instanceUpdates.
+constexpr vk::DeviceSize HOST_BYTES_PER_INSTANCE = sizeof(GPUMeshInstanceUpdate);
 
 /// @return the capacity holding count, or 0 when count is past MAX_INSTANCE_CAPACITY.
 uint32_t capacityFor(uint32_t count) {
@@ -56,6 +57,9 @@ constexpr double MIB = 1024.0 * 1024.0;
 
 constexpr BufferAccess TRANSFER_WRITE{vk::PipelineStageFlagBits2::eAllTransfer,
                                       vk::AccessFlagBits2::eTransferWrite};
+constexpr BufferAccess COMPUTE_SCATTER_WRITE{
+    vk::PipelineStageFlagBits2::eComputeShader,
+    vk::AccessFlagBits2::eShaderStorageWrite};
 constexpr BufferAccess COMPUTE_READ{vk::PipelineStageFlagBits2::eComputeShader,
                                     vk::AccessFlagBits2::eShaderStorageRead};
 constexpr BufferAccess COMPUTE_WRITE{
@@ -94,8 +98,9 @@ bool detail::MeshDrawResourceSlot::reserve(VulkanContext& ctx,
         vk::DeviceSize{capacity} * sizeof(GPUMeshInstance);
     if (!instances.init(ctx, instanceBytes, MESH_INSTANCES_USAGE,
                         "mesh instances") ||
-        !instanceUpload.init(ctx, instanceBytes, MESH_INSTANCE_UPLOAD_USAGE,
-                             "mesh instance upload") ||
+        !instanceUpdates.init(ctx,
+                              vk::DeviceSize{capacity} * sizeof(GPUMeshInstanceUpdate),
+                              MESH_INSTANCE_UPDATE_USAGE, "mesh instance updates") ||
         !drawData.init(ctx, vk::DeviceSize{capacity} * sizeof(GPUDrawData),
                        DRAW_DATA_USAGE, "draw data") ||
         !commands.init(ctx, vk::DeviceSize{capacity} * sizeof(GPUMeshTaskCommand),
@@ -127,14 +132,13 @@ void detail::MeshDrawResourceSlot::destroy() {
     count.destroy();
     commands.destroy();
     drawData.destroy();
-    instanceUpload.destroy();
+    instanceUpdates.destroy();
     instances.destroy();
 }
 
 detail::MeshDrawSpans detail::MeshDrawResourceSlot::spans(
     uint32_t instanceCount) const {
     const MeshDrawSpans result{instances.span<GPUMeshInstance>(instanceCount),
-                               instanceUpload.span<GPUMeshInstance>(instanceCount),
                                drawData.span<GPUDrawData>(instanceCount),
                                commands.span<GPUMeshTaskCommand>(instanceCount),
                                count.span<uint32_t>(1)};
@@ -148,10 +152,14 @@ detail::MeshDrawSpans detail::MeshDrawResourceSlot::spans(
     return result;
 }
 
-bool MeshDrawResources::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
-                             const std::filesystem::path& shaderPath) {
+bool MeshDrawResources::init(
+    VulkanContext& ctx, ShaderLoader& shaderLoader,
+    const std::filesystem::path& scatterShaderPath,
+    const std::filesystem::path& buildDrawCommandsShaderPath) {
     ctx_ = &ctx;
-    if (!buildDrawCommands_.init(ctx.device(), shaderLoader, shaderPath)) {
+    if (!scatterInstances_.init(ctx.device(), shaderLoader, scatterShaderPath) ||
+        !buildDrawCommands_.init(ctx.device(), shaderLoader,
+                                 buildDrawCommandsShaderPath)) {
         destroy();
         return false;
     }
@@ -160,44 +168,36 @@ bool MeshDrawResources::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
 
 void MeshDrawResources::destroy() {
     buildDrawCommands_.destroy();
+    scatterInstances_.destroy();
     for (auto& slot : slots_) slot.destroy();
     ctx_ = nullptr;
 }
 
-void MeshDrawResources::copyPendingToUploadBuffer(
-    std::vector<uint32_t>& indicesPendingUpload,
-    std::span<const GPUMeshInstance> instances,
-    const MappedSpan<GPUMeshInstance>& upload) {
-    constexpr vk::DeviceSize STRIDE = sizeof(GPUMeshInstance);
+MappedSpan<GPUMeshInstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdates(
+    std::span<const GPUMeshInstance> instances) {
+    const auto instanceCount = static_cast<uint32_t>(instances.size());
+    const auto pendingCount  = static_cast<uint32_t>(indicesPendingUpload.size());
 
-    copyRegions_.clear();
-    const uint32_t instanceCount = upload.gpu.count;
-    ///Sort and dedup instance indices pending to upload
-    std::ranges::sort(indicesPendingUpload);
-    indicesPendingUpload.erase(
-        std::ranges::unique(indicesPendingUpload).begin(), indicesPendingUpload.end());
-    
-    /// An index at or past instanceCount names an entry already removed.
-    const std::ranges::subrange existingInstances{
-        indicesPendingUpload.begin(),
-        std::ranges::lower_bound(indicesPendingUpload, instanceCount)};
+    const MappedSpan<GPUMeshInstanceUpdate> updates =
+        instanceUpdates.span<GPUMeshInstanceUpdate>(
+            std::min(pendingCount, instanceCount));
 
-    /* We need to group instances so they are coppied in lowest possible amount of chunks. */
-    constexpr auto isConsecutive = [](uint32_t a, uint32_t b) { return b == a + 1; };
-
-    //Split consecutive instances into groups
-    for (const auto group : existingInstances | std::views::chunk_by(isConsecutive)) {
-        const uint32_t    first = group.front();
-        const std::size_t count = group.size();
-
-        std::ranges::copy(instances.subspan(first, count), upload.host + first);
-
-        const vk::DeviceSize offset = vk::DeviceSize{first} * STRIDE;
-        copyRegions_.push_back(
-            vk::BufferCopy{offset, offset, vk::DeviceSize{count} * STRIDE});
+    uint32_t written = 0;
+    if (pendingCount >= instanceCount) {
+        /* Repeats make the pending list longer than the update buffer holds.*/
+        for (uint32_t index = 0; index < instanceCount; ++index)
+            updates.host[written++] =
+                GPUMeshInstanceUpdate{index, {}, instances[index]};
+    } else {
+        for (const uint32_t index : indicesPendingUpload) {
+            if (index >= instanceCount) continue;
+            updates.host[written++] =
+                GPUMeshInstanceUpdate{index, {}, instances[index]};
+        }
     }
-
     indicesPendingUpload.clear();
+
+    return instanceUpdates.span<GPUMeshInstanceUpdate>(written);
 }
 
 PreparedMeshDraw MeshDrawResources::prepare(
@@ -217,17 +217,23 @@ PreparedMeshDraw MeshDrawResources::prepare(
     const detail::MeshDrawSpans spans = slot.spans(instanceCount);
     if (!spans) return {};
 
-    copyPendingToUploadBuffer(slot.indicesPendingUpload, instances, spans.upload);
+    const MappedSpan<GPUMeshInstanceUpdate> updates =
+        slot.packPendingUpdates(instances);
 
     const vk::CommandBuffer commandBuffer = recording.commandBuffer();
     barriers_.clear();
 
-    if (!copyRegions_.empty()) keep(barriers_, slot.instances.use(TRANSFER_WRITE));
+    if (updates) keep(barriers_, slot.instances.use(COMPUTE_SCATTER_WRITE));
     keep(barriers_, slot.count.use(TRANSFER_WRITE));
     recordBarriers(commandBuffer, barriers_);
     barriers_.clear();
 
-    slot.instances.upload(commandBuffer, spans.upload.region.buffer, copyRegions_);
+    ScatterInstancesPush scatter{};
+    scatter.updates     = updates.gpu.data;
+    scatter.instances   = spans.instances.gpu.data;
+    scatter.updateCount = updates.gpu.count;
+    scatterInstances_.record(commandBuffer, scatter, updates.gpu.count);
+
     zero(commandBuffer, spans.count.region);
 
     keep(barriers_, slot.instances.use(COMPUTE_READ));
@@ -244,7 +250,7 @@ PreparedMeshDraw MeshDrawResources::prepare(
     push.commands = spans.commands.gpu.data;
     push.commandCount = spans.count.gpu.data;
     push.instanceCount = instanceCount;
-    buildDrawCommands_.record(commandBuffer, push);
+    buildDrawCommands_.record(commandBuffer, push, instanceCount);
 
     keep(barriers_, slot.instances.use(MESH_SHADER_READ));
     keep(barriers_, slot.drawData.use(MESH_SHADER_READ));

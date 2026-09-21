@@ -71,8 +71,9 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                     vk::Format colorFormat, vk::Extent2D extent,
                     const TextureManager& textures) {
     textures_ = &textures;
-    if (!meshDrawResources_.init(
-            ctx, shaderLoader, SHADER_DIR / "build_draw_commands.spv"))
+    if (!meshDrawResources_.init(ctx, shaderLoader,
+                                 SHADER_DIR / "scatter_instances.spv",
+                                 SHADER_DIR / "build_draw_commands.spv"))
         return false;
 
     if (!cameraPerFrameRecord_.init(ctx, "camera")) {

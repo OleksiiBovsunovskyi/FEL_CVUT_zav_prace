@@ -13,7 +13,7 @@ export module MeshDrawResources;
 
 import vulkan;
 import vk_mem_alloc;
-import BuildDrawCommands;
+import ComputePass;
 import Frame;
 import FrameInFlightIndex;
 import GPUTypes;
@@ -45,31 +45,31 @@ namespace detail {
  */
 struct MeshDrawSpans {
     DeviceSpan<GPUMeshInstance>    instances{};
-    MappedSpan<GPUMeshInstance>    upload{};
     DeviceSpan<GPUDrawData>        drawData{};
     DeviceSpan<GPUMeshTaskCommand> commands{};
     DeviceSpan<uint32_t>           count{};
 
     [[nodiscard]] explicit operator bool() const {
-        return instances && upload && drawData && commands && count;
+        return instances && drawData && commands && count;
     }
 };
 
 /**
  * The mesh-draw buffers one frame-in-flight slot owns.
- * Instances are written into instanceUpload and copied into instances.
- * drawData, commands and count are written by BuildDrawCommands.
+ * Changed instances are written into instanceUpdates and scattered into
+ * instances by scatter_instances.slang.
+ * drawData, commands and count are written by build_draw_commands.slang.
  */
 struct MeshDrawResourceSlot {
     AllocatedBuffer<DeviceOnlyBuffer>         instances;
-    AllocatedBuffer<HostDeviceReadableBuffer> instanceUpload;
+    AllocatedBuffer<HostDeviceReadableBuffer> instanceUpdates;
     AllocatedBuffer<DeviceOnlyBuffer>         drawData;
     AllocatedBuffer<DeviceOnlyBuffer>         commands;
     AllocatedBuffer<DeviceOnlyBuffer>         count;
 
     /**
-     * Instance indices pending upload into `instances`.
-     */
+     * Instance indices pending a write into `instances`.
+     * */
     std::vector<uint32_t> indicesPendingUpload;
 
     /// Instances the buffers currently hold.
@@ -82,8 +82,7 @@ struct MeshDrawResourceSlot {
      * @param instanceCount instances the recording draws.
      * @return false when the allocation failed or the count is past the largest
      *         capacity a slot can hold.
-     * @note Growth discards the buffers, so every live index is marked pending
-     *       upload.
+     * @note Growth discards the buffers, so every live index is marked pending.
      * @note The slot's previous submission must have completed.
      */
     [[nodiscard]] bool reserve(VulkanContext& ctx, uint32_t instanceCount);
@@ -96,13 +95,22 @@ struct MeshDrawResourceSlot {
      *         MeshDrawResourceSlot::instanceCapacity.
      */
     [[nodiscard]] MeshDrawSpans spans(uint32_t instanceCount) const;
+
+    /**
+     * Packs the pending indices into instanceUpdates.
+     * @param instances every registered mesh instance, in DrawList order.
+     * @return the updates written, empty when nothing was pending.
+     * @note Empties MeshDrawResourceSlot::indicesPendingUpload.
+     */
+    [[nodiscard]] MappedSpan<GPUMeshInstanceUpdate> packPendingUpdates(
+        std::span<const GPUMeshInstance> instances);
 };
 
 } // namespace detail
 
 /**
  * Owns the shared mesh-draw producer resources for every frame-in-flight slot.
- * BuildDrawCommands writes indirect commands consumed by renderers.
+ * build_draw_commands.slang writes indirect commands consumed by renderers.
  */
 export class MeshDrawResources {
 public:
@@ -112,13 +120,19 @@ public:
     MeshDrawResources(const MeshDrawResources&)            = delete;
     MeshDrawResources& operator=(const MeshDrawResources&) = delete;
 
-    [[nodiscard]] bool init(VulkanContext& ctx, ShaderLoader& shaderLoader,
-                            const std::filesystem::path& shaderPath);
+    /**
+     * @param scatterShaderPath SPIR-V of scatter_instances.slang.
+     * @param buildDrawCommandsShaderPath SPIR-V of build_draw_commands.slang.
+     */
+    [[nodiscard]] bool init(
+        VulkanContext& ctx, ShaderLoader& shaderLoader,
+        const std::filesystem::path& scatterShaderPath,
+        const std::filesystem::path& buildDrawCommandsShaderPath);
     void destroy();
 
     /**
-     * Uploads the changed instances, records BuildDrawCommands, and publishes
-     * its output for drawing.
+     * Scatters the changed instances into the device array, records
+     * build_draw_commands.slang, and publishes its output for drawing.
      * @param recording active frame recording.
      * @param instances every registered mesh instance, in DrawList order.
      * @param changed indices of `instances` written since the previous call;
@@ -132,21 +146,10 @@ public:
         std::span<const uint32_t> changed, GpuPtr<GPUCameraData> camera);
 
 private:
-    /**
-     * Copies the pending instances into `upload` and fills
-     * MeshDrawResources::copyRegions_ with one entry per consecutive group.
-     * @param indicesPendingUpload one slot's pending indices; emptied.
-     * @param instances every registered mesh instance, in DrawList order.
-     * @param upload this slot's mapped instance upload buffer.
-     */
-    void copyPendingToUploadBuffer(std::vector<uint32_t>& indicesPendingUpload,
-                                   std::span<const GPUMeshInstance> instances,
-                                   const MappedSpan<GPUMeshInstance>& upload);
-
     std::array<detail::MeshDrawResourceSlot, FRAMES_IN_FLIGHT> slots_;
-    BuildDrawCommands buildDrawCommands_;
-    VulkanContext*    ctx_ = nullptr;
+    ComputePass<ScatterInstancesPush>  scatterInstances_;
+    ComputePass<BuildDrawCommandsPush> buildDrawCommands_;
+    VulkanContext*                     ctx_ = nullptr;
 
-    std::vector<vk::BufferCopy> copyRegions_;
     std::vector<vk::BufferMemoryBarrier2> barriers_;
 };

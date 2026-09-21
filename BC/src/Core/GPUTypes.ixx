@@ -203,6 +203,18 @@ export struct alignas(16) GPUMeshInstance {
 
 static_assert(sizeof(GPUMeshInstance) == 80);
 
+/**
+ * One instance write applied by scatter_instances.slang:
+ * instances[index] = instance.
+ */
+export struct alignas(16) GPUMeshInstanceUpdate {
+    uint32_t        index = 0;
+    glm::uvec3      _padding{};
+    GPUMeshInstance instance{};
+};
+
+static_assert(sizeof(GPUMeshInstanceUpdate) == 96);
+
 /// Written per surviving draw, at the same index as its mesh-task command.
 export struct alignas(16) GPUDrawData {
     uint32_t        instanceIndex = 0;
@@ -242,6 +254,18 @@ export struct alignas(16) BuildDrawCommandsPush {
 };
 
 static_assert(sizeof(BuildDrawCommandsPush) == 48);
+
+/**
+ * Arguments to scatter_instances.slang.
+ */
+export struct ScatterInstancesPush {
+    GpuPtr<GPUMeshInstanceUpdate> updates;      //Instance writes to apply
+    GpuPtr<GPUMeshInstance>       instances;    //Output. The device instance array
+    uint32_t                      updateCount = 0;
+    uint32_t                      _padding    = 0;
+};
+
+static_assert(sizeof(ScatterInstancesPush) == 24);
 
 /**
  * Arguments to mesh.slang.
