@@ -1,4 +1,4 @@
-module ShereVisibilityTest;
+module SphereVisibilityTest;
 
 // Not public: visible only inside this module.
 bool outside(float4 plane, float3 center, float radius) {

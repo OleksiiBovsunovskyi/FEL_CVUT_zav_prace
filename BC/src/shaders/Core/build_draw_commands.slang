@@ -1,5 +1,5 @@
 import gpu_types;
-import ShereVisibilityTest;
+import SphereVisibilityTest;
 
 struct GPUMeshTaskCommand {
     uint groupCountX;
