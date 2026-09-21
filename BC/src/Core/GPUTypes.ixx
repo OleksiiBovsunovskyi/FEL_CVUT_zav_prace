@@ -244,9 +244,8 @@ export struct alignas(16) BuildDrawCommandsPush {
 static_assert(sizeof(BuildDrawCommandsPush) == 48);
 
 /**
- * Arguments to mesh.slang. Geometry is reached through the mesh header a
- * GPUDrawData points at, so only the two per-frame arrays and the material
- * table need a base here.
+ * Arguments to mesh.slang.
+ * Geometry is reached through the mesh header a GPUDrawData points at.
  */
 export struct GPUMeshDrawPush {
     GpuPtr<GPUCameraData> camera;

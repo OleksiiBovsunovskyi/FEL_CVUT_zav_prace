@@ -222,7 +222,7 @@ add_custom_command(
 # Imported by the entry points; every shader is rebuilt when one of them changes.
 set(VK_SLANG_MODULES
         "${VK_GPU_TYPES_SLANG}"
-        "${VK_SHADER_DIR}/Utils/ShereVisibilityTest.slang"
+        "${VK_SHADER_DIR}/Utils/SphereVisibilityTest.slang"
         "${VK_SHADER_DIR}/Core/mesh_vertex.slang"
 )
 

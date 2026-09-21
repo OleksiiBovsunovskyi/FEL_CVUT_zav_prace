@@ -13,7 +13,7 @@ struct BuildDrawCommandsPush {
     GPUMeshInstance*    instances;  // 8
     GPUDrawData*        drawData;   // 16
     GPUMeshTaskCommand* commands;   // 24
-    Atomic<uint>*   commandCount;   // 32
+    Atomic<uint>*   commandCount;   // 32 
 
     uint instanceCount;             // 40
 };                                  // 44
