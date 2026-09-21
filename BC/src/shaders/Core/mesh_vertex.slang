@@ -9,4 +9,8 @@ public struct MeshVertex {
     public float4 tangent  : TANGENT;
     public float2 texCoord : TEXCOORD;
     public nointerpolation uint materialIndex : MATERIAL;
+    /// Meshlet the triangle came from, mixed with the instance index.
+    public nointerpolation uint meshletId : MESHLETID;
+    /// Sphere the meshlet is culled by: xyz = centre in world space, w = radius.
+    public nointerpolation float4 meshletSphere : MESHLETSPHERE;
 };

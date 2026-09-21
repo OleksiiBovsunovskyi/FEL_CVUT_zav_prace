@@ -1,5 +1,6 @@
 import gpu_types;
 import mesh_vertex;
+import SphereVisibilityTest;
 
 [[vk::push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
 
@@ -21,14 +22,18 @@ void meshMain(
 {
     // Slot handed out by the atomic in build_draw_commands.slang.
     const GPUDrawData draw   = pc.drawData[drawId];
+
     const GPUMeshInstance instance = pc.instances[draw.instanceIndex];
     // Every section of the mesh is reached through its header.
     const GPUMeshHeader mesh = draw.mesh[0];
 
-    const GPUMeshlet meshlet = mesh.meshlets[groupId];
+    const GPUMeshlet meshlet = mesh.meshlets[groupId]; 
 
-    SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
-
+    const float4 meshletSphere = worldSphere(instance.transform, meshlet.boundingSphere);
+    const bool   visible       = sphereVisibleWorld(pc.camera->viewProj, meshletSphere);
+    SetMeshOutputCounts(visible ? meshlet.vertexCount  : 0,
+                        visible ? meshlet.triangleCount : 0);
+    if (!visible) return;
     const float4x4 mvp = mul(pc.camera->viewProj, instance.transform);
     // Uniform scale is assumed; a non-uniform one needs the inverse transpose.
     const float3x3 normalMatrix = float3x3(instance.transform);
@@ -45,6 +50,8 @@ void meshMain(
                                         vertex.tangent.w);
         verts[i].texCoord      = vertex.texCoord;
         verts[i].materialIndex = mesh.material.value;
+        verts[i].meshletId     = groupId ^ (draw.instanceIndex * 0x9E3779B9u);
+        verts[i].meshletSphere = meshletSphere;
     }
 
     for (uint i = laneId; i < meshlet.triangleCount; i += 64) {

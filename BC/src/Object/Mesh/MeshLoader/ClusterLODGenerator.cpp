@@ -1,5 +1,6 @@
 module;
 #include <cfloat>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -192,9 +193,9 @@ bool generateHierarchy(std::span<const GPUVertex> vertices,
 }
 
 /**
- * Checks the invariants the mesh shader relies on. Every one of these produces
- * wrong geometry rather than an error if violated, and the packing arithmetic
- * that could break them is not otherwise checked anywhere.
+ * Checks the invariants the mesh shader and the frustum cull rely on. Every one
+ * of these produces missing or wrong geometry if violated, with no error
+ * anywhere else.
  *
  * One linear pass over data that was just built, at load time.
  *
@@ -203,6 +204,16 @@ bool generateHierarchy(std::span<const GPUVertex> vertices,
 bool validate(const GeneratedClusterLOD& output, size_t vertexCount) {
     for (size_t m = 0; m < output.meshlets.size(); ++m) {
         const GPUMeshlet& meshlet = output.meshlets[m];
+
+        const glm::vec4& sphere = meshlet.boundingSphere;
+        // Negated so a NaN from a degenerate cluster fails too.
+        if (!(sphere.w > 0.0f) || !std::isfinite(sphere.x) ||
+            !std::isfinite(sphere.y) || !std::isfinite(sphere.z)) {
+            logError("ClusterLOD: meshlet " + std::to_string(m) +
+                     " has a bounding sphere with a non-positive radius or a "
+                     "non-finite centre");
+            return false;
+        }
 
         if (meshlet.vertexOffset + meshlet.vertexCount >
                 output.meshletVertexIndices.size() ||

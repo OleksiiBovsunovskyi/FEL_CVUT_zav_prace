@@ -224,6 +224,8 @@ set(VK_SLANG_MODULES
         "${VK_GPU_TYPES_SLANG}"
         "${VK_SHADER_DIR}/Utils/SphereVisibilityTest.slang"
         "${VK_SHADER_DIR}/Core/mesh_vertex.slang"
+        "${VK_SHADER_DIR}/Core/draw_meshlets.slang"
+        "${VK_SHADER_DIR}/Core/draw_meshlets_visibility_sphere.slang"
 )
 
 set(VK_SPV_FILES "")

@@ -1,11 +1,19 @@
 import gpu_types;
 import mesh_vertex;
+import draw_meshlets;
+import draw_meshlets_visibility_sphere;
 
 [[vk::push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
 
 // Bindless textures, indexed by GPUMaterial::textures. Owned by TextureManager,
 // which is the only thing that assigns a slot.
 [[vk::binding(0, 0)]] Sampler2D textures[];
+
+/// Replaces shading with one flat colour per meshlet.
+static const bool SHOW_MESHLETS = false;
+/// Replaces shading with each fragment's position inside its meshlet's
+/// culling sphere.
+static const bool SHOW_MESHLET_SPHERES = афдыу;
 
 // The one light in the scene, until GPULight and its per-frame buffer exist.
 static const float3 LIGHT_DIRECTION = normalize(float3(0.4, 0.8, 0.3));
@@ -25,6 +33,14 @@ float shininessFrom(float roughness) {
 
 [shader("fragment")]
 float4 fragMain(MeshVertex input) : SV_Target {
+    if (SHOW_MESHLET_SPHERES)
+        return float4(sphereTightness(input.worldPosition, input.meshletSphere), 1.0);
+
+    if (SHOW_MESHLETS) {
+        const float shade = 0.4 + 0.6 * max(dot(normalize(input.normal), LIGHT_DIRECTION), 0.0);
+        return float4(meshletColor(input.meshletId) * shade, 1.0);
+    }
+
     const GPUMaterial material = pc.materials[input.materialIndex];
 
     float4 albedo = material.albedo;
