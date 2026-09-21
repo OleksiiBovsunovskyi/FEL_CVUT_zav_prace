@@ -56,7 +56,7 @@ float4 fragMain(MeshVertex input) : SV_Target {
         shininess = shininessFrom(orm.y * material.surface.w);
     }
 
-    const float3 view    = normalize(pc.cameraPosition.xyz - input.worldPosition);
+    const float3 view    = normalize(pc.camera->position.xyz - input.worldPosition);
     const float3 halfway = normalize(LIGHT_DIRECTION + view);
 
     const float diffuse  = max(dot(normal, LIGHT_DIRECTION), 0.0);

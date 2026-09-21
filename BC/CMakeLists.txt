@@ -435,6 +435,7 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Core/FrameRunner/FrameRunner.ixx"
         "${PGR_VK_SRC}/Core/Buffer/BufferTypes.ixx"
         "${PGR_VK_SRC}/Core/Buffer/AllocatedBuffer.ixx"
+        "${PGR_VK_SRC}/Core/Buffer/PerFrameRecord.ixx"
         "${PGR_VK_SRC}/Core/Buffer/SubAllocatedBuffer.ixx"
         "${PGR_VK_SRC}/Core/Buffer/StaticBuffers.ixx"
         "${PGR_VK_SRC}/Core/VK_Buffers.ixx"

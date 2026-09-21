@@ -29,7 +29,7 @@ void meshMain(
 
     SetMeshOutputCounts(meshlet.vertexCount, meshlet.triangleCount);
 
-    const float4x4 mvp = mul(pc.viewProj, instance.transform);
+    const float4x4 mvp = mul(pc.camera->viewProj, instance.transform);
     // Uniform scale is assumed; a non-uniform one needs the inverse transpose.
     const float3x3 normalMatrix = float3x3(instance.transform);
 

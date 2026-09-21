@@ -202,7 +202,7 @@ void MeshDrawResources::copyPendingToUploadBuffer(
 
 PreparedMeshDraw MeshDrawResources::prepare(
     Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
-    std::span<const uint32_t> changed, const glm::mat4& viewProjection) {
+    std::span<const uint32_t> changed, GpuPtr<GPUCameraData> camera) {
     /* Every slot has its own device buffer, so each one receives the change. */
     for (auto& target : slots_)
         target.indicesPendingUpload.insert(target.indicesPendingUpload.end(),
@@ -238,7 +238,7 @@ PreparedMeshDraw MeshDrawResources::prepare(
     barriers_.clear();
 
     BuildDrawCommandsPush push{};
-    push.viewProj = viewProjection;
+    push.camera = camera;
     push.instances = spans.instances.gpu.data;
     push.drawData = spans.drawData.gpu.data;
     push.commands = spans.commands.gpu.data;

@@ -9,15 +9,14 @@ struct GPUMeshTaskCommand {
 
 /// Mirror of BuildDrawCommandsPush in Core/GPUTypes.ixx.
 struct BuildDrawCommandsPush {
-    float4x4 viewProj;              // 0
+    GPUCameraData*      camera;     // 0
+    GPUMeshInstance*    instances;  // 8
+    GPUDrawData*        drawData;   // 16
+    GPUMeshTaskCommand* commands;   // 24
+    Atomic<uint>*   commandCount;   // 32
 
-    GPUMeshInstance*    instances;  // 64
-    GPUDrawData*        drawData;   // 72
-    GPUMeshTaskCommand* commands;   // 80
-    Atomic<uint>*   commandCount;   // 88
-
-    uint instanceCount;               // 96
-};                                  // 100
+    uint instanceCount;             // 40
+};                                  // 44
 
 [[vk::push_constant]] ConstantBuffer<BuildDrawCommandsPush> pc;
 
@@ -33,7 +32,7 @@ void main(uint3 threadId : SV_DispatchThreadID) {
 
     if (mesh.meshletCount == 0) return;
 
-    if (!sphereVisible(pc.viewProj, instance.transform, mesh.boundingSphere)) return;
+    if (!sphereVisible(pc.camera->viewProj, instance.transform, mesh.boundingSphere)) return;
 
     // Claims this draw's slot and counts it in one operation.
     const uint slot = pc.commandCount->add(1);

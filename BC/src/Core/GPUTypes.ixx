@@ -218,10 +218,21 @@ export using GPUMeshTaskCommand = VkDrawMeshTasksIndirectCommandEXT;
 static_assert(sizeof(GPUMeshTaskCommand) == 12);
 
 /**
+ * Camera state for one recording
+ */
+export struct alignas(16) GPUCameraData {
+    glm::mat4 viewProj{1.0f};
+    //XYZ. W is unused
+    glm::vec4 position{0.0f};
+};
+
+static_assert(sizeof(GPUCameraData) == 80);
+
+/**
  * Arguments to build_draw_commands.comp.
  */
 export struct alignas(16) BuildDrawCommandsPush {
-    glm::mat4                  viewProj{1.0f};
+    GpuPtr<GPUCameraData>      camera;       //viewProj the culling test uses
     GpuPtr<GPUMeshInstance>    instances;      //transform + the mesh it draws
     GpuPtr<GPUDrawData>        drawData;     //Output. Object index and mesh, read back by the mesh shader
     GpuPtr<GPUMeshTaskCommand> commands;     //Output. Actual draw command, built here
@@ -230,7 +241,7 @@ export struct alignas(16) BuildDrawCommandsPush {
     uint32_t                   _padding    = 0;
 };
 
-static_assert(sizeof(BuildDrawCommandsPush) == 112);
+static_assert(sizeof(BuildDrawCommandsPush) == 48);
 
 /**
  * Arguments to mesh.slang. Geometry is reached through the mesh header a
@@ -238,12 +249,10 @@ static_assert(sizeof(BuildDrawCommandsPush) == 112);
  * table need a base here.
  */
 export struct GPUMeshDrawPush {
-    glm::mat4           viewProj{1.0f};
-    //XYZ. W is unused
-    glm::vec4           cameraPosition{0.0f};
+    GpuPtr<GPUCameraData> camera;
     GpuPtr<GPUDrawData> drawData;
     GpuPtr<GPUMeshInstance>   instances;
     GpuPtr<GPUMaterial> materials;
 };
 
-static_assert(sizeof(GPUMeshDrawPush) == 104);
+static_assert(sizeof(GPUMeshDrawPush) == 32);

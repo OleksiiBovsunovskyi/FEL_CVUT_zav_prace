@@ -122,14 +122,14 @@ public:
      * @param recording active frame recording.
      * @param instances every registered mesh instance, in DrawList order.
      * @param changed indices of `instances` written since the previous call;
-     * @param viewProjection world-to-clip matrix for BuildDrawCommands.
+     * @param camera address of this recording's camera record.
      * @return prepared indirect draw resources, or empty when no draw can be recorded.
      * @note Must be called once per recording, including when `instances` is
      *       empty.
      */
     [[nodiscard]] PreparedMeshDraw prepare(
         Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
-        std::span<const uint32_t> changed, const glm::mat4& viewProjection);
+        std::span<const uint32_t> changed, GpuPtr<GPUCameraData> camera);
 
 private:
     /**

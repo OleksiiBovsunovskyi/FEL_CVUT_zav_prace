@@ -75,7 +75,13 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
             ctx, shaderLoader, SHADER_DIR / "build_draw_commands.spv"))
         return false;
 
+    if (!cameraPerFrameRecord_.init(ctx, "camera")) {
+        meshDrawResources_.destroy();
+        return false;
+    }
+
     if (!sharedTargets_.init(ctx, extent)) {
+        cameraPerFrameRecord_.destroy();
         meshDrawResources_.destroy();
         return false;
     }
@@ -84,6 +90,7 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                        SHADER_DIR / "mesh_frag.spv", colorFormat, extent,
                        textures.layout())) {
         sharedTargets_.destroy();
+        cameraPerFrameRecord_.destroy();
         meshDrawResources_.destroy();
         return false;
     }
@@ -93,6 +100,7 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
 void Renderer::destroy() {
     forward_.destroy();
     sharedTargets_.destroy();
+    cameraPerFrameRecord_.destroy();
     meshDrawResources_.destroy();
 }
 
@@ -106,11 +114,15 @@ void Renderer::render(Frame::Recording& recording,
                       const glm::mat4& viewProjection,
                       const glm::vec3& cameraPosition,
                       GpuPtr<GPUMaterial> materials) {
+    //Upload camera data
+    const GpuPtr<GPUCameraData> camera = cameraPerFrameRecord_.write(
+        recording.frameInFlight(),
+        GPUCameraData{viewProjection, glm::vec4(cameraPosition, 1.0f)});
     const PreparedMeshDraw meshDraw =
-        meshDrawResources_.prepare(recording, instances, changed, viewProjection);
+        meshDrawResources_.prepare(recording, instances, changed, camera);
     const vk::RenderingAttachmentInfo depthAttachment =
         sharedTargets_.depthAttachment(recording);
-    forward_.render(recording, meshDraw, viewProjection, cameraPosition, materials,
+    forward_.render(recording, meshDraw, camera, materials,
                     textures_ ? textures_->set() : nullptr, depthAttachment, draw_);
 }
 

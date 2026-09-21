@@ -16,6 +16,7 @@ import Frame;
 import GPUTypes;
 import MeshDrawResources;
 import ShadersLoader;
+import VK_Buffers;
 import ForwardRenderer;
 import renderTarget;
 import TextureManager;
@@ -90,6 +91,7 @@ public:
 
 private:
     MeshDrawResources     meshDrawResources_;
+    PerFrameRecord<GPUCameraData> cameraPerFrameRecord_;
     SharedRenderTargets   sharedTargets_;
     ForwardRenderer       forward_;
     DrawFn                draw_;

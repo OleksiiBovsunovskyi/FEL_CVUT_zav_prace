@@ -50,15 +50,14 @@ public:
      * Records dynamic rendering, the prepared mesh draw, and the draw callback.
      * @param recording active Frame recording interface.
      * @param meshDraw prepared mesh-draw resources for this recording.
-     * @param viewProjection world-to-clip matrix for the mesh draw.
-     * @param cameraPosition world-space eye position, for the specular term.
+     * @param cameraData address of this recording's camera record.
      * @param materials base address of the Materials mega-buffer.
      * @param textureSet TextureManager's bindless set.
      * @param depthAttachment depth attachment prepared for this recording.
      * @param drawCallback callback recorded inside the rendering pass.
      */
     void render(Frame::Recording& recording, const PreparedMeshDraw& meshDraw,
-                const glm::mat4& viewProjection, const glm::vec3& cameraPosition,
+                GpuPtr<GPUCameraData> cameraData,
                 GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
                 const vk::RenderingAttachmentInfo& depthAttachment,
                 const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback);
