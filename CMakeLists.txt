@@ -1,16 +1,12 @@
 cmake_minimum_required(VERSION 4.2)
 
-# A container for two independent renderers. BC/ is the Vulkan one and
-# PGR-sem/ the OpenGL one; they share GLFW and the Dear ImGui sources fetched
-# here and nothing else.
+# Container for both VK and GL renderers
 project(pgr)
 
-# ---------------------------------------------------------------------------
-# Third-party: GLFW (windowing) and Dear ImGui (UI). Both fetched at configure
-# time and used by both renderers.
-# ---------------------------------------------------------------------------
+#Thirdparty
 include(FetchContent)
 
+#GLFW
 set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -22,8 +18,7 @@ FetchContent_Declare(glfw
         GIT_SHALLOW    TRUE
 )
 
-# ImGui ships no CMakeLists. Each renderer compiles it with its own backend, so
-# only the sources are fetched here.
+# ImGui 
 FetchContent_Declare(imgui
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
         GIT_TAG        v1.91.5
@@ -32,9 +27,7 @@ FetchContent_Declare(imgui
 
 FetchContent_MakeAvailable(glfw imgui)
 
-# ---------------------------------------------------------------------------
-# pgr-vk, the Vulkan renderer. Needs no framework.
-# ---------------------------------------------------------------------------
+#VK
 find_package(Vulkan QUIET)
 if (Vulkan_FOUND)
   add_subdirectory(BC)
@@ -44,7 +37,7 @@ else ()
 endif ()
 
 # ---------------------------------------------------------------------------
-# pgr-template, the OpenGL renderer. Needs pgr-framework: pgr.h, pgr.lib, its
+# pgr-template, (GL). Needs pgr-framework: pgr.h, pgr.lib, its
 # bundled GLM and the Assimp/DevIL DLLs.
 # ---------------------------------------------------------------------------
 string(ASCII 27 Esc)
