@@ -1,4 +1,5 @@
 import gpu_types;
+import AtomicAdd;
 import mesh_vertex;
 import SphereVisibilityTest;
 
@@ -30,11 +31,22 @@ void meshMain(
     const GPUMeshlet meshlet = mesh.meshlets[groupId]; 
 
     const float4 meshletSphere = worldSphere(instance.transform, meshlet.boundingSphere);
-    const bool   visible       = sphereVisibleWorld(pc.camera->viewProj, meshletSphere);
+    const bool   visible       = sphereVisibleWorld(pc.frame->camera.viewProj, meshletSphere);
     SetMeshOutputCounts(visible ? meshlet.vertexCount  : 0,
                         visible ? meshlet.triangleCount : 0);
+
+    // Count metrics
+    if (laneId == 0) {
+        GPUDrawCounters* counters = pc.frame->drawCounters;
+        if (visible) {
+            atomicAdd(&counters->meshletsDrawn, 1);
+            atomicAdd(&counters->trianglesDrawn, meshlet.triangleCount);
+        } else {
+            atomicAdd(&counters->meshletsCulled, 1);
+        }
+    }
     if (!visible) return;
-    const float4x4 mvp = mul(pc.camera->viewProj, instance.transform);
+    const float4x4 mvp = mul(pc.frame->camera.viewProj, instance.transform);
     const float3x3 model = float3x3(instance.transform);
     // Inverse transponse 
     const float3x3 normalMatrix = float3x3(cross(model[1], model[2]),

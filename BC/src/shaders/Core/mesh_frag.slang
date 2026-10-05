@@ -13,7 +13,7 @@ import draw_meshlets_visibility_sphere;
 static const bool SHOW_MESHLETS = false;
 /// Replaces shading with each fragment's position inside its meshlet's
 /// culling sphere.
-static const bool SHOW_MESHLET_SPHERES = афдыу;
+static const bool SHOW_MESHLET_SPHERES = false;
 
 // The one light in the scene, until GPULight and its per-frame buffer exist.
 static const float3 LIGHT_DIRECTION = normalize(float3(0.4, 0.8, 0.3));
@@ -72,7 +72,7 @@ float4 fragMain(MeshVertex input) : SV_Target {
         shininess = shininessFrom(orm.y * material.surface.w);
     }
 
-    const float3 view    = normalize(pc.camera->position.xyz - input.worldPosition);
+    const float3 view    = normalize(pc.frame->camera.position.xyz - input.worldPosition);
     const float3 halfway = normalize(LIGHT_DIRECTION + view);
 
     const float diffuse  = max(dot(normal, LIGHT_DIRECTION), 0.0);

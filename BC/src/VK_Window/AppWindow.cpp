@@ -180,11 +180,13 @@ void AppWindow::setUIMode(bool enable) {
 void AppWindow::applyCursorMode() {
     if (!handle_) return;
 
+    ImGuiIO& io = ImGui::GetIO();
+
     if (uiMode_) {
+        io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
         glfwSetInputMode(asWindow(handle_), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     } else {
-        // GLFW_CURSOR_DISABLED gives unbounded relative motion, which replaces
-        // the old warp-pointer-to-centre trick entirely.
+        io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
         glfwSetInputMode(asWindow(handle_), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
         if (glfwRawMouseMotionSupported())
             glfwSetInputMode(asWindow(handle_), GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);

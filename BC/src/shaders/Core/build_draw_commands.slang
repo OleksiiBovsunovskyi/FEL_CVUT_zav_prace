@@ -1,4 +1,5 @@
 import gpu_types;
+import AtomicAdd;
 import SphereVisibilityTest;
 
 struct GPUMeshTaskCommand {
@@ -9,14 +10,14 @@ struct GPUMeshTaskCommand {
 
 /// Mirror of BuildDrawCommandsPush in Core/GPUTypes.ixx.
 struct BuildDrawCommandsPush {
-    GPUCameraData*      camera;     // 0
-    GPUMeshInstance*    instances;  // 8
-    GPUDrawData*        drawData;   // 16
-    GPUMeshTaskCommand* commands;   // 24
-    Atomic<uint>*   commandCount;   // 32 
+    GPUFrameData*        frame;        // 0
+    GPUMeshInstance*     instances;    // 8
+    GPUDrawData*         drawData;     // 16
+    GPUMeshTaskCommand*  commands;     // 24
+    GPUDrawCommandCount* commandCount; // 32
 
-    uint instanceCount;             // 40
-};                                  // 44
+    uint instanceCount;                // 40
+};                                     // 44
 
 [[vk::push_constant]] ConstantBuffer<BuildDrawCommandsPush> pc;
 
@@ -32,10 +33,14 @@ void main(uint3 threadId : SV_DispatchThreadID) {
 
     if (mesh.meshletCount == 0) return;
 
-    if (!sphereVisible(pc.camera->viewProj, instance.transform, mesh.boundingSphere)) return;
+    GPUDrawCounters* counters = pc.frame->drawCounters;
+    atomicAdd(&counters->trianglesSubmitted, mesh.triangleCount);
+
+    if (!sphereVisible(pc.frame->camera.viewProj, instance.transform, mesh.boundingSphere)) return;
 
     // Claims this draw's slot and counts it in one operation.
-    const uint slot = pc.commandCount->add(1);
+    const uint slot = atomicAdd(&pc.commandCount->commandCount, 1);
+    atomicAdd(&counters->instancesDrawn, 1);
 
     pc.commands[slot].groupCountX = mesh.meshletCount;
     pc.commands[slot].groupCountY = 1;

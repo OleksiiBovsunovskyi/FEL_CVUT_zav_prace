@@ -76,13 +76,13 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                                  SHADER_DIR / "build_draw_commands.spv"))
         return false;
 
-    if (!cameraPerFrameRecord_.init(ctx, "camera")) {
+    if (!frameRecord_.init(ctx, "frame")) {
         meshDrawResources_.destroy();
         return false;
     }
 
     if (!sharedTargets_.init(ctx, extent)) {
-        cameraPerFrameRecord_.destroy();
+        frameRecord_.destroy();
         meshDrawResources_.destroy();
         return false;
     }
@@ -91,7 +91,15 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                        SHADER_DIR / "mesh_frag.spv", colorFormat, extent,
                        textures.layout())) {
         sharedTargets_.destroy();
-        cameraPerFrameRecord_.destroy();
+        frameRecord_.destroy();
+        meshDrawResources_.destroy();
+        return false;
+    }
+
+    if (!drawStats_.init(ctx)) {
+        forward_.destroy();
+        sharedTargets_.destroy();
+        frameRecord_.destroy();
         meshDrawResources_.destroy();
         return false;
     }
@@ -102,9 +110,10 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
 
 void Renderer::destroy() {
     timings_.destroy();
+    drawStats_.destroy();
     forward_.destroy();
     sharedTargets_.destroy();
-    cameraPerFrameRecord_.destroy();
+    frameRecord_.destroy();
     meshDrawResources_.destroy();
 }
 
@@ -120,17 +129,20 @@ void Renderer::render(Frame::Recording& recording,
                       GpuPtr<GPUMaterial> materials) {
     timings_.beginFrame(recording);
 
-    //Upload camera data
-    const GpuPtr<GPUCameraData> camera = cameraPerFrameRecord_.write(
+    const GpuPtr<GPUFrameData> frame = frameRecord_.write(
         recording.frameInFlight(),
-        GPUCameraData{viewProjection, glm::vec4(cameraPosition, 1.0f)});
+        GPUFrameData{
+            .camera       = GPUCameraData{viewProjection, glm::vec4(cameraPosition, 1.0f)},
+            .drawCounters = drawStats_.beginFrame(
+                recording, static_cast<uint32_t>(instances.size()))});
     const PreparedMeshDraw meshDraw =
-        meshDrawResources_.prepare(recording, instances, changed, camera, timings_);
+        meshDrawResources_.prepare(recording, instances, changed, frame, timings_);
     const vk::RenderingAttachmentInfo depthAttachment =
         sharedTargets_.depthAttachment(recording);
-    forward_.render(recording, meshDraw, camera, materials,
+    forward_.render(recording, meshDraw, frame, materials,
                     textures_ ? textures_->set() : nullptr, depthAttachment, draw_,
                     timings_);
+    drawStats_.endFrame(recording);
 }
 
 bool Renderer::resize(vk::Extent2D extent) {

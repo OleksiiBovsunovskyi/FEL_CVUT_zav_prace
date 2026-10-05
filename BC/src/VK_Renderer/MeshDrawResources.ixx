@@ -48,7 +48,7 @@ struct MeshDrawSpans {
     DeviceSpan<GPUMeshInstance>    instances{};
     DeviceSpan<GPUDrawData>        drawData{};
     DeviceSpan<GPUMeshTaskCommand> commands{};
-    DeviceSpan<uint32_t>           count{};
+    DeviceSpan<GPUDrawCommandCount> count{};
 
     [[nodiscard]] explicit operator bool() const {
         return instances && drawData && commands && count;
@@ -66,6 +66,7 @@ struct MeshDrawResourceSlot {
     AllocatedBuffer<HostDeviceReadableBuffer> instanceUpdates;
     AllocatedBuffer<DeviceOnlyBuffer>         drawData;
     AllocatedBuffer<DeviceOnlyBuffer>         commands;
+    /// Holds one GPUDrawCommandCount.
     AllocatedBuffer<DeviceOnlyBuffer>         count;
 
     /**
@@ -137,7 +138,7 @@ public:
      * @param recording active frame recording.
      * @param instances every registered mesh instance, in DrawList order.
      * @param changed indices of `instances` written since the previous call;
-     * @param camera address of this recording's camera record.
+     * @param frame address of this recording's GPUFrameData.
      * @param timings marked once per compute pass recorded.
      * @return prepared indirect draw resources, or empty when no draw can be recorded.
      * @note Must be called once per recording, including when `instances` is
@@ -145,7 +146,7 @@ public:
      */
     [[nodiscard]] PreparedMeshDraw prepare(
         Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
-        std::span<const uint32_t> changed, GpuPtr<GPUCameraData> camera,
+        std::span<const uint32_t> changed, GpuPtr<GPUFrameData> frame,
         GpuPassTimings& timings);
 
 private:

@@ -223,6 +223,7 @@ add_custom_command(
 set(VK_SLANG_MODULES
         "${VK_GPU_TYPES_SLANG}"
         "${VK_SHADER_DIR}/Utils/SphereVisibilityTest.slang"
+        "${VK_SHADER_DIR}/Utils/AtomicAdd.slang"
         "${VK_SHADER_DIR}/Core/mesh_vertex.slang"
         "${VK_SHADER_DIR}/Core/draw_meshlets.slang"
         "${VK_SHADER_DIR}/Core/draw_meshlets_visibility_sphere.slang"
@@ -403,6 +404,8 @@ add_executable(pgr-vk
         src/VK_Renderer/Renderer.cpp
         src/Debug/ShaderPrint.cpp
         src/Debug/GpuPassTimings.cpp
+        src/Debug/GpuDrawStats.cpp
+        src/Debug/Metrics.cpp
         src/Object/DrawList.cpp
         src/Object/Component.cpp
         src/Object/Object.cpp
@@ -449,6 +452,8 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Core/MeshDraw.ixx"
         "${PGR_VK_SRC}/Debug/ShaderPrint.ixx"
         "${PGR_VK_SRC}/Debug/GpuPassTimings.ixx"
+        "${PGR_VK_SRC}/Debug/GpuDrawStats.ixx"
+        "${PGR_VK_SRC}/Debug/Metrics.ixx"
         "${PGR_VK_SRC}/Object/DrawList.ixx"
         # VkScene and its partitions: Component names Object and Scene, Object
         # names Component and Scene, Scene names Object and CameraComponent.

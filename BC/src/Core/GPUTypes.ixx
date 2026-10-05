@@ -2,6 +2,7 @@ module;
 
 #include <vulkan/vulkan_core.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 
@@ -150,7 +151,8 @@ export struct alignas(16) GPUMeshHeader {
     uint32_t vertexCount  = 0;
     uint32_t meshletCount = 0;
     GPUMaterialIndex material{};
-    uint32_t _padding     = 0;
+    /// Triangles of every meshlet.
+    uint32_t triangleCount = 0;
     glm::vec4 boundingSphere{};
 };
 
@@ -224,6 +226,32 @@ export struct alignas(16) GPUDrawData {
 
 static_assert(sizeof(GPUDrawData) == 16);
 
+/**
+ * Draw commands one recording built.
+ */
+export struct GPUDrawCommandCount {
+    uint32_t commandCount = 0;
+};
+
+static_assert(sizeof(GPUDrawCommandCount) == 4);
+/// vkCmdDrawMeshTasksIndirectCountEXT reads the count at the start of the range.
+static_assert(offsetof(GPUDrawCommandCount, commandCount) == 0);
+
+/**
+ * Counters of one recording, read back for metrics only.
+ */
+export struct GPUDrawCounters {
+    /// Instances the recording submits; written on the CPU.
+    uint32_t instances          = 0;
+    uint32_t instancesDrawn     = 0;
+    uint32_t meshletsDrawn      = 0;
+    uint32_t meshletsCulled     = 0;
+    uint32_t trianglesSubmitted = 0;
+    uint32_t trianglesDrawn     = 0;
+};
+
+static_assert(sizeof(GPUDrawCounters) == 24);
+
 /// Written by build_draw_commands.comp, consumed by vkCmdDrawMeshTasksIndirect*.
 export using GPUMeshTaskCommand = VkDrawMeshTasksIndirectCommandEXT;
 
@@ -241,14 +269,25 @@ export struct alignas(16) GPUCameraData {
 static_assert(sizeof(GPUCameraData) == 80);
 
 /**
+ * Per frame data
+ */
+export struct alignas(16) GPUFrameData {
+    GPUCameraData           camera{};
+    GpuPtr<GPUDrawCounters> drawCounters{};
+    glm::uvec2              _padding{};
+};
+
+static_assert(sizeof(GPUFrameData) == 96);
+
+/**
  * Arguments to build_draw_commands.comp.
  */
 export struct alignas(16) BuildDrawCommandsPush {
-    GpuPtr<GPUCameraData>      camera;       //viewProj the culling test uses
+    GpuPtr<GPUFrameData>       frame;        //viewProj the culling test uses, draw counters
     GpuPtr<GPUMeshInstance>    instances;      //transform + the mesh it draws
     GpuPtr<GPUDrawData>        drawData;     //Output. Object index and mesh, read back by the mesh shader
     GpuPtr<GPUMeshTaskCommand> commands;     //Output. Actual draw command, built here
-    GpuPtr<uint32_t>           commandCount; //Output. How many actual draw commands have been built
+    GpuPtr<GPUDrawCommandCount> commandCount; //Output. Hands out each command's slot
     uint32_t                   instanceCount = 0;  //Amount of instances to draw
     uint32_t                   _padding    = 0;
 };
@@ -272,7 +311,7 @@ static_assert(sizeof(ScatterInstancesPush) == 24);
  * Geometry is reached through the mesh header a GPUDrawData points at.
  */
 export struct GPUMeshDrawPush {
-    GpuPtr<GPUCameraData> camera;
+    GpuPtr<GPUFrameData> frame;
     GpuPtr<GPUDrawData> drawData;
     GpuPtr<GPUMeshInstance>   instances;
     GpuPtr<GPUMaterial> materials;

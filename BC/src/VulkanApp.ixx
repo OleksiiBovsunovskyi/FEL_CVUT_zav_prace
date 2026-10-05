@@ -31,6 +31,7 @@ import InputHandler;
 import WASDComponent;
 import GPUTypes;
 import ShaderPrint;
+import Metrics;
 import TextureManager;
 
 /**
@@ -104,6 +105,9 @@ private:
     void initImGuiVulkan();
 
     void drawUI();
+
+    /// Records this frame's rates and totals and ends the Metrics row.
+    void publishFrameMetrics();
 
     /**
      * Measures the scene, then places the active camera's Object so the whole

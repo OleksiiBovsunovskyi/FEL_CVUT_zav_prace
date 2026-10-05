@@ -34,7 +34,7 @@ bool ForwardRenderer::resize(vk::Extent2D) {
 
 void ForwardRenderer::render(
     Frame::Recording& recording, const PreparedMeshDraw& preparedMeshDraw,
-    GpuPtr<GPUCameraData> cameraData,
+    GpuPtr<GPUFrameData> frameData,
     GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
     const vk::RenderingAttachmentInfo& depthAttachment,
     const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback,
@@ -53,7 +53,7 @@ void ForwardRenderer::render(
     cmd.beginRendering(rendering);
     if (preparedMeshDraw) {
         GPUMeshDrawPush push{};
-        push.camera = cameraData;
+        push.frame = frameData;
         push.drawData = preparedMeshDraw.drawData;
         push.instances = preparedMeshDraw.instances;
         push.materials = materials;

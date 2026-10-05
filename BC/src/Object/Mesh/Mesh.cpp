@@ -124,6 +124,7 @@ bool Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
     header.vertexCount    = static_cast<uint32_t>(data.vertices.size());
     header.meshletCount   = static_cast<uint32_t>(data.meshlets.size());
     header.material       = material->gpuIndex();
+    header.triangleCount  = static_cast<uint32_t>(data.meshletTriangles.size());
     header.boundingSphere = glm::vec4(data.bounds.center, data.bounds.radius);
 
     std::byte* image = upload.host;

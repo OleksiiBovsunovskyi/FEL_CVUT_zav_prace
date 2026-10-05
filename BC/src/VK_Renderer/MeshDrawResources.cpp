@@ -141,7 +141,7 @@ detail::MeshDrawSpans detail::MeshDrawResourceSlot::spans(
     const MeshDrawSpans result{instances.span<GPUMeshInstance>(instanceCount),
                                drawData.span<GPUDrawData>(instanceCount),
                                commands.span<GPUMeshTaskCommand>(instanceCount),
-                               count.span<uint32_t>(1)};
+                               count.span<GPUDrawCommandCount>(1)};
     if (!result) {
         logError(std::format(
             "MeshDrawResourceSlot::spans: {} instances exceeds the {} the "
@@ -202,7 +202,7 @@ MappedSpan<GPUMeshInstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdat
 
 PreparedMeshDraw MeshDrawResources::prepare(
     Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
-    std::span<const uint32_t> changed, GpuPtr<GPUCameraData> camera,
+    std::span<const uint32_t> changed, GpuPtr<GPUFrameData> frame,
     GpuPassTimings& timings) {
     /* Every slot has its own device buffer, so each one receives the change. */
     for (auto& target : slots_)
@@ -247,7 +247,7 @@ PreparedMeshDraw MeshDrawResources::prepare(
     barriers_.clear();
 
     BuildDrawCommandsPush push{};
-    push.camera = camera;
+    push.frame = frame;
     push.instances = spans.instances.gpu.data;
     push.drawData = spans.drawData.gpu.data;
     push.commands = spans.commands.gpu.data;

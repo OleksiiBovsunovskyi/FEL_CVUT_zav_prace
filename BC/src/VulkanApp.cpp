@@ -97,6 +97,8 @@ void VulkanApp::init() {
         throw std::runtime_error("ModelLoader::init failed");
 
     initImGuiVulkan();
+
+    static_cast<void>(Metrics::get().open("metrics"));
 }
 
 void VulkanApp::run() {
@@ -115,7 +117,10 @@ void VulkanApp::run() {
         //Lost device is not recoverable
         if (frames_.deviceLost()) window_.requestClose();
 
-        if (maxFrames_ != 0 && ++framesDrawn_ >= maxFrames_)
+        ++framesDrawn_;
+        publishFrameMetrics();
+
+        if (maxFrames_ != 0 && framesDrawn_ >= maxFrames_)
             window_.requestClose();
     });
 
@@ -174,6 +179,8 @@ void VulkanApp::drawUI() {
         for (const GpuPassTimings::Timing& timing : renderer_.timings())
             ImGui::Text("%-20s %7.3f ms", timing.name, timing.milliseconds);
         ImGui::Separator();
+        renderer_.drawStats().drawUI();
+        ImGui::Separator();
         ImGui::TextUnformatted(window_.isUIMode() ? "UI mode  (Tab to capture the mouse)"
                                                   : "Mouse captured  (Tab for UI)");
         ImGui::TextUnformatted("WASD moves, E/Q rise and fall, Esc quits");
@@ -181,6 +188,16 @@ void VulkanApp::drawUI() {
     ImGui::End();
 
     shaderPrint_.drawUI();
+}
+
+void VulkanApp::publishFrameMetrics() {
+    const ImGuiIO& io = ImGui::GetIO();
+
+    Metrics& metrics = Metrics::get();
+    metrics.set("frame", framesDrawn_);
+    metrics.set("fps", io.Framerate);
+    metrics.set("frame_ms", io.DeltaTime * 1000.0f);
+    metrics.endFrame();
 }
 
 void VulkanApp::frameScene() {
@@ -268,6 +285,8 @@ void VulkanApp::recordImGui(vk::CommandBuffer cmd, vk::Extent2D) {
 }
 
 void VulkanApp::cleanup() {
+    Metrics::get().close();
+
     /* Reachable from the destructor after a failed init. */
     if (!device_) return;
 

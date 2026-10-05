@@ -1,6 +1,7 @@
 module;
 
 #include <array>
+#include <optional>
 
 export module PerFrameRecord;
 
@@ -64,6 +65,19 @@ public:
             return {};
         }
         return buffer.gpuAddress<T>();
+    }
+
+    /**
+     * @param frameInFlight slot to read.
+     * @return the slot's record.
+     * @note The submission that last wrote the slot must have completed, and
+     *       its writes must have been made available to the host.
+     */
+    [[nodiscard]] std::optional<T> read(FrameInFlightIndex frameInFlight) {
+        const MappedSpan<T> mapping =
+            frameInFlight.select(buffers_). span<T>(1);
+        if (!mapping.host) return std::nullopt;
+        return *mapping.host;
     }
 
 private:
