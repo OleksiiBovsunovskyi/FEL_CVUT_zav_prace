@@ -185,6 +185,7 @@ void VulkanApp::drawUI() {
         DebugFlags debugFlags = renderer_.getDebugFlags();
         ImGui::Checkbox("Show meshlets", &debugFlags.ShowMeshlets);
         ImGui::Checkbox("Show meshlet spheres", &debugFlags.ShowMeshletSpheres);
+        ImGui::Checkbox("Draw normals", &debugFlags.DrawNormals);
         renderer_.setDebugFlags(debugFlags);
         ImGui::Separator();
         ImGui::TextUnformatted(window_.isUIMode() ? "UI mode  (Tab to capture the mouse)"

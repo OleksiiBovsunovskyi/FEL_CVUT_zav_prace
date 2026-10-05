@@ -33,10 +33,10 @@ float4 fragMain(MeshVertex input) : SV_Target {
     if (pc.frame->debugShowMeshlets) {
         const float shade = 0.4 + 0.6 * max(dot(normalize(input.normal), LIGHT_DIRECTION), 0.0);
         return float4(meshletColor(input.meshletId) * shade, 1.0);
-    }
+    }   
 
     const GPUMaterial material = pc.materials[input.materialIndex];
-
+    
     float4 albedo = material.albedo;
     if (material.textures.x != INVALID_TEXTURE_INDEX)
         albedo *= sampleTexture(material.textures.x, input.texCoord);
@@ -55,7 +55,10 @@ float4 fragMain(MeshVertex input) : SV_Target {
             sampleTexture(material.textures.y, input.texCoord).xyz * 2.0 - 1.0;
         normal = normalize(t * sampled.x + b * sampled.y + normal * sampled.z);
     }
-
+    
+    if(pc.frame->debugDrawNormals)
+        return float4(normal, 1.0);
+         
     // x=specular intensity, y=shininess, z=metallic, w=roughness.
     float occlusion = 1.0;
     float shininess = material.surface.y;

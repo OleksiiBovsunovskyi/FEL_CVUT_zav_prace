@@ -287,9 +287,11 @@ export struct alignas(16) GPUFrameData {
     GpuPtr<GPUDrawCounters> drawCounters{};
     GpuBool                 debugShowMeshlets;
     GpuBool                 debugShowMeshletSpheres;
+    GpuBool                 debugDrawNormals;
+    uint32_t                _padding[3]{};
 };
 
-static_assert(sizeof(GPUFrameData) == 96);
+static_assert(sizeof(GPUFrameData) == 112);
 
 /**
  * Arguments to build_draw_commands.comp.

@@ -136,6 +136,7 @@ void Renderer::render(Frame::Recording& recording,
             .drawCounters = drawStats_.beginFrame(recording, static_cast<uint32_t>(instances.size())),
             .debugShowMeshlets = debugFlags_.ShowMeshlets,
             .debugShowMeshletSpheres = debugFlags_.ShowMeshletSpheres,
+            .debugDrawNormals = debugFlags_.DrawNormals,
         });
     const PreparedMeshDraw meshDraw =
         meshDrawResources_.prepare(recording, instances, changed, frame, timings_);
