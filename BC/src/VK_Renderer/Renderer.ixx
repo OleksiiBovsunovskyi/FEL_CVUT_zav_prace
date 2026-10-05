@@ -11,6 +11,7 @@ module;
 export module Renderer;
 
 import vulkan;
+import DebugFlags;
 import VulkanContext;
 import Frame;
 import GPUTypes;
@@ -98,7 +99,9 @@ public:
     [[nodiscard]] std::span<const GpuPassTimings::Timing> timings() const {
         return timings_.timings();
     }
-
+    
+    DebugFlags getDebugFlags() const { return debugFlags_; }
+    void setDebugFlags(DebugFlags flags) { debugFlags_ = flags; }
 private:
     MeshDrawResources     meshDrawResources_;
     PerFrameRecord<GPUFrameData> frameRecord_;
@@ -108,4 +111,5 @@ private:
     GpuPassTimings        timings_;
     GpuDrawStats          drawStats_;
     const TextureManager* textures_ = nullptr;
+    DebugFlags            debugFlags_;
 };

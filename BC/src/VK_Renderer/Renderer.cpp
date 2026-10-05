@@ -133,8 +133,10 @@ void Renderer::render(Frame::Recording& recording,
         recording.frameInFlight(),
         GPUFrameData{
             .camera       = GPUCameraData{viewProjection, glm::vec4(cameraPosition, 1.0f)},
-            .drawCounters = drawStats_.beginFrame(
-                recording, static_cast<uint32_t>(instances.size()))});
+            .drawCounters = drawStats_.beginFrame(recording, static_cast<uint32_t>(instances.size())),
+            .debugShowMeshlets = debugFlags_.ShowMeshlets,
+            .debugShowMeshletSpheres = debugFlags_.ShowMeshletSpheres,
+        });
     const PreparedMeshDraw meshDraw =
         meshDrawResources_.prepare(recording, instances, changed, frame, timings_);
     const vk::RenderingAttachmentInfo depthAttachment =

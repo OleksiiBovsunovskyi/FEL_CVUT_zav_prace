@@ -32,6 +32,17 @@ struct GpuPtr {
 
 static_assert(sizeof(GpuPtr<float>) == sizeof(VkDeviceAddress));
 
+
+export struct GpuBool {
+    uint32_t value = 0;
+
+    constexpr GpuBool() = default;
+    constexpr GpuBool(bool b) : value(b ? 1u : 0u) {}
+    constexpr operator bool() const { return value != 0; }
+};
+
+static_assert(sizeof(GpuBool) == 4);
+
 /**
  * Device address of a T[count]. The shader-facing form of a range; a bare
  * address plus a loose length is what it replaces.
@@ -274,7 +285,8 @@ static_assert(sizeof(GPUCameraData) == 80);
 export struct alignas(16) GPUFrameData {
     GPUCameraData           camera{};
     GpuPtr<GPUDrawCounters> drawCounters{};
-    glm::uvec2              _padding{};
+    GpuBool                 debugShowMeshlets;
+    GpuBool                 debugShowMeshletSpheres;
 };
 
 static_assert(sizeof(GPUFrameData) == 96);

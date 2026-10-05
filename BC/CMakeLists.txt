@@ -451,6 +451,7 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Core/ComputePass.ixx"
         "${PGR_VK_SRC}/Core/MeshDraw.ixx"
         "${PGR_VK_SRC}/Debug/ShaderPrint.ixx"
+        "${PGR_VK_SRC}/Debug/DebugFlags.ixx"
         "${PGR_VK_SRC}/Debug/GpuPassTimings.ixx"
         "${PGR_VK_SRC}/Debug/GpuDrawStats.ixx"
         "${PGR_VK_SRC}/Debug/Metrics.ixx"

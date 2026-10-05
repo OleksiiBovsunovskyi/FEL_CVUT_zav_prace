@@ -9,12 +9,6 @@ import draw_meshlets_visibility_sphere;
 // which is the only thing that assigns a slot.
 [[vk::binding(0, 0)]] Sampler2D textures[];
 
-/// Replaces shading with one flat colour per meshlet.
-static const bool SHOW_MESHLETS = false;
-/// Replaces shading with each fragment's position inside its meshlet's
-/// culling sphere.
-static const bool SHOW_MESHLET_SPHERES = false;
-
 // The one light in the scene, until GPULight and its per-frame buffer exist.
 static const float3 LIGHT_DIRECTION = normalize(float3(0.4, 0.8, 0.3));
 static const float  AMBIENT         = 0.15;
@@ -33,10 +27,10 @@ float shininessFrom(float roughness) {
 
 [shader("fragment")]
 float4 fragMain(MeshVertex input) : SV_Target {
-    if (SHOW_MESHLET_SPHERES)
+    if (pc.frame->debugShowMeshletSpheres)
         return float4(sphereTightness(input.worldPosition, input.meshletSphere), 1.0);
 
-    if (SHOW_MESHLETS) {
+    if (pc.frame->debugShowMeshlets) {
         const float shade = 0.4 + 0.6 * max(dot(normalize(input.normal), LIGHT_DIRECTION), 0.0);
         return float4(meshletColor(input.meshletId) * shade, 1.0);
     }

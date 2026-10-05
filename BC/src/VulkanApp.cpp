@@ -23,6 +23,7 @@ module VulkanApp;
 
 import vulkan;
 import Logger;
+import DebugFlags;
 
 namespace {
 
@@ -180,6 +181,11 @@ void VulkanApp::drawUI() {
             ImGui::Text("%-20s %7.3f ms", timing.name, timing.milliseconds);
         ImGui::Separator();
         renderer_.drawStats().drawUI();
+        ImGui::Separator();
+        DebugFlags debugFlags = renderer_.getDebugFlags();
+        ImGui::Checkbox("Show meshlets", &debugFlags.ShowMeshlets);
+        ImGui::Checkbox("Show meshlet spheres", &debugFlags.ShowMeshletSpheres);
+        renderer_.setDebugFlags(debugFlags);
         ImGui::Separator();
         ImGui::TextUnformatted(window_.isUIMode() ? "UI mode  (Tab to capture the mouse)"
                                                   : "Mouse captured  (Tab for UI)");
