@@ -23,7 +23,8 @@ void RenderComponent::registerParts() {
 
         const MeshBounds& bounds = mesh.bounds();
         parts_.push_back(RegisteredPart{
-            drawList.add(instance, glm::vec4(bounds.center, bounds.radius)),
+            drawList.add(instance, glm::vec4(bounds.center, bounds.radius),
+                         mesh.meshletCount()),
             part.localTransform});
     }
 }

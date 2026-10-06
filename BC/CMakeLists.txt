@@ -224,6 +224,7 @@ set(VK_SLANG_MODULES
         "${VK_GPU_TYPES_SLANG}"
         "${VK_SHADER_DIR}/Utils/SphereVisibilityTest.slang"
         "${VK_SHADER_DIR}/Utils/AtomicAdd.slang"
+        "${VK_SHADER_DIR}/Utils/HiZOcclusion.slang"
         "${VK_SHADER_DIR}/Core/mesh_vertex.slang"
         "${VK_SHADER_DIR}/Core/draw_meshlets.slang"
         "${VK_SHADER_DIR}/Core/draw_meshlets_visibility_sphere.slang"
@@ -254,6 +255,7 @@ endfunction()
 
 add_slang_shader(Core/build_draw_commands.slang main     compute  build_draw_commands.spv)
 add_slang_shader(Core/scatter_instances.slang   main     compute  scatter_instances.spv)
+add_slang_shader(Core/depth_pyramid.slang       main     compute  depth_pyramid.spv)
 add_slang_shader(Core/mesh.slang                meshMain mesh     mesh.spv)
 add_slang_shader(Core/mesh_frag.slang           fragMain fragment mesh_frag.spv)
 
@@ -399,6 +401,7 @@ add_executable(pgr-vk
         src/Core/Pipeline.cpp
         src/Core/MeshDraw.cpp
         src/Rendering/Texture/TextureManager.cpp
+        src/VK_Renderer/DepthPyramid.cpp
         src/VK_Renderer/MeshDrawResources.cpp
         src/VK_Renderer/ForwardRenderer.cpp
         src/VK_Renderer/Renderer.cpp
@@ -483,6 +486,7 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Rendering/RenderTarget/DepthRenderTarget.ixx"
         "${PGR_VK_SRC}/Rendering/RenderTarget/RenderTarget.ixx"
         "${PGR_VK_SRC}/Rendering/Frame/Frame.ixx"
+        "${PGR_VK_SRC}/VK_Renderer/DepthPyramid.ixx"
         "${PGR_VK_SRC}/VK_Renderer/MeshDrawResources.ixx"
         "${PGR_VK_SRC}/VK_Renderer/ForwardRenderer.ixx"
         "${PGR_VK_SRC}/VK_Renderer/Renderer.ixx"

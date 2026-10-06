@@ -11,6 +11,7 @@ module;
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 module MeshDrawResources;
@@ -41,16 +42,27 @@ constexpr uint32_t MAX_INSTANCE_CAPACITY = 1u << 31;
 
 constexpr vk::DeviceSize MESH_TASK_COMMAND_COUNT_CAPACITY = 4ull << 10;
 
-/// Device bytes one instance costs across instances, drawData and commands.
-constexpr vk::DeviceSize DEVICE_BYTES_PER_INSTANCE =
-    sizeof(GPUMeshInstance) + sizeof(GPUDrawData) + sizeof(GPUMeshTaskCommand);
-/// Host bytes one instance costs in instanceUpdates.
-constexpr vk::DeviceSize HOST_BYTES_PER_INSTANCE = sizeof(GPUMeshInstanceUpdate);
+constexpr vk::BufferUsageFlags VISIBILITY_USAGE = GPU_DATA_USAGE;
 
-/// @return the capacity holding count, or 0 when count is past MAX_INSTANCE_CAPACITY.
-uint32_t capacityFor(uint32_t count) {
+/// Device bytes one instance costs across instances, drawData, commands and visibility.
+constexpr vk::DeviceSize DEVICE_BYTES_PER_INSTANCE =
+    sizeof(GPUMeshInstance) + sizeof(GPUDrawData) + sizeof(GPUMeshTaskCommand) +
+    sizeof(GPUInstanceVisibility);
+/// Host bytes one instance costs in instanceUpdates.
+constexpr vk::DeviceSize HOST_BYTES_PER_INSTANCE =
+    sizeof(GPUMeshInstanceUpdate) + sizeof(GPUMeshletBase);
+
+/// Meshlets a slot's meshletVisibility holds at minimum; every growth doubles from here.
+constexpr uint32_t MIN_MESHLET_CAPACITY = 1u << 12;
+
+/// Read as storage by mesh.slang through a device address.
+constexpr vk::BufferUsageFlags MESHLET_BASES_USAGE = MESH_INSTANCE_UPDATE_USAGE;
+constexpr vk::BufferUsageFlags MESHLET_VISIBILITY_USAGE = GPU_DATA_USAGE;
+
+/// @return the capacity holding count, at least `minimum`, or 0 when count is past MAX_INSTANCE_CAPACITY.
+uint32_t capacityFor(uint32_t count, uint32_t minimum) {
     if (count > MAX_INSTANCE_CAPACITY) return 0;
-    return std::max(MIN_INSTANCE_CAPACITY, std::bit_ceil(count));
+    return std::max(minimum, std::bit_ceil(count));
 }
 
 constexpr double MIB = 1024.0 * 1024.0;
@@ -69,6 +81,10 @@ constexpr BufferAccess COMPUTE_WRITE{
 constexpr BufferAccess MESH_SHADER_READ{
     vk::PipelineStageFlagBits2::eMeshShaderEXT,
     vk::AccessFlagBits2::eShaderStorageRead};
+constexpr BufferAccess MESH_SHADER_WRITE{
+    vk::PipelineStageFlagBits2::eMeshShaderEXT,
+    vk::AccessFlagBits2::eShaderStorageRead |
+        vk::AccessFlagBits2::eShaderStorageWrite};
 constexpr BufferAccess INDIRECT_READ{vk::PipelineStageFlagBits2::eDrawIndirect,
                                      vk::AccessFlagBits2::eIndirectCommandRead};
 
@@ -81,10 +97,11 @@ void keep(std::vector<vk::BufferMemoryBarrier2>& barriers,
 } // namespace
 
 bool detail::MeshDrawResourceSlot::reserve(VulkanContext& ctx,
-                                          uint32_t instanceCount) {
+                                          uint32_t instanceCount,
+                                          std::vector<RetiredBuffer>& retired) {
     if (instanceCount <= instanceCapacity) return true;
 
-    const uint32_t capacity = capacityFor(instanceCount);
+    const uint32_t capacity = capacityFor(instanceCount, MIN_INSTANCE_CAPACITY);
     if (capacity == 0) {
         logError(std::format(
             "MeshDrawResourceSlot: {} instances is past the {} a slot can hold",
@@ -92,6 +109,10 @@ bool detail::MeshDrawResourceSlot::reserve(VulkanContext& ctx,
         return false;
     }
 
+    /* The next recording reads this buffer on the GPU after this call returns. */
+    if (visibility) retired.push_back(RetiredBuffer{std::move(visibility), FRAMES_IN_FLIGHT});
+    if (meshletVisibility)
+        retired.push_back(RetiredBuffer{std::move(meshletVisibility), FRAMES_IN_FLIGHT});
     destroy();
 
     const vk::DeviceSize instanceBytes =
@@ -106,7 +127,11 @@ bool detail::MeshDrawResourceSlot::reserve(VulkanContext& ctx,
         !commands.init(ctx, vk::DeviceSize{capacity} * sizeof(GPUMeshTaskCommand),
                        MESH_TASK_COMMANDS_USAGE, "mesh task commands") ||
         !count.init(ctx, MESH_TASK_COMMAND_COUNT_CAPACITY,
-                    MESH_TASK_COMMAND_COUNT_USAGE, "mesh task command count")) {
+                    MESH_TASK_COMMAND_COUNT_USAGE, "mesh task command count") ||
+        !visibility.init(ctx, vk::DeviceSize{capacity} * sizeof(GPUInstanceVisibility),
+                         VISIBILITY_USAGE, "instance visibility") ||
+        !meshletBases.init(ctx, vk::DeviceSize{capacity} * sizeof(GPUMeshletBase),
+                           MESHLET_BASES_USAGE, "meshlet bases")) {
         destroy();
         return false;
     }
@@ -126,9 +151,42 @@ bool detail::MeshDrawResourceSlot::reserve(VulkanContext& ctx,
     return true;
 }
 
+bool detail::MeshDrawResourceSlot::reserveMeshlets(VulkanContext& ctx,
+                                                  uint32_t meshletCount,
+                                                  std::vector<RetiredBuffer>& retired) {
+    if (meshletCount <= meshletCapacity) return true;
+
+    const uint32_t capacity = capacityFor(meshletCount, MIN_MESHLET_CAPACITY);
+    if (capacity == 0) {
+        logError(std::format(
+            "MeshDrawResourceSlot: {} meshlets is past the {} a slot can hold",
+            meshletCount, MAX_INSTANCE_CAPACITY));
+        return false;
+    }
+
+    /* The next recording reads this buffer on the GPU after this call returns. */
+    if (meshletVisibility)
+        retired.push_back(RetiredBuffer{std::move(meshletVisibility), FRAMES_IN_FLIGHT});
+    meshletVisibility.destroy();
+    meshletVisibilityCount = 0;
+    meshletCapacity        = 0;
+
+    if (!meshletVisibility.init(ctx, vk::DeviceSize{capacity} * sizeof(GPUMeshletVisibility),
+                                MESHLET_VISIBILITY_USAGE, "meshlet visibility"))
+        return false;
+    meshletCapacity = capacity;
+    return true;
+}
+
 void detail::MeshDrawResourceSlot::destroy() {
     instanceCapacity = 0;
+    visibilityCount  = 0;
+    meshletCapacity  = 0;
+    meshletVisibilityCount = 0;
     indicesPendingUpload.clear();
+    meshletVisibility.destroy();
+    meshletBases.destroy();
+    visibility.destroy();
     count.destroy();
     commands.destroy();
     drawData.destroy();
@@ -169,6 +227,7 @@ bool MeshDrawResources::init(
 void MeshDrawResources::destroy() {
     buildDrawCommands_.destroy();
     scatterInstances_.destroy();
+    retired_.clear();
     for (auto& slot : slots_) slot.destroy();
     ctx_ = nullptr;
 }
@@ -202,21 +261,50 @@ MappedSpan<GPUMeshInstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdat
 
 PreparedMeshDraw MeshDrawResources::prepare(
     Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
-    std::span<const uint32_t> changed, GpuPtr<GPUFrameData> frame,
+    std::span<const uint32_t> changed,
+    std::span<const uint32_t> meshletCounts, GpuPtr<GPUFrameData> frame,
     GpuPassTimings& timings) {
     /* Every slot has its own device buffer, so each one receives the change. */
     for (auto& target : slots_)
         target.indicesPendingUpload.insert(target.indicesPendingUpload.end(),
                                            changed.begin(), changed.end());
 
+    for (detail::RetiredBuffer& retired : retired_) --retired.recordingsLeft;
+    std::erase_if(retired_, [](const detail::RetiredBuffer& retired) {
+        return retired.recordingsLeft == 0;
+    });
+
+    detail::MeshDrawResourceSlot& slot = recording.select(slots_);
+    slot.visibilityCount = 0;
+    slot.meshletVisibilityCount = 0;
     if (instances.empty() || instances.size() > std::numeric_limits<uint32_t>::max()) return {};
+    if (meshletCounts.size() != instances.size()) {
+        logError(std::format("MeshDrawResources::prepare: {} meshlet counts for {} instances",
+                             meshletCounts.size(), instances.size()));
+        return {};
+    }
 
     const uint32_t instanceCount = static_cast<uint32_t>(instances.size());
-    detail::MeshDrawResourceSlot& slot = recording.select(slots_);
-    if (!ctx_ || !slot.reserve(*ctx_, instanceCount)) return {};
+    if (!ctx_ || !slot.reserve(*ctx_, instanceCount, retired_)) return {};
 
     const detail::MeshDrawSpans spans = slot.spans(instanceCount);
     if (!spans) return {};
+
+    const MappedSpan<GPUMeshletBase> bases = slot.meshletBases.span<GPUMeshletBase>(instanceCount);
+    if (!bases) return {};
+
+    uint64_t meshletTotal = 0;
+    for (uint32_t index = 0; index < instanceCount; ++index) {
+        bases.host[index].first = static_cast<uint32_t>(meshletTotal);
+        meshletTotal += meshletCounts[index];
+    }
+    if (meshletTotal > MAX_INSTANCE_CAPACITY) {
+        logError(std::format("MeshDrawResources::prepare: {} meshlets is past the {} a slot can hold",
+                             meshletTotal, MAX_INSTANCE_CAPACITY));
+        return {};
+    }
+    const auto meshletCount = static_cast<uint32_t>(meshletTotal);
+    if (!slot.reserveMeshlets(*ctx_, meshletCount, retired_)) return {};
 
     const MappedSpan<GPUMeshInstanceUpdate> updates =
         slot.packPendingUpdates(instances);
@@ -239,10 +327,13 @@ PreparedMeshDraw MeshDrawResources::prepare(
 
     timings.mark(commandBuffer, "scatter_instances");
 
+    detail::MeshDrawResourceSlot& previous = recording.frameInFlight().previous().select(slots_);
+
     keep(barriers_, slot.instances.use(COMPUTE_READ));
     keep(barriers_, slot.drawData.use(COMPUTE_WRITE));
     keep(barriers_, slot.commands.use(COMPUTE_WRITE));
     keep(barriers_, slot.count.use(COMPUTE_WRITE));
+    if (previous.visibilityCount != 0) keep(barriers_, previous.visibility.use(COMPUTE_READ));
     recordBarriers(commandBuffer, barriers_);
     barriers_.clear();
 
@@ -252,16 +343,94 @@ PreparedMeshDraw MeshDrawResources::prepare(
     push.drawData = spans.drawData.gpu.data;
     push.commands = spans.commands.gpu.data;
     push.commandCount = spans.count.gpu.data;
+    push.previousVisibility = previous.visibility.gpuAddress<GPUInstanceVisibility>();
+    push.visibility = slot.visibility.gpuAddress<GPUInstanceVisibility>();
+    push.previousVisibilityCount = previous.visibilityCount;
     push.instanceCount = instanceCount;
+    push.pass = BUILD_PASS_FIRST;
     buildDrawCommands_.record(commandBuffer, push, instanceCount);
 
     keep(barriers_, slot.instances.use(MESH_SHADER_READ));
     keep(barriers_, slot.drawData.use(MESH_SHADER_READ));
     keep(barriers_, slot.commands.use(INDIRECT_READ));
     keep(barriers_, slot.count.use(INDIRECT_READ));
+    if (previous.meshletVisibilityCount != 0)
+        keep(barriers_, previous.meshletVisibility.use(MESH_SHADER_READ));
     recordBarriers(commandBuffer, barriers_);
     timings.mark(commandBuffer, "build_draw_commands");
 
-    return PreparedMeshDraw{spans.instances.gpu.data, spans.drawData.gpu.data,
-                            spans.commands.region, spans.count.region, instanceCount};
+    PreparedMeshDraw prepared{spans.instances.gpu.data, spans.drawData.gpu.data,
+                              spans.commands.region, spans.count.region, instanceCount};
+    prepared.meshletBase = bases.gpu.data;
+    prepared.previousMeshletVisibility =
+        previous.meshletVisibility.gpuAddress<GPUMeshletVisibility>();
+    prepared.meshletVisibility = slot.meshletVisibility.gpuAddress<GPUMeshletVisibility>();
+    prepared.previousMeshletVisibilityCount = previous.meshletVisibilityCount;
+    prepared.meshletCount = meshletCount;
+    return prepared;
+}
+
+PreparedMeshDraw MeshDrawResources::cullSecondPass(Frame::Recording& recording,
+                                                   const PreparedMeshDraw& prepared,
+                                                   GpuPtr<GPUFrameData> frame,
+                                                   const DepthPyramidView& hiZ,
+                                                   GpuPassTimings& timings) {
+    if (!prepared) return {};
+
+    detail::MeshDrawResourceSlot& slot = recording.select(slots_);
+    detail::MeshDrawResourceSlot& previous = recording.frameInFlight().previous().select(slots_);
+    const detail::MeshDrawSpans spans = slot.spans(prepared.instanceCount);
+    if (!spans) return {};
+
+    const vk::CommandBuffer commandBuffer = recording.commandBuffer();
+    barriers_.clear();
+
+    keep(barriers_, slot.count.use(TRANSFER_WRITE));
+    recordBarriers(commandBuffer, barriers_);
+    barriers_.clear();
+
+    zero(commandBuffer, spans.count.region);
+
+    keep(barriers_, slot.instances.use(COMPUTE_READ));
+    keep(barriers_, slot.drawData.use(COMPUTE_WRITE));
+    keep(barriers_, slot.commands.use(COMPUTE_WRITE));
+    keep(barriers_, slot.count.use(COMPUTE_WRITE));
+    keep(barriers_, slot.visibility.use(COMPUTE_WRITE));
+    if (previous.visibilityCount != 0) keep(barriers_, previous.visibility.use(COMPUTE_READ));
+    recordBarriers(commandBuffer, barriers_);
+    barriers_.clear();
+
+    BuildDrawCommandsPush push{};
+    push.frame = frame;
+    push.instances = spans.instances.gpu.data;
+    push.drawData = spans.drawData.gpu.data;
+    push.commands = spans.commands.gpu.data;
+    push.commandCount = spans.count.gpu.data;
+    push.previousVisibility = previous.visibility.gpuAddress<GPUInstanceVisibility>();
+    push.visibility = slot.visibility.gpuAddress<GPUInstanceVisibility>();
+    push.hiZ = hiZ.data;
+    push.previousVisibilityCount = previous.visibilityCount;
+    push.instanceCount = prepared.instanceCount;
+    push.pass = BUILD_PASS_SECOND;
+    push.hiZWidth = hiZ.extent.width;
+    push.hiZHeight = hiZ.extent.height;
+    push.hiZLevels = hiZ ? hiZ.levels : 0;
+    buildDrawCommands_.record(commandBuffer, push, prepared.instanceCount);
+
+    keep(barriers_, slot.instances.use(MESH_SHADER_READ));
+    keep(barriers_, slot.drawData.use(MESH_SHADER_READ));
+    keep(barriers_, slot.commands.use(INDIRECT_READ));
+    keep(barriers_, slot.count.use(INDIRECT_READ));
+    keep(barriers_, slot.meshletVisibility.use(MESH_SHADER_WRITE));
+    recordBarriers(commandBuffer, barriers_);
+    barriers_.clear();
+
+    slot.visibilityCount = prepared.instanceCount;
+    slot.meshletVisibilityCount = prepared.meshletCount;
+    timings.mark(commandBuffer, "cull second pass");
+
+    PreparedMeshDraw second = prepared;
+    second.pass = BUILD_PASS_SECOND;
+    second.hiZ  = hiZ;
+    return second;
 }

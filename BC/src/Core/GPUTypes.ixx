@@ -231,7 +231,8 @@ static_assert(sizeof(GPUMeshInstanceUpdate) == 96);
 /// Written per surviving draw, at the same index as its mesh-task command.
 export struct alignas(16) GPUDrawData {
     uint32_t        instanceIndex = 0;
-    uint32_t        _padding    = 0;
+    /// Nonzero when the first pass of the recording dispatched this instance.
+    uint32_t        drawnInFirstPass = 0;
     MeshDataPointer mesh{};
 };
 
@@ -259,9 +260,41 @@ export struct GPUDrawCounters {
     uint32_t meshletsCulled     = 0;
     uint32_t trianglesSubmitted = 0;
     uint32_t trianglesDrawn     = 0;
+    /// Instances inside the frustum that the depth pyramid hid.
+    uint32_t instancesOccluded  = 0;
+    /// Meshlets inside the frustum that the depth pyramid hid.
+    uint32_t meshletsOccluded   = 0;
 };
 
-static_assert(sizeof(GPUDrawCounters) == 24);
+static_assert(sizeof(GPUDrawCounters) == 32);
+
+/// Nonzero when the recording that wrote it drew the instance.
+export struct GPUInstanceVisibility {
+    uint32_t visible = 0;
+};
+
+static_assert(sizeof(GPUInstanceVisibility) == 4);
+
+/// Nonzero when the recording that wrote it found the meshlet inside the frustum and not occluded.
+export struct GPUMeshletVisibility {
+    uint32_t visible = 0;
+};
+
+static_assert(sizeof(GPUMeshletVisibility) == 4);
+
+/// Index of an instance's first GPUMeshletVisibility; its meshlets follow in mesh order.
+export struct GPUMeshletBase {
+    uint32_t first = 0;
+};
+
+static_assert(sizeof(GPUMeshletBase) == 4);
+
+/// One texel of the depth pyramid: the farthest depth over the texels it covers.
+export struct GPUHiZTexel {
+    float depth = 0.0f;
+};
+
+static_assert(sizeof(GPUHiZTexel) == 4);
 
 /// Written by build_draw_commands.comp, consumed by vkCmdDrawMeshTasksIndirect*.
 export using GPUMeshTaskCommand = VkDrawMeshTasksIndirectCommandEXT;
@@ -288,10 +321,19 @@ export struct alignas(16) GPUFrameData {
     GpuBool                 debugShowMeshlets;
     GpuBool                 debugShowMeshletSpheres;
     GpuBool                 debugDrawNormals;
-    uint32_t                _padding[3]{};
+    GpuBool                 debugDisableOcclusion;
+    uint32_t                _padding[2]{};
 };
 
 static_assert(sizeof(GPUFrameData) == 112);
+
+/// Which dispatch of build_draw_commands.slang a BuildDrawCommandsPush drives.
+export enum BuildPass : uint32_t {
+    /// Draws the frustum-visible instances the previous recording drew.
+    BUILD_PASS_FIRST  = 0,
+    /// Draws the frustum-visible instances the first pass left undrawn and the depth pyramid leaves visible.
+    BUILD_PASS_SECOND = 1,
+};
 
 /**
  * Arguments to build_draw_commands.comp.
@@ -302,11 +344,30 @@ export struct alignas(16) BuildDrawCommandsPush {
     GpuPtr<GPUDrawData>        drawData;     //Output. Object index and mesh, read back by the mesh shader
     GpuPtr<GPUMeshTaskCommand> commands;     //Output. Actual draw command, built here
     GpuPtr<GPUDrawCommandCount> commandCount; //Output. Hands out each command's slot
+    GpuPtr<GPUInstanceVisibility> previousVisibility; //What the previous recording drew
+    GpuPtr<GPUInstanceVisibility> visibility;         //Output of the second pass. What this recording drew
+    GpuPtr<GPUHiZTexel>        hiZ;          //Depth pyramid, every level packed one after another
     uint32_t                   instanceCount = 0;  //Amount of instances to draw
-    uint32_t                   _padding    = 0;
+    uint32_t                   previousVisibilityCount = 0; //Entries previousVisibility holds
+    BuildPass                  pass          = BUILD_PASS_FIRST;
+    uint32_t                   hiZWidth      = 0;  //Level 0 size in texels
+    uint32_t                   hiZHeight     = 0;
+    uint32_t                   hiZLevels     = 0;  //0 turns the occlusion test off
 };
 
-static_assert(sizeof(BuildDrawCommandsPush) == 48);
+static_assert(sizeof(BuildDrawCommandsPush) == 96);
+
+/**
+ * Arguments to depth_pyramid.slang. One level is reduced from the one above it.
+ */
+export struct DepthPyramidReducePush {
+    GpuPtr<GPUHiZTexel> source;
+    GpuPtr<GPUHiZTexel> destination;
+    uint32_t            sourceWidth       = 0;
+    uint32_t            sourceHeight      = 0;
+};
+
+static_assert(sizeof(DepthPyramidReducePush) == 24);
 
 /**
  * Arguments to scatter_instances.slang.
@@ -329,6 +390,17 @@ export struct GPUMeshDrawPush {
     GpuPtr<GPUDrawData> drawData;
     GpuPtr<GPUMeshInstance>   instances;
     GpuPtr<GPUMaterial> materials;
+    GpuPtr<GPUMeshletBase>       meshletBase;
+    GpuPtr<GPUMeshletVisibility> previousMeshletVisibility;
+    GpuPtr<GPUMeshletVisibility> meshletVisibility;
+    GpuPtr<GPUHiZTexel>          hiZ;
+    uint32_t previousMeshletVisibilityCount = 0;
+    /// BUILD_PASS_FIRST or BUILD_PASS_SECOND.
+    uint32_t pass        = BUILD_PASS_FIRST;
+    uint32_t hiZWidth    = 0;
+    uint32_t hiZHeight   = 0;
+    uint32_t hiZLevels   = 0;
+    uint32_t _padding    = 0;
 };
 
-static_assert(sizeof(GPUMeshDrawPush) == 32);
+static_assert(sizeof(GPUMeshDrawPush) == 88);

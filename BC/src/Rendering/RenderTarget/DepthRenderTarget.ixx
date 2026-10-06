@@ -22,7 +22,8 @@ public:
     DepthRenderTarget(vma::Allocator allocator, vk::Extent2D extent)
         : RenderTarget2D(allocator, DEPTH_FORMAT, extent,
                          vk::ImageUsageFlagBits::eDepthStencilAttachment |
-                             vk::ImageUsageFlagBits::eSampled) {}
+                             vk::ImageUsageFlagBits::eSampled |
+                             vk::ImageUsageFlagBits::eTransferSrc) {}
 
     /// @return a view of the depth aspect. Empty when creation failed.
     [[nodiscard]] ImageRef view() {

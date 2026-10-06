@@ -20,6 +20,11 @@ public:
         return FrameInFlightIndex{(value_ + 1) % FRAMES_IN_FLIGHT};
     }
     
+    /// @return the slot the recording before this one used.
+    [[nodiscard]] constexpr FrameInFlightIndex previous() const {
+        return FrameInFlightIndex{(value_ + FRAMES_IN_FLIGHT - 1) % FRAMES_IN_FLIGHT};
+    }
+
     /**
      *Selects which resource should be used for this frame
      *e.g. framebuffer used with this frame 

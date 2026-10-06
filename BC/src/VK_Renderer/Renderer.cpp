@@ -67,6 +67,20 @@ vk::RenderingAttachmentInfo SharedRenderTargets::depthAttachment(
     return attachment;
 }
 
+vk::RenderingAttachmentInfo SharedRenderTargets::depthAttachmentLoad(
+    Frame::Recording& recording) {
+    vk::RenderingAttachmentInfo attachment{};
+    attachment.imageView   = recording.select(depth_)->view().get();
+    attachment.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
+    attachment.loadOp      = vk::AttachmentLoadOp::eLoad;
+    attachment.storeOp     = vk::AttachmentStoreOp::eStore;
+    return attachment;
+}
+
+const DepthRenderTarget& SharedRenderTargets::depth(Frame::Recording& recording) {
+    return *recording.select(depth_);
+}
+
 bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                     vk::Format colorFormat, vk::Extent2D extent,
                     const TextureManager& textures) {
@@ -86,10 +100,17 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
         meshDrawResources_.destroy();
         return false;
     }
-    //TODO: Add mesh shader override. 
+    if (!depthPyramid_.init(ctx, shaderLoader, SHADER_DIR / "depth_pyramid.spv", extent)) {
+        sharedTargets_.destroy();
+        frameRecord_.destroy();
+        meshDrawResources_.destroy();
+        return false;
+    }
+    //TODO: Add mesh shader override.
     if (!forward_.init(ctx, shaderLoader, SHADER_DIR / "mesh.spv",
                        SHADER_DIR / "mesh_frag.spv", colorFormat, extent,
                        textures.layout())) {
+        depthPyramid_.destroy();
         sharedTargets_.destroy();
         frameRecord_.destroy();
         meshDrawResources_.destroy();
@@ -98,6 +119,7 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
 
     if (!drawStats_.init(ctx)) {
         forward_.destroy();
+        depthPyramid_.destroy();
         sharedTargets_.destroy();
         frameRecord_.destroy();
         meshDrawResources_.destroy();
@@ -112,6 +134,7 @@ void Renderer::destroy() {
     timings_.destroy();
     drawStats_.destroy();
     forward_.destroy();
+    depthPyramid_.destroy();
     sharedTargets_.destroy();
     frameRecord_.destroy();
     meshDrawResources_.destroy();
@@ -124,6 +147,7 @@ void Renderer::setDrawCallback(DrawFn cb) {
 void Renderer::render(Frame::Recording& recording,
                       std::span<const GPUMeshInstance> instances,
                       std::span<const uint32_t> changed,
+                      std::span<const uint32_t> meshletCounts,
                       const glm::mat4& viewProjection,
                       const glm::vec3& cameraPosition,
                       GpuPtr<GPUMaterial> materials) {
@@ -137,18 +161,33 @@ void Renderer::render(Frame::Recording& recording,
             .debugShowMeshlets = debugFlags_.ShowMeshlets,
             .debugShowMeshletSpheres = debugFlags_.ShowMeshletSpheres,
             .debugDrawNormals = debugFlags_.DrawNormals,
+            .debugDisableOcclusion = debugFlags_.DisableOcclusion,
         });
     const PreparedMeshDraw meshDraw =
-        meshDrawResources_.prepare(recording, instances, changed, frame, timings_);
-    const vk::RenderingAttachmentInfo depthAttachment =
-        sharedTargets_.depthAttachment(recording);
-    forward_.render(recording, meshDraw, frame, materials,
-                    textures_ ? textures_->set() : nullptr, depthAttachment, draw_,
-                    timings_);
+        meshDrawResources_.prepare(recording, instances, changed, meshletCounts, frame, timings_);
+    const vk::DescriptorSet textureSet = textures_ ? textures_->set() : nullptr;
+
+    /* A single pass carries the draw callback: nothing to cull, or occlusion disabled. */
+    const bool twoPass = meshDraw && !debugFlags_.DisableOcclusion;
+    forward_.render(recording, meshDraw, frame, materials, textureSet,
+                    sharedTargets_.depthAttachment(recording),
+                    twoPass ? DrawFn{} : draw_, timings_);
+
+    if (twoPass) {
+        const DepthRenderTarget& depth = sharedTargets_.depth(recording);
+        const DepthPyramidView hiZ = depthPyramid_.build(
+            recording, depth.image().handle(), depth.extent2D(), timings_);
+        const PreparedMeshDraw secondPass =
+            meshDrawResources_.cullSecondPass(recording, meshDraw, frame, hiZ, timings_);
+        forward_.render(recording, secondPass, frame, materials, textureSet,
+                        sharedTargets_.depthAttachmentLoad(recording), draw_, timings_,
+                        true);
+    }
     drawStats_.endFrame(recording);
 }
 
 bool Renderer::resize(vk::Extent2D extent) {
     if (!sharedTargets_.resize(extent)) return false;
+    if (!depthPyramid_.resize(extent)) return false;
     return forward_.resize(extent);
 }

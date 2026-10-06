@@ -15,6 +15,7 @@ import DebugFlags;
 import VulkanContext;
 import Frame;
 import GPUTypes;
+import DepthPyramid;
 import MeshDrawResources;
 import ShadersLoader;
 import VK_Buffers;
@@ -42,6 +43,16 @@ public:
     [[nodiscard]] bool resize(vk::Extent2D extent);
     [[nodiscard]] vk::RenderingAttachmentInfo depthAttachment(
         Frame::Recording& recording);
+
+    /**
+     * Describes this recording's depth target as an attachment that keeps its contents.
+     * @note The target must already be in eDepthAttachmentOptimal.
+     */
+    [[nodiscard]] vk::RenderingAttachmentInfo depthAttachmentLoad(
+        Frame::Recording& recording);
+
+    /// @return this recording's depth target.
+    [[nodiscard]] const DepthRenderTarget& depth(Frame::Recording& recording);
 
 private:
     std::array<std::optional<DepthRenderTarget>, FRAMES_IN_FLIGHT> depth_;
@@ -77,6 +88,7 @@ public:
      * @param recording active Frame recording interface.
      * @param instances every registered mesh instance, in DrawList order.
      * @param changed indices of `instances` written since the previous call.
+     * @param meshletCounts meshlets of each entry of `instances`, in the same order.
      * @param viewProjection world-to-clip matrix.
      * @param cameraPosition world-space eye position.
      * @param materials base address of the Materials mega-buffer.
@@ -86,6 +98,7 @@ public:
     void render(Frame::Recording& recording,
                 std::span<const GPUMeshInstance> instances,
                 std::span<const uint32_t> changed,
+                std::span<const uint32_t> meshletCounts,
                 const glm::mat4& viewProjection,
                 const glm::vec3& cameraPosition,
                 GpuPtr<GPUMaterial> materials);
@@ -106,6 +119,7 @@ private:
     MeshDrawResources     meshDrawResources_;
     PerFrameRecord<GPUFrameData> frameRecord_;
     SharedRenderTargets   sharedTargets_;
+    DepthPyramid          depthPyramid_;
     ForwardRenderer       forward_;
     DrawFn                draw_;
     GpuPassTimings        timings_;

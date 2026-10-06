@@ -20,7 +20,7 @@ GPUMeshInstance instanceNamed(float id) {
 }
 
 DrawHandle addNamed(DrawList& list, float id) {
-    return list.add(instanceNamed(id), glm::vec4{0.0f, 0.0f, 0.0f, 1.0f});
+    return list.add(instanceNamed(id), glm::vec4{0.0f, 0.0f, 0.0f, 1.0f}, 1u);
 }
 
 std::vector<uint32_t> taken(DrawList& list) {

@@ -38,11 +38,13 @@ void ForwardRenderer::render(
     GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
     const vk::RenderingAttachmentInfo& depthAttachment,
     const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback,
-    GpuPassTimings& timings) {
+    GpuPassTimings& timings, bool secondPass) {
     const vk::CommandBuffer cmd = recording.commandBuffer();
 
     const vk::RenderingAttachmentInfo colorAttachment =
-        recording.colorAttachment(vk::ClearColorValue{std::array<float, 4>{0.2f, 0.1f, 0.3f, 1.0f}});
+        recording.colorAttachment(vk::ClearColorValue{std::array<float, 4>{0.2f, 0.1f, 0.3f, 1.0f}},
+                                  secondPass ? vk::AttachmentLoadOp::eLoad
+                                             : vk::AttachmentLoadOp::eClear);
     vk::RenderingInfo rendering{};
     rendering.renderArea = vk::Rect2D{{0, 0}, recording.extent()};
     rendering.layerCount = 1;
@@ -57,11 +59,20 @@ void ForwardRenderer::render(
         push.drawData = preparedMeshDraw.drawData;
         push.instances = preparedMeshDraw.instances;
         push.materials = materials;
+        push.meshletBase = preparedMeshDraw.meshletBase;
+        push.previousMeshletVisibility = preparedMeshDraw.previousMeshletVisibility;
+        push.meshletVisibility = preparedMeshDraw.meshletVisibility;
+        push.previousMeshletVisibilityCount = preparedMeshDraw.previousMeshletVisibilityCount;
+        push.pass = preparedMeshDraw.pass;
+        push.hiZ = preparedMeshDraw.hiZ.data;
+        push.hiZWidth = preparedMeshDraw.hiZ.extent.width;
+        push.hiZHeight = preparedMeshDraw.hiZ.extent.height;
+        push.hiZLevels = preparedMeshDraw.hiZ ? preparedMeshDraw.hiZ.levels : 0;
         meshDraw_.record(cmd, recording.extent(), push,
                          preparedMeshDraw.indirectCommands,
                          preparedMeshDraw.indirectCount,
                          preparedMeshDraw.instanceCount, textureSet);
-        timings.mark(cmd, "mesh draw");
+        timings.mark(cmd, secondPass ? "mesh draw second pass" : "mesh draw");
     }
     if (drawCallback) {
         drawCallback(cmd, recording.extent());

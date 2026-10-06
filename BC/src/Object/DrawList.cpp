@@ -17,7 +17,8 @@ DrawList::~DrawList() {
 }
 
 DrawHandle DrawList::add(const GPUMeshInstance& instance,
-                         const glm::vec4& boundingSphere) {
+                         const glm::vec4& boundingSphere,
+                         uint32_t meshletCount) {
     const auto index = static_cast<uint32_t>(items_.size());
 
     uint32_t slot = 0;
@@ -32,6 +33,7 @@ DrawHandle DrawList::add(const GPUMeshInstance& instance,
 
     items_.push_back(instance);
     boundingSpheres_.push_back(boundingSphere);
+    meshletCounts_.push_back(meshletCount);
     indexToSlot_.push_back(slot);
     changedIndices_.push_back(index);
 
@@ -47,6 +49,7 @@ void DrawList::remove(uint32_t slot) {
     if (index != last) {
         items_[index]            = items_[last];
         boundingSpheres_[index]  = boundingSpheres_[last];
+        meshletCounts_[index]    = meshletCounts_[last];
         indexToSlot_[index]      = indexToSlot_[last];
         slotToIndex_[indexToSlot_[index]] = index;
         changedIndices_.push_back(index);
@@ -54,6 +57,7 @@ void DrawList::remove(uint32_t slot) {
 
     items_.pop_back();
     boundingSpheres_.pop_back();
+    meshletCounts_.pop_back();
     indexToSlot_.pop_back();
     freeSlots_.push_back(slot);
 }

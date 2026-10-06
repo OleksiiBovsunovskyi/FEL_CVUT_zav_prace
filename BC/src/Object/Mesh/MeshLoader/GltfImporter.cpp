@@ -105,6 +105,54 @@ void generateNormals(std::vector<GPUVertex>& vertices,
     }
 }
 
+/**
+ * Tangents of a primitive without TANGENT, from the UV derivatives of each
+ * triangle summed per vertex. xyz follows +U; w is the handedness of the
+ * bitangent, with V flipped to the direction the normal map's green channel runs.
+ */
+void generateTangents(std::vector<GPUVertex>& vertices,
+                      const std::vector<uint32_t>& indices) {
+    std::vector<glm::vec3> tangents(vertices.size(), glm::vec3{0.0f});
+    std::vector<glm::vec3> bitangents(vertices.size(), glm::vec3{0.0f});
+
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        const uint32_t ia = indices[i + 0];
+        const uint32_t ib = indices[i + 1];
+        const uint32_t ic = indices[i + 2];
+        const GPUVertex& a = vertices[ia];
+        const GPUVertex& b = vertices[ib];
+        const GPUVertex& c = vertices[ic];
+
+        const glm::vec3 e1 = glm::vec3{b.position} - glm::vec3{a.position};
+        const glm::vec3 e2 = glm::vec3{c.position} - glm::vec3{a.position};
+        const glm::vec2 d1 = b.texCoord - a.texCoord;
+        const glm::vec2 d2 = c.texCoord - a.texCoord;
+
+        const float det = d1.x * d2.y - d2.x * d1.y;
+        if (det == 0.0f) continue;
+        const float inverse = 1.0f / det;
+
+        const glm::vec3 tangent   = (e1 * d2.y - e2 * d1.y) * inverse;
+        const glm::vec3 bitangent = (e1 * d2.x - e2 * d1.x) * inverse;
+        for (const uint32_t index : {ia, ib, ic}) {
+            tangents[index]   += tangent;
+            bitangents[index] += bitangent;
+        }
+    }
+
+    for (size_t i = 0; i < vertices.size(); ++i) {
+        const glm::vec3 n{vertices[i].normal};
+        glm::vec3       t = tangents[i] - n * glm::dot(n, tangents[i]);
+        if (glm::dot(t, t) < 1e-12f)
+            t = glm::cross(n, std::abs(n.x) < 0.9f ? glm::vec3{1.0f, 0.0f, 0.0f}
+                                                    : glm::vec3{0.0f, 1.0f, 0.0f});
+        t = glm::normalize(t);
+
+        const float handedness = glm::dot(glm::cross(n, t), bitangents[i]) < 0.0f ? -1.0f : 1.0f;
+        vertices[i].tangent    = glm::vec4{t, handedness};
+    }
+}
+
 /// @return the bytes a data source holds itself, empty when it holds none.
 std::span<const std::byte> directBytes(const fastgltf::DataSource& source) {
     if (const auto* array = std::get_if<fastgltf::sources::Array>(&source))
@@ -597,6 +645,8 @@ bool importGltf(const fs::path& path, const GltfImportSettings& settings,
         const auto* normalAttribute = primitive.findAttribute("NORMAL");
         if (normalAttribute == primitive.attributes.end())
             generateNormals(vertices, indices);
+        if (primitive.findAttribute("TANGENT") == primitive.attributes.end())
+            generateTangents(vertices, indices);
 
         ImportedAsset::MeshStorage storage{};
         if (!generateClusterLOD(vertices, indices, settings.clusterLod, storage.lod)) {

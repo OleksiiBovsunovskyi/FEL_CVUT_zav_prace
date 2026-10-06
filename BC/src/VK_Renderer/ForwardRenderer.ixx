@@ -55,15 +55,16 @@ public:
      * @param materials base address of the Materials mega-buffer.
      * @param textureSet TextureManager's bindless set.
      * @param depthAttachment depth attachment prepared for this recording.
-     * @param drawCallback callback recorded inside the rendering pass.
+     * @param drawCallback callback recorded inside the rendering pass; may be empty.
      * @param timings marked after the mesh draw and after the callback.
+     * @param secondPass true to keep the color an earlier render of this recording drew.
      */
     void render(Frame::Recording& recording, const PreparedMeshDraw& meshDraw,
                 GpuPtr<GPUFrameData> frameData,
                 GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
                 const vk::RenderingAttachmentInfo& depthAttachment,
                 const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback,
-                GpuPassTimings& timings);
+                GpuPassTimings& timings, bool secondPass = false);
 
     /**
      * Receives the new rendering size.

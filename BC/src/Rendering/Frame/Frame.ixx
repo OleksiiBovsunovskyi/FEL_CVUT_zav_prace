@@ -59,11 +59,14 @@ public:
         }
 
         /**
-         * Transitions the color target and describes it as a cleared attachment.
-         * @param clearColor color to clear the target to.
+         * Transitions the color target and describes it as an attachment.
+         * @param clearColor color to clear the target to when loadOp is eClear.
+         * @param loadOp eClear, or eLoad to keep what an earlier pass of this recording drew.
          * @return color attachment descriptor.
          */
-        [[nodiscard]] vk::RenderingAttachmentInfo colorAttachment(vk::ClearColorValue clearColor);
+        [[nodiscard]] vk::RenderingAttachmentInfo colorAttachment(
+            vk::ClearColorValue clearColor,
+            vk::AttachmentLoadOp loadOp = vk::AttachmentLoadOp::eClear);
 
     private:
         friend class Frame;

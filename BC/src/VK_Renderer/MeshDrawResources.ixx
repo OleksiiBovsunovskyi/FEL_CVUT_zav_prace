@@ -14,6 +14,7 @@ export module MeshDrawResources;
 import vulkan;
 import vk_mem_alloc;
 import ComputePass;
+import DepthPyramid;
 import Frame;
 import GpuPassTimings;
 import FrameInFlightIndex;
@@ -32,6 +33,20 @@ export struct PreparedMeshDraw {
     BufferRegion            indirectCommands{};
     BufferRegion            indirectCount{};
     uint32_t                instanceCount = 0;
+
+    /// Entry of GPUMeshletBase per instance.
+    GpuPtr<GPUMeshletBase>       meshletBase{};
+    GpuPtr<GPUMeshletVisibility> previousMeshletVisibility{};
+    GpuPtr<GPUMeshletVisibility> meshletVisibility{};
+    /// Entries of `previousMeshletVisibility` the previous recording wrote.
+    uint32_t                     previousMeshletVisibilityCount = 0;
+    /// Meshlets of every instance.
+    uint32_t                     meshletCount = 0;
+
+    /// BUILD_PASS_FIRST or BUILD_PASS_SECOND.
+    uint32_t                     pass = BUILD_PASS_FIRST;
+    /// Pyramid the second pass tests meshlets against.
+    DepthPyramidView             hiZ{};
 
     [[nodiscard]] explicit operator bool() const {
         return instances.address != 0 && drawData.address != 0 &&
@@ -56,6 +71,15 @@ struct MeshDrawSpans {
 };
 
 /**
+ * A visibility buffer a slot replaced while another recording may still read it.
+ */
+struct RetiredBuffer {
+    AllocatedBuffer<DeviceOnlyBuffer> buffer;
+    /// MeshDrawResources::prepare() calls left before the buffer is freed.
+    uint32_t                          recordingsLeft = 0;
+};
+
+/**
  * The mesh-draw buffers one frame-in-flight slot owns.
  * Changed instances are written into instanceUpdates and scattered into
  * instances by scatter_instances.slang.
@@ -68,6 +92,19 @@ struct MeshDrawResourceSlot {
     AllocatedBuffer<DeviceOnlyBuffer>         commands;
     /// Holds one GPUDrawCommandCount.
     AllocatedBuffer<DeviceOnlyBuffer>         count;
+    /// One GPUInstanceVisibility per instance, written by the second pass of this slot's recording.
+    AllocatedBuffer<DeviceOnlyBuffer>         visibility;
+    /// One GPUMeshletBase per instance, written on the host for every recording.
+    AllocatedBuffer<HostDeviceReadableBuffer> meshletBases;
+    /// One GPUMeshletVisibility per meshlet, written by the second pass of this slot's recording.
+    AllocatedBuffer<DeviceOnlyBuffer>         meshletVisibility;
+
+    /// Entries of `visibility` the slot's last recording wrote.
+    uint32_t visibilityCount = 0;
+    /// Entries of `meshletVisibility` the slot's last recording wrote.
+    uint32_t meshletVisibilityCount = 0;
+    /// Meshlets `meshletVisibility` holds.
+    uint32_t meshletCapacity = 0;
 
     /**
      * Instance indices pending a write into `instances`.
@@ -82,12 +119,24 @@ struct MeshDrawResourceSlot {
      * Capacity only ever rises, so a frame that draws fewer reallocates nothing.
      * @param ctx supplies the device and the VMA allocator.
      * @param instanceCount instances the recording draws.
+     * @param retired receives the visibility buffers on growth.
      * @return false when the allocation failed or the count is past the largest
      *         capacity a slot can hold.
      * @note Growth discards the buffers, so every live index is marked pending.
      * @note The slot's previous submission must have completed.
      */
-    [[nodiscard]] bool reserve(VulkanContext& ctx, uint32_t instanceCount);
+    [[nodiscard]] bool reserve(VulkanContext& ctx, uint32_t instanceCount,
+                               std::vector<RetiredBuffer>& retired);
+
+    /**
+     * Grows meshletVisibility to hold at least `meshletCount` entries.
+     * @param ctx supplies the device and the VMA allocator.
+     * @param meshletCount meshlets of every instance the recording draws.
+     * @param retired receives the old meshletVisibility on growth.
+     * @return false when the allocation failed or the count is past the largest capacity.
+     */
+    [[nodiscard]] bool reserveMeshlets(VulkanContext& ctx, uint32_t meshletCount,
+                                       std::vector<RetiredBuffer>& retired);
 
     void destroy();
 
@@ -133,11 +182,13 @@ public:
     void destroy();
 
     /**
-     * Scatters the changed instances into the device array, records
-     * build_draw_commands.slang, and publishes its output for drawing.
+     * Scatters the changed instances into the device array, records the first
+     * pass of build_draw_commands.slang, and publishes its output for drawing.
+     * The first pass selects the instances the previous recording drew.
      * @param recording active frame recording.
      * @param instances every registered mesh instance, in DrawList order.
      * @param changed indices of `instances` written since the previous call;
+     * @param meshletCounts meshlets of each entry of `instances`, in the same order.
      * @param frame address of this recording's GPUFrameData.
      * @param timings marked once per compute pass recorded.
      * @return prepared indirect draw resources, or empty when no draw can be recorded.
@@ -146,11 +197,30 @@ public:
      */
     [[nodiscard]] PreparedMeshDraw prepare(
         Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
-        std::span<const uint32_t> changed, GpuPtr<GPUFrameData> frame,
+        std::span<const uint32_t> changed,
+        std::span<const uint32_t> meshletCounts, GpuPtr<GPUFrameData> frame,
         GpuPassTimings& timings);
+
+    /**
+     * Records the second pass of build_draw_commands.slang into the buffers
+     * MeshDrawResources::prepare() returned.
+     * The second pass dispatches the instances inside the frustum that the depth pyramid
+     * leaves visible; the draw of those dispatches takes the meshlets the first pass left undrawn.
+     * @param recording active frame recording.
+     * @param prepared result of MeshDrawResources::prepare() for this recording.
+     * @param frame address of this recording's GPUFrameData.
+     * @param hiZ pyramid of the depth the first pass drew; an empty view skips the occlusion test.
+     * @param timings marked after the pass.
+     * @return `prepared` set up for drawing the second pass; empty when `prepared` is empty.
+     * @note The first pass's draw must be recorded before this call, and the second pass's before the next recording.
+     */
+    [[nodiscard]] PreparedMeshDraw cullSecondPass(Frame::Recording& recording, const PreparedMeshDraw& prepared,
+                        GpuPtr<GPUFrameData> frame, const DepthPyramidView& hiZ,
+                        GpuPassTimings& timings);
 
 private:
     std::array<detail::MeshDrawResourceSlot, FRAMES_IN_FLIGHT> slots_;
+    std::vector<detail::RetiredBuffer> retired_;
     ComputePass<ScatterInstancesPush>  scatterInstances_;
     ComputePass<BuildDrawCommandsPush> buildDrawCommands_;
     VulkanContext*                     ctx_ = nullptr;

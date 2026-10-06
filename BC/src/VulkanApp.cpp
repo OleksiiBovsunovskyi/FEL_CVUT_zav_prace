@@ -186,6 +186,7 @@ void VulkanApp::drawUI() {
         ImGui::Checkbox("Show meshlets", &debugFlags.ShowMeshlets);
         ImGui::Checkbox("Show meshlet spheres", &debugFlags.ShowMeshletSpheres);
         ImGui::Checkbox("Draw normals", &debugFlags.DrawNormals);
+    ImGui::Checkbox("Disable occlusion culling", &debugFlags.DisableOcclusion);
         renderer_.setDebugFlags(debugFlags);
         ImGui::Separator();
         ImGui::TextUnformatted(window_.isUIMode() ? "UI mode  (Tab to capture the mouse)"
@@ -274,7 +275,7 @@ void VulkanApp::recordFrame(Frame::Recording& recording) {
     const GpuPtr<GPUMaterial> materials =
         buffers_.staticBase<StaticBufferKind::Materials>();
     if (!camera) {
-        renderer_.render(recording, {}, changed, glm::mat4{1.0f}, glm::vec3{0.0f},
+        renderer_.render(recording, {}, changed, {}, glm::mat4{1.0f}, glm::vec3{0.0f},
                          materials);
         return;
     }
@@ -282,7 +283,7 @@ void VulkanApp::recordFrame(Frame::Recording& recording) {
     const vk::Extent2D extent = recording.extent();
     const float aspect = static_cast<float>(extent.width) /
                          static_cast<float>(std::max(extent.height, 1u));
-    renderer_.render(recording, drawList.getItems(), changed,
+    renderer_.render(recording, drawList.getItems(), changed, drawList.getMeshletCounts(),
                      camera->viewProjection(aspect), camera->worldPosition(),
                      materials);
 }

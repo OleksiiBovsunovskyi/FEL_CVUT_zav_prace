@@ -84,10 +84,15 @@ public:
     /**
      * @param instance the record the mesh-draw buffers receive.
      * @param boundingSphere xyz = center, w = radius, in mesh space.
+     * @param meshletCount meshlets of the instance's mesh.
      * @return the handle that keeps the entry alive.
      */
     [[nodiscard]] DrawHandle add(const GPUMeshInstance& instance,
-                                 const glm::vec4& boundingSphere);
+                                 const glm::vec4& boundingSphere,
+                                 uint32_t meshletCount);
+
+    /// Parallel to DrawList::getItems().
+    [[nodiscard]] std::span<const uint32_t> getMeshletCounts() const { return meshletCounts_; }
 
     /// Dense, and not in registration order. Valid until the next add/remove.
     [[nodiscard]] std::span<const GPUMeshInstance> getItems() const { return items_; }
@@ -123,6 +128,7 @@ private:
     std::vector<GPUMeshInstance> items_;
     /// Parallel to items_.
     std::vector<glm::vec4>       boundingSpheres_;
+    std::vector<uint32_t>        meshletCounts_;
     std::vector<uint32_t>        slotToIndex_;
     std::vector<uint32_t>        indexToSlot_;
     std::vector<uint32_t>        freeSlots_;

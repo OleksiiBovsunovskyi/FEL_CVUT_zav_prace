@@ -95,7 +95,8 @@ void Frame::transition(ImageUse imageUse) {
     recordingUse_ = imageUse;
 }
 
-vk::RenderingAttachmentInfo Frame::Recording::colorAttachment(vk::ClearColorValue clearColor) {
+vk::RenderingAttachmentInfo Frame::Recording::colorAttachment(vk::ClearColorValue clearColor,
+                                                              vk::AttachmentLoadOp loadOp) {
     const auto colorAccess = vk::AccessFlagBits2::eColorAttachmentRead |
                              vk::AccessFlagBits2::eColorAttachmentWrite;
     frame_.transition({vk::ImageLayout::eColorAttachmentOptimal,
@@ -104,7 +105,7 @@ vk::RenderingAttachmentInfo Frame::Recording::colorAttachment(vk::ClearColorValu
     vk::RenderingAttachmentInfo color{};
     color.imageView = frame_.frameColor_.view().get();
     color.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    color.loadOp = vk::AttachmentLoadOp::eClear;
+    color.loadOp = loadOp;
     color.storeOp = vk::AttachmentStoreOp::eStore;
     color.clearValue.color = clearColor;
     return color;

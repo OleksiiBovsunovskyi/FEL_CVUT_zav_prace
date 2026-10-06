@@ -2,6 +2,7 @@ import gpu_types;
 import AtomicAdd;
 import mesh_vertex;
 import SphereVisibilityTest;
+import HiZOcclusion;
 
 [[vk::push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
 
@@ -31,18 +32,44 @@ void meshMain(
     const GPUMeshlet meshlet = mesh.meshlets[groupId]; 
 
     const float4 meshletSphere = worldSphere(instance.transform, meshlet.boundingSphere);
-    const bool   visible       = sphereVisibleWorld(pc.frame->camera.viewProj, meshletSphere);
+    const bool   inFrustum     = sphereVisibleWorld(pc.frame->camera.viewProj, meshletSphere);
+
+    const bool secondPass = pc.pass == BUILD_PASS_SECOND;
+    const uint visibilityIndex = pc.meshletBase[draw.instanceIndex].first + groupId;
+
+    // The first pass drew the meshlet when the previous recording found it visible.
+    // Both passes evaluate this from the same data, so no meshlet is drawn twice or missed.
+    bool drawnInFirstPass = false;
+    if (inFrustum && draw.drawnInFirstPass != 0 && visibilityIndex < pc.previousMeshletVisibilityCount)
+        drawnInFirstPass = pc.previousMeshletVisibility[visibilityIndex].visible != 0;
+
+    // With occlusion disabled the first pass is the only pass and draws every frustum-visible meshlet.
+    const bool occlusionOff = pc.frame->debugDisableOcclusion != 0;
+
+    bool occluded = false;
+    if (secondPass && inFrustum)
+        occluded = occludedByHiZ(pc.frame->camera.viewProj, meshletSphere, pc.hiZ,
+                                 uint2(pc.hiZWidth, pc.hiZHeight), pc.hiZLevels);
+
+    const bool visible = occlusionOff ? inFrustum
+                       : secondPass   ? (inFrustum && !occluded && !drawnInFirstPass)
+                                      : drawnInFirstPass;
     SetMeshOutputCounts(visible ? meshlet.vertexCount  : 0,
                         visible ? meshlet.triangleCount : 0);
 
-    // Count metrics
     if (laneId == 0) {
+        if (secondPass)
+            pc.meshletVisibility[visibilityIndex].visible = (inFrustum && !occluded) ? 1 : 0;
+
+        // Count metrics
         GPUDrawCounters* counters = pc.frame->drawCounters;
         if (visible) {
             atomicAdd(&counters->meshletsDrawn, 1);
             atomicAdd(&counters->trianglesDrawn, meshlet.triangleCount);
-        } else {
+        } else if ((secondPass || occlusionOff) && !inFrustum) {
             atomicAdd(&counters->meshletsCulled, 1);
+        } else if (secondPass && occluded) {
+            atomicAdd(&counters->meshletsOccluded, 1);
         }
     }
     if (!visible) return;

@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
          * model in Assets and copies them next to the executable. */
         const std::filesystem::path modelPath =
             argc > 1 ? std::filesystem::path{argv[1]}
-                     : std::filesystem::path{"Assets"} / "City_scene_pgr.pmma";
+                     : std::filesystem::path{"Assets"} / "Bistro.pmma";
         
         VulkanApp app{argc > 2 ? static_cast<uint32_t>(std::atoi(argv[2])) : 0u};
         app.init();

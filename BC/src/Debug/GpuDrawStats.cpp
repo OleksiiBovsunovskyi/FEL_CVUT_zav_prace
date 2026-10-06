@@ -54,12 +54,24 @@ void GpuDrawStats::endFrame(Frame::Recording& recording) {
 }
 
 void GpuDrawStats::drawUI() const {
-    const uint32_t meshlets = latest_.meshletsDrawn + latest_.meshletsCulled;
+    const uint32_t meshlets =
+        latest_.meshletsDrawn + latest_.meshletsCulled + latest_.meshletsOccluded;
 
-    ImGui::Text("objects   %7u drawn  %7u culled  of %7u", latest_.instancesDrawn,
-                latest_.instances - latest_.instancesDrawn, latest_.instances);
-    ImGui::Text("meshlets  %7u drawn  %7u culled  of %7u", latest_.meshletsDrawn,
-                latest_.meshletsCulled, meshlets);
-    ImGui::Text("triangles %7u drawn  of %7u submitted", latest_.trianglesDrawn,
-                latest_.trianglesSubmitted);
+    const auto percent = [](uint32_t part, uint32_t whole) {
+        return whole != 0 ? 100.0 * part / whole : 0.0;
+    };
+    const uint32_t instancesCulled  = latest_.instances - latest_.instancesDrawn;
+    const uint32_t trianglesCulled  = latest_.trianglesSubmitted - latest_.trianglesDrawn;
+
+    ImGui::Text("objects   %7u drawn  %7u culled (%.1f%%)  of %7u", latest_.instancesDrawn,
+                instancesCulled, percent(instancesCulled, latest_.instances), latest_.instances);
+    ImGui::Text("occluded  %7u (%.1f%% of objects)", latest_.instancesOccluded,
+                percent(latest_.instancesOccluded, latest_.instances));
+    ImGui::Text("meshlets  %7u drawn  %7u culled (%.1f%%)  %7u occluded (%.1f%%)  of %7u",
+                latest_.meshletsDrawn, latest_.meshletsCulled,
+                percent(latest_.meshletsCulled, meshlets), latest_.meshletsOccluded,
+                percent(latest_.meshletsOccluded, meshlets), meshlets);
+    ImGui::Text("triangles %7u drawn  %7u culled (%.1f%%)  of %7u submitted",
+                latest_.trianglesDrawn, trianglesCulled,
+                percent(trianglesCulled, latest_.trianglesSubmitted), latest_.trianglesSubmitted);
 }
