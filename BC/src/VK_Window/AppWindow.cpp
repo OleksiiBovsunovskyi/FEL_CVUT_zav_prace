@@ -44,6 +44,8 @@ void glfwMouseButtonCB(GLFWwindow*, int button, int action, int /*mods*/) {
 } // namespace
 
 
+
+
 bool AppWindow::init(int width, int height, const char* title) {
     instance_ = this;
     width_   = width;
@@ -172,8 +174,8 @@ int AppWindow::getElapsedMs() const {
     return static_cast<int>(glfwGetTime() * 1000.0);
 }
 
-void AppWindow::setUIMode(bool enable) {
-    uiMode_ = enable;
+void AppWindow::setCursorMode(ECursorMode cursorMode) {
+    cursorMode_ = cursorMode;
     applyCursorMode();
 }
 
@@ -182,7 +184,7 @@ void AppWindow::applyCursorMode() {
 
     ImGuiIO& io = ImGui::GetIO();
 
-    if (uiMode_) {
+    if (cursorMode_ == ECursorMode::UI) {
         io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
         glfwSetInputMode(asWindow(handle_), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
     } else {
@@ -212,7 +214,8 @@ void AppWindow::onKey(int key, int action) {
         return;
     }
     if (down && key == GLFW_KEY_TAB) {
-        setUIMode(!uiMode_);
+        //toggle cursor mode 
+        setCursorMode(cursorMode_ == ECursorMode::UI ? ECursorMode::App : ECursorMode::UI);
         return;
     }
 
@@ -226,7 +229,7 @@ void AppWindow::onKey(int key, int action) {
 }
 
 void AppWindow::onCursorPos(double x, double y) {
-    if (uiMode_) return;
+    if (cursorMode_ == ECursorMode::UI) return;
     if (ImGui::GetIO().WantCaptureMouse) return;
 
     if (firstMouse_) {
@@ -246,6 +249,6 @@ void AppWindow::onCursorPos(double x, double y) {
 }
 
 void AppWindow::onMouseButton(int button, int action) {
-    if (uiMode_ || ImGui::GetIO().WantCaptureMouse) return;
+    if (cursorMode_ == ECursorMode::UI || ImGui::GetIO().WantCaptureMouse) return;
     if (onMouseButton_) onMouseButton_(button, action);
 }

@@ -7,6 +7,7 @@ bin/
 !PGR-sem/framework/*/bin/
 cmake-build-*/
 [Dd]ebug/
+!BC/src/Debug/
 [Rr]elease/
 [Rr]elWithDebInfo/
 [Mm]inSizeRel/

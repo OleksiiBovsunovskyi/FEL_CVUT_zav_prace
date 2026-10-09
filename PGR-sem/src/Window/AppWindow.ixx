@@ -30,7 +30,7 @@ public:
     /// ASCII, case-insensitive
     bool isKeyDown(unsigned char key) const;
     bool isUIMode()                   const { return uiMode_; }
-    void setUIMode(bool enable);
+    void setCursorMode(bool enable);
 
     int getWidth()   const { return width_; }
     int getHeight()  const { return height_; }

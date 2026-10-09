@@ -6,6 +6,13 @@ module;
 export module VkWindow;
 
 import vulkan;
+
+export enum  class ECursorMode
+{
+    UI,
+    App,
+};
+
 /**
  * Window + input + ImGui host, backed by GLFW. Vulkan port of Window/AppWindow.ixx.
  */
@@ -56,8 +63,8 @@ public:
 
     // --- Input / state ------------------------------------------------------
 
-    bool isUIMode()                   const { return uiMode_; }
-    void setUIMode(bool enable);
+    ECursorMode getCursorMode()                   const { return cursorMode_ ; }
+    void setCursorMode(ECursorMode cursorMode);
 
     int getWidth()   const { return width_; }
     int getHeight()  const { return height_; }
@@ -78,7 +85,7 @@ private:
 
     int  width_ = 0, height_ = 0;
     int  centerX_ = 0, centerY_ = 0;
-    bool uiMode_ = false;
+    ECursorMode cursorMode_ = ECursorMode::App;
     bool firstMouse_ = true;
     double lastMouseX_ = 0.0, lastMouseY_ = 0.0;
 

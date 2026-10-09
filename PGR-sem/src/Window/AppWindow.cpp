@@ -155,7 +155,7 @@ bool AppWindow::isKeyDown(unsigned char key) const {
     return keys_[static_cast<unsigned char>(std::toupper(key))];
 }
 
-void AppWindow::setUIMode(bool enable) {
+void AppWindow::setCursorMode(bool enable) {
     uiMode_ = enable;
     applyCursorMode();
 }
@@ -194,7 +194,7 @@ void AppWindow::onKey(int key, int action) {
         return;
     }
     if (down && key == GLFW_KEY_TAB) {
-        setUIMode(!uiMode_);
+        setCursorMode(!uiMode_);
         return;
     }
 

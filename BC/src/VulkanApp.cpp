@@ -57,7 +57,6 @@ VulkanApp::~VulkanApp() {
 void VulkanApp::init() {
     if (!window_.init(WIN_WIDTH, WIN_HEIGHT, WIN_TITLE))
         throw std::runtime_error("AppWindow::init failed");
-    window_.setUIMode(true);
 
     ctx_.setDebugMessageSink(
         [this](const std::string& message) { shaderPrint_.push(message); });
@@ -188,7 +187,7 @@ void VulkanApp::drawUI() {
         ImGui::Checkbox("Draw normals", &debugFlags.DrawNormals);
         renderer_.setDebugFlags(debugFlags);
         ImGui::Separator();
-        ImGui::TextUnformatted(window_.isUIMode() ? "UI mode  (Tab to capture the mouse)"
+        ImGui::TextUnformatted(window_.getCursorMode() == ECursorMode::UI ? "UI mode  (Tab to capture the mouse)"
                                                   : "Mouse captured  (Tab for UI)");
         ImGui::TextUnformatted("WASD moves, E/Q rise and fall, Esc quits");
     }
