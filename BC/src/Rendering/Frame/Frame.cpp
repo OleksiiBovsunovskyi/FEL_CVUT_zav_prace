@@ -95,7 +95,7 @@ void Frame::transition(ImageUse imageUse) {
     recordingUse_ = imageUse;
 }
 
-vk::RenderingAttachmentInfo Frame::Recording::colorAttachment(vk::ClearColorValue clearColor) {
+vk::RenderingAttachmentInfo Frame::Recording::getColorAttachment(vk::ClearColorValue clearColor) {
     const auto colorAccess = vk::AccessFlagBits2::eColorAttachmentRead |
                              vk::AccessFlagBits2::eColorAttachmentWrite;
     frame_.transition({vk::ImageLayout::eColorAttachmentOptimal,

@@ -9,6 +9,7 @@ module ForwardRenderer;
 
 import vulkan;
 import VkUtil;
+import Logger;
 
 bool ForwardRenderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                            const std::filesystem::path& meshShaderPath,
@@ -18,6 +19,7 @@ bool ForwardRenderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
     if (!meshDraw_.init(ctx.device(), shaderLoader, meshShaderPath, fragmentShaderPath,
                         colorFormat, DEPTH_FORMAT, ctx.cmdDrawMeshTasksIndirectCount(),
                         textureLayout)) {
+        logError("ForwardRenderer::init: failed to initialize mesh draw");
         destroy();
         return false;
     }
@@ -42,7 +44,7 @@ void ForwardRenderer::render(
     const vk::CommandBuffer cmd = recording.commandBuffer();
 
     const vk::RenderingAttachmentInfo colorAttachment =
-        recording.colorAttachment(vk::ClearColorValue{std::array<float, 4>{0.2f, 0.1f, 0.3f, 1.0f}});
+        recording.getColorAttachment(vk::ClearColorValue{std::array<float, 4>{0.2f, 0.1f, 0.3f, 1.0f}});
     vk::RenderingInfo rendering{};
     rendering.renderArea = vk::Rect2D{{0, 0}, recording.extent()};
     rendering.layerCount = 1;
@@ -65,7 +67,7 @@ void ForwardRenderer::render(
     }
     if (drawCallback) {
         drawCallback(cmd, recording.extent());
-        timings.mark(cmd, "draw callback");
+            timings.mark(cmd, "draw callback");
     }
     cmd.endRendering();
 }

@@ -63,7 +63,7 @@ public:
          * @param clearColor color to clear the target to.
          * @return color attachment descriptor.
          */
-        [[nodiscard]] vk::RenderingAttachmentInfo colorAttachment(vk::ClearColorValue clearColor);
+        [[nodiscard]] vk::RenderingAttachmentInfo getColorAttachment(vk::ClearColorValue clearColor);
 
     private:
         friend class Frame;

@@ -56,7 +56,7 @@ bool MeshDraw::init(vk::Device device, ShaderLoader& shaderLoader,
     vk::ShaderModule meshShader = shaderLoader.load(meshShaderPath);
     vk::ShaderModule fragShader = shaderLoader.load(fragmentShaderPath);
     if (meshShader && fragShader) {
-        pipeline_ = createMeshPipeline(device_, pipelineLayout_, meshShader, fragShader,
+            pipeline_ = createMeshPipeline(device_, pipelineLayout_, meshShader, fragShader,
                                        colorFormat, depthFormat);
     } else {
         logError("MeshDraw: failed to load " + meshShaderPath.string() + " / " +
