@@ -137,16 +137,16 @@ public:
      * build_draw_commands.slang, and publishes its output for drawing.
      * @param recording active frame recording.
      * @param instances every registered mesh instance, in DrawList order.
-     * @param changed indices of `instances` written since the previous call;
-     * @param frame address of this recording's GPUFrameData.
+     * @param changedInstances indices of `instances` written since the previous call;
+     * @param frameData address of this recording's GPUFrameData.
      * @param timings marked once per compute pass recorded.
      * @return prepared indirect draw resources, or empty when no draw can be recorded.
      * @note Must be called once per recording, including when `instances` is
      *       empty.
      */
     [[nodiscard]] PreparedMeshDraw prepare(
-        Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
-        std::span<const uint32_t> changed, GpuPtr<GPUFrameData> frame,
+        const Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
+        std::span<const uint32_t> changedInstances, GpuPtr<GPUFrameData> frameData,
         GpuPassTimings& timings);
 
 private:

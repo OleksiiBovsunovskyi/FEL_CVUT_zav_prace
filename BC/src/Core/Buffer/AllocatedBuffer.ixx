@@ -233,12 +233,12 @@ public:
 
     /**
      * Declares the access the following commands need, and records it.
-     * @param next stage and access those commands use.
+     * @param nextAccess stage and access those commands use.
      * @return the barrier to record, nothing when the recorded access already
      *         covers it.
      * @note The barrier must reach the command buffer before those commands.
      */
-    [[nodiscard]] std::optional<vk::BufferMemoryBarrier2> use(BufferAccess next);
+    [[nodiscard]] std::optional<vk::BufferMemoryBarrier2> use(BufferAccess nextAccess);
 
     /// @return the access recorded by the last AllocatedBuffer::use().
     [[nodiscard]] BufferAccess access() const { return access_; }
@@ -394,26 +394,26 @@ void AllocatedBuffer<Placement>::readNonBlocking(
 
 template <typename Placement>
 std::optional<vk::BufferMemoryBarrier2> AllocatedBuffer<Placement>::use(
-    BufferAccess next) {
+    BufferAccess nextAccess) {
     const BufferAccess previous     = access_;
-    const bool         readAfterRead = previous.readOnly() && next.readOnly();
+    const bool         readAfterRead = previous.readOnly() && nextAccess.readOnly();
 
     if (readAfterRead) {
-        access_.stageMask  |= next.stageMask;
-        access_.accessMask |= next.accessMask;
+        access_.stageMask  |= nextAccess.stageMask;
+        access_.accessMask |= nextAccess.accessMask;
     } else {
-        access_ = next;
+        access_ = nextAccess;
     }
 
     if (!previous.defined()) return std::nullopt;
-    if (readAfterRead && (previous.stageMask & next.stageMask) == next.stageMask)
+    if (readAfterRead && (previous.stageMask & nextAccess.stageMask) == nextAccess.stageMask)
         return std::nullopt;
 
     vk::BufferMemoryBarrier2 barrier{};
     barrier.srcStageMask        = previous.stageMask;
     barrier.srcAccessMask       = previous.accessMask;
-    barrier.dstStageMask        = next.stageMask;
-    barrier.dstAccessMask       = next.accessMask;
+    barrier.dstStageMask        = nextAccess.stageMask;
+    barrier.dstAccessMask       = nextAccess.accessMask;
     barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
     barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
     barrier.buffer              = buffer_;

@@ -130,7 +130,7 @@ export inline void copy(vk::CommandBuffer cmd, const BufferRegion& src,
 }
 
 /// Fills a range with zeroes. The offset and size must be 4-byte aligned.
-export inline void zero(vk::CommandBuffer cmd, const BufferRegion& region) {
+export inline void fillBufferWithZero(vk::CommandBuffer cmd, const BufferRegion& region) {
     if (!region) return;
     cmd.fillBuffer(region.buffer, region.offset, region.size, 0);
 }

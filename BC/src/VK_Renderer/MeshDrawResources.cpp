@@ -73,7 +73,7 @@ constexpr BufferAccess INDIRECT_READ{vk::PipelineStageFlagBits2::eDrawIndirect,
                                      vk::AccessFlagBits2::eIndirectCommandRead};
 
 /// Keeps whichever barriers a group of AllocatedBuffer::use() calls produced.
-void keep(std::vector<vk::BufferMemoryBarrier2>& barriers,
+void addBarrierIfPresent(std::vector<vk::BufferMemoryBarrier2>& barriers,
           std::optional<vk::BufferMemoryBarrier2> barrier) {
     if (barrier) barriers.push_back(*barrier);
 }
@@ -174,25 +174,26 @@ void MeshDrawResources::destroy() {
 }
 
 MappedSpan<GPUMeshInstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdates(
-    std::span<const GPUMeshInstance> instances) {
+    const std::span<const GPUMeshInstance> instances) {
     const auto instanceCount = static_cast<uint32_t>(instances.size());
     const auto pendingCount  = static_cast<uint32_t>(indicesPendingUpload.size());
 
-    const MappedSpan<GPUMeshInstanceUpdate> updates =
-        instanceUpdates.span<GPUMeshInstanceUpdate>(
-            std::min(pendingCount, instanceCount));
+    
+    const MappedSpan<GPUMeshInstanceUpdate> updates =                   //Pending may contain duplicates, or invalid instances 
+        instanceUpdates.span<GPUMeshInstanceUpdate>(                    //at its tail (See draw list), therefore it may be bigger than instance count
+            std::min(pendingCount, instanceCount));  
 
     uint32_t written = 0;
     if (pendingCount >= instanceCount) {
         /* Repeats make the pending list longer than the update buffer holds.*/
         for (uint32_t index = 0; index < instanceCount; ++index)
             updates.host[written++] =
-                GPUMeshInstanceUpdate{index, {}, instances[index]};
+                GPUMeshInstanceUpdate{.index = index, ._padding = {}, .instance = instances[index]};
     } else {
         for (const uint32_t index : indicesPendingUpload) {
-            if (index >= instanceCount) continue;
+            if (index >= instanceCount) continue; //Skip invalid (deleted) instances, see draw list 
             updates.host[written++] =
-                GPUMeshInstanceUpdate{index, {}, instances[index]};
+                GPUMeshInstanceUpdate{.index = index, ._padding = {}, .instance = instances[index]};
         }
     }
     indicesPendingUpload.clear();
@@ -201,20 +202,24 @@ MappedSpan<GPUMeshInstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdat
 }
 
 PreparedMeshDraw MeshDrawResources::prepare(
-    Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
-    std::span<const uint32_t> changed, GpuPtr<GPUFrameData> frame,
+    const Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
+    std::span<const uint32_t> changedInstances, GpuPtr<GPUFrameData> frameData,
     GpuPassTimings& timings) {
     /* Every slot has its own device buffer, so each one receives the change. */
-    for (auto& target : slots_)
+    for (detail::MeshDrawResourceSlot& target : slots_)
         target.indicesPendingUpload.insert(target.indicesPendingUpload.end(),
-                                           changed.begin(), changed.end());
+                                           changedInstances.begin(), changedInstances.end());
 
+    
+    //Instance buffer is empty, or there was an error, nothing to do
     if (instances.empty() || instances.size() > std::numeric_limits<uint32_t>::max()) return {};
 
+    //Reserve space in the corresponding slot
     const uint32_t instanceCount = static_cast<uint32_t>(instances.size());
     detail::MeshDrawResourceSlot& slot = recording.select(slots_);
     if (!ctx_ || !slot.reserve(*ctx_, instanceCount)) return {};
-
+    
+    
     const detail::MeshDrawSpans spans = slot.spans(instanceCount);
     if (!spans) return {};
 
@@ -224,8 +229,8 @@ PreparedMeshDraw MeshDrawResources::prepare(
     const vk::CommandBuffer commandBuffer = recording.commandBuffer();
     barriers_.clear();
 
-    if (updates) keep(barriers_, slot.instances.use(COMPUTE_SCATTER_WRITE));
-    keep(barriers_, slot.count.use(TRANSFER_WRITE));
+    if (updates) addBarrierIfPresent(barriers_, slot.instances.use(COMPUTE_SCATTER_WRITE));
+    addBarrierIfPresent(barriers_, slot.count.use(TRANSFER_WRITE));
     recordBarriers(commandBuffer, barriers_);
     barriers_.clear();
 
@@ -235,19 +240,19 @@ PreparedMeshDraw MeshDrawResources::prepare(
     scatter.updateCount = updates.gpu.count;
     scatterInstances_.record(commandBuffer, scatter, updates.gpu.count);
 
-    zero(commandBuffer, spans.count.region);
+    fillBufferWithZero(commandBuffer, spans.count.region);
 
     timings.mark(commandBuffer, "scatter_instances");
 
-    keep(barriers_, slot.instances.use(COMPUTE_READ));
-    keep(barriers_, slot.drawData.use(COMPUTE_WRITE));
-    keep(barriers_, slot.commands.use(COMPUTE_WRITE));
-    keep(barriers_, slot.count.use(COMPUTE_WRITE));
+    addBarrierIfPresent(barriers_, slot.instances.use(COMPUTE_READ));
+    addBarrierIfPresent(barriers_, slot.drawData.use(COMPUTE_WRITE));
+    addBarrierIfPresent(barriers_, slot.commands.use(COMPUTE_WRITE));
+    addBarrierIfPresent(barriers_, slot.count.use(COMPUTE_WRITE));
     recordBarriers(commandBuffer, barriers_);
     barriers_.clear();
 
     BuildDrawCommandsPush push{};
-    push.frame = frame;
+    push.frame = frameData;
     push.instances = spans.instances.gpu.data;
     push.drawData = spans.drawData.gpu.data;
     push.commands = spans.commands.gpu.data;
@@ -255,10 +260,10 @@ PreparedMeshDraw MeshDrawResources::prepare(
     push.instanceCount = instanceCount;
     buildDrawCommands_.record(commandBuffer, push, instanceCount);
 
-    keep(barriers_, slot.instances.use(MESH_SHADER_READ));
-    keep(barriers_, slot.drawData.use(MESH_SHADER_READ));
-    keep(barriers_, slot.commands.use(INDIRECT_READ));
-    keep(barriers_, slot.count.use(INDIRECT_READ));
+    addBarrierIfPresent(barriers_, slot.instances.use(MESH_SHADER_READ));
+    addBarrierIfPresent(barriers_, slot.drawData.use(MESH_SHADER_READ));
+    addBarrierIfPresent(barriers_, slot.commands.use(INDIRECT_READ));
+    addBarrierIfPresent(barriers_, slot.count.use(INDIRECT_READ));
     recordBarriers(commandBuffer, barriers_);
     timings.mark(commandBuffer, "build_draw_commands");
 
