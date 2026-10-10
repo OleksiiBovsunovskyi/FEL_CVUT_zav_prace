@@ -239,10 +239,10 @@ PreparedMeshDraw MeshDrawResources::prepare(
     scatter.instances   = spans.instances.gpu.data;
     scatter.updateCount = updates.gpu.count;
     scatterInstances_.record(commandBuffer, scatter, updates.gpu.count);
-
-    fillBufferWithZero(commandBuffer, spans.count.region);
-
+    
     timings.mark(commandBuffer, "scatter_instances");
+    
+    fillBufferWithZero(commandBuffer, spans.count.region);
 
     addBarrierIfPresent(barriers_, slot.instances.use(COMPUTE_READ));
     addBarrierIfPresent(barriers_, slot.drawData.use(COMPUTE_WRITE));
