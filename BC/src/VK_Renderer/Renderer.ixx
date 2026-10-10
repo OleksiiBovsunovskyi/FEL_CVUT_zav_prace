@@ -40,7 +40,7 @@ public:
     [[nodiscard]] bool init(VulkanContext& ctx, vk::Extent2D extent);
     void destroy();
     [[nodiscard]] bool resize(vk::Extent2D extent);
-    [[nodiscard]] vk::RenderingAttachmentInfo depthAttachment(
+    [[nodiscard]] vk::RenderingAttachmentInfo getDepthAttachment(
         Frame::Recording& recording);
 
 private:

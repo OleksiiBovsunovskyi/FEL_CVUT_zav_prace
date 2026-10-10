@@ -44,7 +44,7 @@ bool SharedRenderTargets::resize(vk::Extent2D extent) {
     return true;
 }
 
-vk::RenderingAttachmentInfo SharedRenderTargets::depthAttachment(
+vk::RenderingAttachmentInfo SharedRenderTargets::getDepthAttachment(
     Frame::Recording& recording) {
     const vk::CommandBuffer cmd = recording.commandBuffer();
     DepthRenderTarget& depth = *recording.select(depth_);
@@ -141,7 +141,7 @@ void Renderer::render(Frame::Recording& recording,
     const PreparedMeshDraw meshDraw =
         meshDrawResources_.prepare(recording, instances, changed, frame, timings_);
     const vk::RenderingAttachmentInfo depthAttachment =
-        sharedTargets_.depthAttachment(recording);
+        sharedTargets_.getDepthAttachment(recording);
     forward_.render(recording, meshDraw, frame, materials,
                     textures_ ? textures_->set() : nullptr, depthAttachment, draw_,
                     timings_);
