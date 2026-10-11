@@ -288,10 +288,12 @@ export struct alignas(16) GPUFrameData {
     GpuBool                 debugShowMeshlets;
     GpuBool                 debugShowMeshletSpheres;
     GpuBool                 debugDrawNormals;
-    uint32_t                _padding[3]{};
+    GpuBool                 useHiZOC;
+    glm::mat4               hiZViewProj;
+    uint32_t                padding[2];
 };
 
-static_assert(sizeof(GPUFrameData) == 112);
+static_assert(sizeof(GPUFrameData) == 176);
 
 /**
  * Arguments to build_draw_commands.comp.
@@ -332,3 +334,20 @@ export struct GPUMeshDrawPush {
 };
 
 static_assert(sizeof(GPUMeshDrawPush) == 32);
+
+
+export struct GPUDepthPyramidCounter {
+    uint32_t finishedWorkgroups;
+};
+static_assert(sizeof(GPUDepthPyramidCounter) == 4);
+
+export struct GPUDepthPyramidPush {
+    GpuPtr<GPUDepthPyramidCounter> counter;
+};
+static_assert(sizeof(GPUDepthPyramidPush) == 8);
+
+export struct GPUHIZOCPush {
+    GpuPtr<GPUFrameData> frame;
+    GpuPtr<GPUMeshInstance> instances;
+};
+static_assert(sizeof(GPUHIZOCPush) == 16);

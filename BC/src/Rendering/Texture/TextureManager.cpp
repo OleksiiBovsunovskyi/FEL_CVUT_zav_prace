@@ -1,6 +1,7 @@
 module;
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -19,6 +20,9 @@ import AssetData;
 namespace {
 
 constexpr vk::DeviceSize TEXTURE_UPLOAD_ALIGNMENT = 16;
+
+constexpr uint32_t SAMPLED_BINDING = 0;
+constexpr uint32_t STORAGE_BINDING = 1;
 
 /// @return level n of an image that size, down to 1x1.
 vk::Extent2D levelExtent(vk::Extent2D extent, uint32_t level) {
@@ -49,14 +53,20 @@ bool TextureManager::init(VulkanContext& ctx) {
     properties.pNext = &IndexingProperties;
     ctx.physicalDevice().getProperties2(&properties);
 
-    /* A set may exceed neither allowance. */
-    capacity_ = std::min(IndexingProperties.maxDescriptorSetUpdateAfterBindSampledImages,
-                         IndexingProperties.maxPerStageDescriptorUpdateAfterBindSampledImages);
-    if (capacity_ == 0) {
-        logError("TextureManager: the device allows no update-after-bind sampled images");
+    storageCapacity_ = std::min({MAX_STORAGE_IMAGES,
+                                 IndexingProperties.maxDescriptorSetUpdateAfterBindStorageImages,
+                                 IndexingProperties.maxPerStageDescriptorUpdateAfterBindStorageImages});
+    /* Compute sees both arrays, so together they stay within one stage's resources. */
+    const uint32_t stageResources = IndexingProperties.maxPerStageUpdateAfterBindResources;
+    imageCapacity_ = std::min({IndexingProperties.maxDescriptorSetUpdateAfterBindSampledImages,
+                          IndexingProperties.maxPerStageDescriptorUpdateAfterBindSampledImages,
+                          stageResources > storageCapacity_ ? stageResources - storageCapacity_ : 0u});
+    if (imageCapacity_ == 0 || storageCapacity_ == 0) {
+        logError("TextureManager: the device allows no update-after-bind sampled or storage images");
         return false;
     }
-    logMessage("TextureManager: " + std::to_string(capacity_) + " texture slots");
+    logMessage("TextureManager: " + std::to_string(imageCapacity_) + " texture slots, " +
+               std::to_string(storageCapacity_) + " storage slots");
 
     vk::SamplerCreateInfo samplerInfo{};
     samplerInfo.magFilter    = vk::Filter::eLinear;
@@ -72,24 +82,31 @@ bool TextureManager::init(VulkanContext& ctx) {
         return false;
     }
 //TODO: more fixed samplers determined per texture at load time
-    vk::DescriptorSetLayoutBinding binding{};
-    binding.binding         = 0;
-    binding.descriptorType  = vk::DescriptorType::eCombinedImageSampler;
-    binding.descriptorCount = capacity_;
-    binding.stageFlags      = vk::ShaderStageFlagBits::eFragment;
+    std::array<vk::DescriptorSetLayoutBinding, 2> bindings{};
+    bindings[SAMPLED_BINDING].binding         = SAMPLED_BINDING;
+    bindings[SAMPLED_BINDING].descriptorType  = vk::DescriptorType::eCombinedImageSampler;
+    bindings[SAMPLED_BINDING].descriptorCount = imageCapacity_;
+    bindings[SAMPLED_BINDING].stageFlags      = vk::ShaderStageFlagBits::eFragment |
+                                                vk::ShaderStageFlagBits::eMeshEXT |
+                                                vk::ShaderStageFlagBits::eCompute;
+    bindings[STORAGE_BINDING].binding         = STORAGE_BINDING;
+    bindings[STORAGE_BINDING].descriptorType  = vk::DescriptorType::eStorageImage;
+    bindings[STORAGE_BINDING].descriptorCount = storageCapacity_;
+    bindings[STORAGE_BINDING].stageFlags      = vk::ShaderStageFlagBits::eCompute;
 
-    /* Partially bound: the array is declared at the device limit and only the
+    /* Partially bound: the arrays are declared at full capacity and only the
      * slots handed out are written. */
-    const vk::DescriptorBindingFlags bindingFlags =
+    const vk::DescriptorBindingFlags flags =
         vk::DescriptorBindingFlagBits::ePartiallyBound |
         vk::DescriptorBindingFlagBits::eUpdateAfterBind;
+    const std::array<vk::DescriptorBindingFlags, 2> bindingFlags{flags, flags};
     vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
-    flagsInfo.bindingCount  = 1;
-    flagsInfo.pBindingFlags = &bindingFlags;
+    flagsInfo.bindingCount  = static_cast<uint32_t>(bindingFlags.size());
+    flagsInfo.pBindingFlags = bindingFlags.data();
 
     vk::DescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings    = &binding;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings    = bindings.data();
     layoutInfo.flags = vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool;
     layoutInfo.pNext = &flagsInfo;
     if (device_.createDescriptorSetLayout(&layoutInfo, nullptr, &layout_) !=
@@ -99,12 +116,13 @@ bool TextureManager::init(VulkanContext& ctx) {
         return false;
     }
 
-    const vk::DescriptorPoolSize poolSize{vk::DescriptorType::eCombinedImageSampler,
-                                          capacity_};
+    const std::array<vk::DescriptorPoolSize, 2> poolSizes{
+        vk::DescriptorPoolSize{vk::DescriptorType::eCombinedImageSampler, imageCapacity_},
+        vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, storageCapacity_}};
     vk::DescriptorPoolCreateInfo poolInfo{};
     poolInfo.maxSets       = 1;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes    = &poolSize;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes    = poolSizes.data();
     poolInfo.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind;
     if (device_.createDescriptorPool(&poolInfo, nullptr, &pool_) != vk::Result::eSuccess) {
         logError("TextureManager: vkCreateDescriptorPool failed");
@@ -124,27 +142,127 @@ bool TextureManager::init(VulkanContext& ctx) {
     return true;
 }
 
-uint32_t TextureManager::add(BufferManager& buffers, vk::CommandBuffer commandBuffer,
-                             std::span<const std::byte> levels, vk::Format format,
-                             vk::Extent2D extent, uint32_t levelCount) {
+TextureSlot TextureManager::reserveSlot(bool borrowed) {
+    if (borrowed_.size() >= imageCapacity_) {
+        logError("TextureManager: the bindless array holds " +
+                 std::to_string(imageCapacity_) + " textures and is full");
+        return {};
+    }
+    borrowed_.push_back(borrowed);
+    return TextureSlot{static_cast<uint32_t>(borrowed_.size() - 1)};
+}
+
+void TextureManager::writeSampledDescriptor(TextureSlot slot, ImageRef view, vk::ImageLayout layout) {
+    vk::DescriptorImageInfo imageInfo{};
+    imageInfo.sampler     = sampler_;
+    imageInfo.imageView   = view.get();
+    imageInfo.imageLayout = layout;
+
+    vk::WriteDescriptorSet write{};
+    write.dstSet          = set_;
+    write.dstBinding      = SAMPLED_BINDING;
+    write.dstArrayElement = slot.value;
+    write.descriptorCount = 1;
+    write.descriptorType  = vk::DescriptorType::eCombinedImageSampler;
+    write.pImageInfo      = &imageInfo;
+    device_.updateDescriptorSets(1, &write, 0, nullptr);
+}
+
+void TextureManager::writeStorageDescriptor(StorageSlot slot, ImageRef view) {
+    vk::DescriptorImageInfo imageInfo{};
+    imageInfo.imageView   = view.get();
+    imageInfo.imageLayout = vk::ImageLayout::eGeneral;
+
+    vk::WriteDescriptorSet write{};
+    write.dstSet          = set_;
+    write.dstBinding      = STORAGE_BINDING;
+    write.dstArrayElement = slot.value;
+    write.descriptorCount = 1;
+    write.descriptorType  = vk::DescriptorType::eStorageImage;
+    write.pImageInfo      = &imageInfo;
+    device_.updateDescriptorSets(1, &write, 0, nullptr);
+}
+
+StorageSlot TextureManager::addStorage(ImageRef view) {
+    if (!device_) {
+        logError("TextureManager::addStorage: called before init");
+        return {};
+    }
+    if (!view) {
+        logError("TextureManager::addStorage: empty view");
+        return {};
+    }
+    if (storageCount_ >= storageCapacity_) {
+        logError("TextureManager::addStorage: the storage array holds " +
+                 std::to_string(storageCapacity_) + " images and is full");
+        return {};
+    }
+    const StorageSlot slot{storageCount_++};
+    writeStorageDescriptor(slot, view);
+    return slot;
+}
+
+bool TextureManager::replaceStorage(StorageSlot slot, ImageRef view) {
+    if (!slot || slot.value >= storageCount_) {
+        logError("TextureManager::replaceStorage: slot was not handed out by addStorage");
+        return false;
+    }
+    if (!view) {
+        logError("TextureManager::replaceStorage: empty view");
+        return false;
+    }
+    writeStorageDescriptor(slot, view);
+    return true;
+}
+
+TextureSlot TextureManager::addSampledBorrowed(ImageRef view, vk::ImageLayout layout) {
+    if (!device_) {
+        logError("TextureManager::addBorrowed: called before init");
+        return {};
+    }
+    if (!view) {
+        logError("TextureManager::addBorrowed: empty view");
+        return {};
+    }
+    const TextureSlot slot = reserveSlot(true);
+    if (slot) writeSampledDescriptor(slot, view, layout);
+    return slot;
+}
+
+bool TextureManager::replaceSampledBorrowed(TextureSlot slot, ImageRef view, vk::ImageLayout layout) {
+    if (!slot || slot.value >= borrowed_.size() || !borrowed_[slot.value]) {
+        logError("TextureManager::replaceBorrowed: slot was not handed out by addBorrowed");
+        return false;
+    }
+    if (!view) {
+        logError("TextureManager::replaceBorrowed: empty view");
+        return false;
+    }
+    writeSampledDescriptor(slot, view, layout);
+    return true;
+}
+
+TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer commandBuffer,
+                                std::span<const std::byte> levels, vk::Format format,
+                                vk::Extent2D extent, uint32_t levelCount) {
     if (!device_ || !commandBuffer) {
         logError("TextureManager::add: called before init");
-        return INVALID_TEXTURE_INDEX;
+        return {};
     }
     if (levels.empty() || extent.width == 0 || extent.height == 0 || levelCount == 0) {
         logError("TextureManager::add: empty texture");
-        return INVALID_TEXTURE_INDEX;
+        return {};
     }
     const AssetFormat assetFormat{static_cast<uint32_t>(format)};
     if (assetLevelBytes(assetFormat, 1, 1) == 0) {
         logError("TextureManager::add: format " + vk::to_string(format) +
                  " has no known level size");
-        return INVALID_TEXTURE_INDEX;
+        return {};
     }
-    if (images_.size() >= capacity_) {
+    if (borrowed_.size() >= imageCapacity_) {
         logError("TextureManager::add: the bindless array holds " +
-                 std::to_string(capacity_) + " textures and is full");
-        return INVALID_TEXTURE_INDEX;
+                 std::to_string(imageCapacity_) + " textures and is full");
+        return {};
     }
 
     /* One region per level, over the levels laid out largest first. */
@@ -159,7 +277,7 @@ uint32_t TextureManager::add(BufferManager& buffers, vk::CommandBuffer commandBu
             logError("TextureManager::add: the pixels hold " +
                      std::to_string(levels.size()) + " bytes, short of the " +
                      std::to_string(levelCount) + " levels claimed");
-            return INVALID_TEXTURE_INDEX;
+            return {};
         }
 
         vk::BufferImageCopy2 region{};
@@ -176,7 +294,7 @@ uint32_t TextureManager::add(BufferManager& buffers, vk::CommandBuffer commandBu
     if (!upload) {
         logError("TextureManager::add: no upload space for " +
                  std::to_string(levels.size()) + " bytes");
-        return INVALID_TEXTURE_INDEX;
+        return {};
     }
     std::memcpy(upload.host, levels.data(), levels.size());
     for (vk::BufferImageCopy2& region : regions)
@@ -189,7 +307,7 @@ uint32_t TextureManager::add(BufferManager& buffers, vk::CommandBuffer commandBu
                             vk::ImageUsageFlagBits::eTransferDst,
                         levelCount)) {
         images_.pop_back();
-        return INVALID_TEXTURE_INDEX;
+        return {};
     }
 
     transitionImage(commandBuffer, image.handle(), vk::ImageLayout::eUndefined,
@@ -221,25 +339,15 @@ uint32_t TextureManager::add(BufferManager& buffers, vk::CommandBuffer commandBu
         vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, levelCount, 0, 1});
     if (!view) {
         images_.pop_back();
-        return INVALID_TEXTURE_INDEX;
+        return {};
     }
 
-    const uint32_t slot = static_cast<uint32_t>(images_.size() - 1);
-
-    vk::DescriptorImageInfo imageInfo{};
-    imageInfo.sampler     = sampler_;
-    imageInfo.imageView   = view.get();
-    imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-
-    vk::WriteDescriptorSet write{};
-    write.dstSet          = set_;
-    write.dstBinding      = 0;
-    write.dstArrayElement = slot;
-    write.descriptorCount = 1;
-    write.descriptorType  = vk::DescriptorType::eCombinedImageSampler;
-    write.pImageInfo      = &imageInfo;
-    device_.updateDescriptorSets(1, &write, 0, nullptr);
-
+    const TextureSlot slot = reserveSlot(false);
+    if (!slot) {
+        images_.pop_back();
+        return {};
+    }
+    writeSampledDescriptor(slot, view, vk::ImageLayout::eShaderReadOnlyOptimal);
     return slot;
 }
 
@@ -248,6 +356,8 @@ void TextureManager::destroy() {
 
     for (Image& image : images_) image.destroy();
     images_.clear();
+    borrowed_.clear();
+    storageCount_ = 0;
 
     device_.destroyDescriptorPool(pool_);
     device_.destroyDescriptorSetLayout(layout_);

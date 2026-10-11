@@ -481,6 +481,7 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Rendering/RenderTarget/RenderTarget2D.ixx"
         "${PGR_VK_SRC}/Rendering/RenderTarget/ColorRenderTarget.ixx"
         "${PGR_VK_SRC}/Rendering/RenderTarget/DepthRenderTarget.ixx"
+        "${PGR_VK_SRC}/Rendering/RenderTarget/DepthPyramid.ixx"
         "${PGR_VK_SRC}/Rendering/RenderTarget/RenderTarget.ixx"
         "${PGR_VK_SRC}/Rendering/Frame/Frame.ixx"
         "${PGR_VK_SRC}/VK_Renderer/MeshDrawResources.ixx"

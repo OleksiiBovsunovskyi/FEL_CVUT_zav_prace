@@ -66,7 +66,7 @@ public:
      */
     [[nodiscard]] bool init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                             vk::Format colorFormat, vk::Extent2D extent,
-                            const TextureManager& textures);
+                            TextureManager& textures);
 
     void destroy();
 
@@ -110,6 +110,12 @@ private:
     DrawFn                draw_;
     GpuPassTimings        timings_;
     GpuDrawStats          drawStats_;
-    const TextureManager* textures_ = nullptr;
+    GPUDepthPyramidPush   depthPyramidPush_;
+    TextureManager* textures_ = nullptr;
     DebugFlags            debugFlags_;
+    std::optional<DepthPyramid> depthPyramid_;
+    TextureSlot           depthPyramidSlot_;
+    std::array<StorageSlot, DepthPyramid::MAX_MIP_LEVELS> depthPyramidMipSlots_;
+    /// True while the depth pyramid image is in eUndefined.
+    bool                  depthPyramidUndefined_ = true;
 };

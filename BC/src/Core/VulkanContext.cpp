@@ -125,6 +125,9 @@ bool VulkanContext::selectAndCreateDevice() {
     features10.drawIndirectFirstInstance = VK_TRUE; // per-draw instance offset
     features10.shaderInt64              = VK_TRUE;  // 64-bit math on buffer pointers
     features10.textureCompressionBC     = VK_TRUE;  // the BC7 the baker writes
+    // One RWTexture2D[] array holds storage images of every format.
+    features10.shaderStorageImageReadWithoutFormat  = VK_TRUE;
+    features10.shaderStorageImageWriteWithoutFormat = VK_TRUE;
 
     VkPhysicalDeviceVulkan11Features features11{};
     features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
@@ -143,10 +146,12 @@ bool VulkanContext::selectAndCreateDevice() {
     features12.runtimeDescriptorArray                          = VK_TRUE;
     features12.shaderSampledImageArrayNonUniformIndexing       = VK_TRUE;
     features12.shaderStorageBufferArrayNonUniformIndexing      = VK_TRUE;
+    features12.shaderStorageImageArrayNonUniformIndexing       = VK_TRUE;
     features12.descriptorBindingPartiallyBound                 = VK_TRUE;
     features12.descriptorBindingVariableDescriptorCount        = VK_TRUE;
     features12.descriptorBindingSampledImageUpdateAfterBind    = VK_TRUE;
     features12.descriptorBindingStorageBufferUpdateAfterBind   = VK_TRUE;
+    features12.descriptorBindingStorageImageUpdateAfterBind    = VK_TRUE;
 
     VkPhysicalDeviceVulkan13Features features13{};
     features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;

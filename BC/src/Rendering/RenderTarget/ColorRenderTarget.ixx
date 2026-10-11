@@ -10,7 +10,7 @@ export import :RenderTarget2D;
 import Image;
 
 /**
- * A color attachment of one pass.
+ * A color-format image of one pass.
  */
 export class ColorRenderTarget : public RenderTarget2D {
 public:

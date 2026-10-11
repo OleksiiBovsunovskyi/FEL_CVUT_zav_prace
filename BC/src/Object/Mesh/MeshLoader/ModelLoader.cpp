@@ -69,7 +69,7 @@ std::shared_ptr<MultiMesh> ModelLoader::upload(const AssetModel& model) {
         slots[i] = textures.add(buffers, cmd, texture.pixels,
                                 static_cast<vk::Format>(texture.format.value),
                                 vk::Extent2D{texture.width, texture.height},
-                                texture.levelCount);
+                                texture.levelCount).value;
         if (!batch.submitAndWait()) slots[i] = INVALID_TEXTURE_INDEX;
         buffers.resetUpload();
     }

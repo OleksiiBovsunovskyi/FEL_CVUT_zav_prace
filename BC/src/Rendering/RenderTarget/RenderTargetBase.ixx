@@ -153,7 +153,8 @@ public:
         assert(extentFitsType(imageType_, extent) &&
                "RenderTarget::resize: extent does not fit the image type");
         destroy();
-        extent_ = extent;
+        extent_    = extent;
+        mipLevels_ = mipLevelsFor(extent);
         if (!create()) {
             logError("RenderTarget::resize: image creation failed, image is now invalid");
             return false;
@@ -194,6 +195,16 @@ public:
 protected:
     /// Views of one mip level or one array layer are taken through this.
     [[nodiscard]] Image& mutableImage() { return image_; }
+
+    /**
+     * Mip count RenderTarget::resize() allocates the new image with.
+     * @param extent the new size in texels.
+     * @return the current mip count.
+     */
+    [[nodiscard]] virtual uint32_t mipLevelsFor(vk::Extent3D extent) const {
+        (void)extent;
+        return mipLevels_;
+    }
 
 private:
     /**
