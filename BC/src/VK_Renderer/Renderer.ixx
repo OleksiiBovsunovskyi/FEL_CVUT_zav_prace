@@ -23,6 +23,7 @@ export import GpuPassTimings;
 export import GpuDrawStats;
 import renderTarget;
 import TextureManager;
+import ComputePass;
 
 /**
  * Owns per-frame depth targets shared by renderer passes.
@@ -37,14 +38,26 @@ public:
     SharedRenderTargets(const SharedRenderTargets&)            = delete;
     SharedRenderTargets& operator=(const SharedRenderTargets&) = delete;
 
-    [[nodiscard]] bool init(VulkanContext& ctx, vk::Extent2D extent);
+    /**
+     * @param textures table the depth targets are registered in as sampled textures;
+     *        must outlive this object.
+     */
+    [[nodiscard]] bool init(VulkanContext& ctx, vk::Extent2D extent, TextureManager& textures);
     void destroy();
     [[nodiscard]] bool resize(vk::Extent2D extent);
     [[nodiscard]] vk::RenderingAttachmentInfo getDepthAttachment(
         Frame::Recording& recording);
 
+    /**
+     * Transitions this recording's depth to a compute-readable layout.
+     * @return sampled slot of this recording's depth.
+     */
+    [[nodiscard]] TextureSlot sampledDepth(Frame::Recording& recording);
+
 private:
     std::array<std::optional<DepthRenderTarget>, FRAMES_IN_FLIGHT> depth_;
+    std::array<TextureSlot, FRAMES_IN_FLIGHT> depthSlots_;
+    TextureManager* textures_ = nullptr;
 };
 
 /**
@@ -110,7 +123,7 @@ private:
     DrawFn                draw_;
     GpuPassTimings        timings_;
     GpuDrawStats          drawStats_;
-    GPUDepthPyramidPush   depthPyramidPush_;
+
     TextureManager* textures_ = nullptr;
     DebugFlags            debugFlags_;
     std::optional<DepthPyramid> depthPyramid_;
@@ -118,4 +131,10 @@ private:
     std::array<StorageSlot, DepthPyramid::MAX_MIP_LEVELS> depthPyramidMipSlots_;
     /// True while the depth pyramid image is in eUndefined.
     bool                  depthPyramidUndefined_ = true;
+    /// World-to-clip matrix of the depth the pyramid was last built from.
+    glm::mat4             depthPyramidViewProjection_{1.0f};
+    ComputePass<GPUDepthPyramidPush> depthPyramidPass_;
+    AllocatedBuffer<DeviceOnlyBuffer> depthPyramidCounter_;
+    /// Push of depthPyramidPass_; its counter points into depthPyramidCounter_.
+    GPUDepthPyramidPush   depthPyramidPush_{};
 };

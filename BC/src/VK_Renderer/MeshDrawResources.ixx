@@ -21,6 +21,7 @@ import GPUTypes;
 import VK_Buffers;
 import VulkanContext;
 import ShadersLoader;
+import TextureManager;
 
 /**
  * Mesh-draw buffers prepared for one Frame::Recording.
@@ -125,11 +126,13 @@ public:
     /**
      * @param scatterShaderPath SPIR-V of scatter_instances.slang.
      * @param buildDrawCommandsShaderPath SPIR-V of build_draw_commands.slang.
+     * @param textureLayout layout of TextureManager's bindless set.
      */
     [[nodiscard]] bool init(
         VulkanContext& ctx, ShaderLoader& shaderLoader,
         const std::filesystem::path& scatterShaderPath,
-        const std::filesystem::path& buildDrawCommandsShaderPath);
+        const std::filesystem::path& buildDrawCommandsShaderPath,
+        vk::DescriptorSetLayout textureLayout);
     void destroy();
 
     /**
@@ -139,6 +142,8 @@ public:
      * @param instances every registered mesh instance, in DrawList order.
      * @param changedInstances indices of `instances` written since the previous call;
      * @param frameData address of this recording's GPUFrameData.
+     * @param textureSet TextureManager's bindless set.
+     * @param depthPyramidSlot sampled slot of the full depth pyramid chain.
      * @param timings marked once per compute pass recorded.
      * @return prepared indirect draw resources, or empty when no draw can be recorded.
      * @note Must be called once per recording, including when `instances` is
@@ -147,6 +152,7 @@ public:
     [[nodiscard]] PreparedMeshDraw prepare(
         const Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
         std::span<const uint32_t> changedInstances, GpuPtr<GPUFrameData> frameData,
+        vk::DescriptorSet textureSet, TextureSlot depthPyramidSlot,
         GpuPassTimings& timings);
 
 private:

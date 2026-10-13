@@ -15,6 +15,7 @@ import GpuPassTimings;
 import MeshDraw;
 import MeshDrawResources;
 import ShadersLoader;
+import TextureManager;
 
 /**
  * Records the forward rendering pass.
@@ -50,20 +51,21 @@ public:
     /**
      * Records dynamic rendering, the prepared mesh draw, and the draw callback.
      * @param recording active Frame recording interface.
-     * @param meshDraw prepared mesh-draw resources for this recording.
+     * @param preparedMeshDraw prepared mesh-draw resources for this recording.
      * @param frameData address of this recording's GPUFrameData.
      * @param materials base address of the Materials mega-buffer.
      * @param textureSet TextureManager's bindless set.
      * @param depthAttachment depth attachment prepared for this recording.
      * @param drawCallback callback recorded inside the rendering pass.
      * @param timings marked after the mesh draw and after the callback.
+     * @param depthPyramidSlot sampled slot of the full depth pyramid chain.
      */
-    void render(Frame::Recording& recording, const PreparedMeshDraw& meshDraw,
+    void render(Frame::Recording& recording, const PreparedMeshDraw& preparedMeshDraw,
                 GpuPtr<GPUFrameData> frameData,
                 GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
                 const vk::RenderingAttachmentInfo& depthAttachment,
                 const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback,
-                GpuPassTimings& timings);
+                GpuPassTimings& timings, TextureSlot depthPyramidSlot);
 
     /**
      * Receives the new rendering size.

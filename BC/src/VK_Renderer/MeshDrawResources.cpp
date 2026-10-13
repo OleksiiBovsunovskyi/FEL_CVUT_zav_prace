@@ -155,11 +155,12 @@ detail::MeshDrawSpans detail::MeshDrawResourceSlot::spans(
 bool MeshDrawResources::init(
     VulkanContext& ctx, ShaderLoader& shaderLoader,
     const std::filesystem::path& scatterShaderPath,
-    const std::filesystem::path& buildDrawCommandsShaderPath) {
+    const std::filesystem::path& buildDrawCommandsShaderPath,
+    vk::DescriptorSetLayout textureLayout) {
     ctx_ = &ctx;
     if (!scatterInstances_.init(ctx.device(), shaderLoader, scatterShaderPath) ||
         !buildDrawCommands_.init(ctx.device(), shaderLoader,
-                                 buildDrawCommandsShaderPath)) {
+                                 buildDrawCommandsShaderPath, textureLayout)) {
         destroy();
         return false;
     }
@@ -204,6 +205,7 @@ MappedSpan<GPUMeshInstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdat
 PreparedMeshDraw MeshDrawResources::prepare(
     const Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
     std::span<const uint32_t> changedInstances, GpuPtr<GPUFrameData> frameData,
+    vk::DescriptorSet textureSet, TextureSlot depthPyramidSlot,
     GpuPassTimings& timings) {
     /* Every slot has its own device buffer, so each one receives the change. */
     for (detail::MeshDrawResourceSlot& target : slots_)
@@ -258,7 +260,8 @@ PreparedMeshDraw MeshDrawResources::prepare(
     push.commands = spans.commands.gpu.data;
     push.commandCount = spans.count.gpu.data;
     push.instanceCount = instanceCount;
-    buildDrawCommands_.record(commandBuffer, push, instanceCount);
+    push.depthPyramidSlot = depthPyramidSlot.value;
+    buildDrawCommands_.record(commandBuffer, push, instanceCount, textureSet);
 
     addBarrierIfPresent(barriers_, slot.instances.use(MESH_SHADER_READ));
     addBarrierIfPresent(barriers_, slot.drawData.use(MESH_SHADER_READ));

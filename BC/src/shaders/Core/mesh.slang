@@ -2,9 +2,9 @@ import gpu_types;
 import AtomicAdd;
 import mesh_vertex;
 import SphereVisibilityTest;
-
-[[vk::push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
-
+import HiZOCTest;
+[[vk_push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
+[[vk_binding(0, 0)]] Sampler2D textures[];
 
 // meshopt's limits, matching MESHLET_MAX_* in ClusterLODGenerator.ixx.
 static const uint MAX_VERTICES  = 64;
@@ -28,10 +28,14 @@ void meshMain(
     // Every section of the mesh is reached through its header.
     const GPUMeshHeader mesh = draw.mesh[0];
 
-    const GPUMeshlet meshlet = mesh.meshlets[groupId]; 
+    const GPUMeshlet meshlet = mesh.meshlets[groupId];
 
     const float4 meshletSphere = worldSphere(instance.transform, meshlet.boundingSphere);
-    const bool   visible       = sphereVisibleWorld(pc.frame->camera.viewProj, meshletSphere);
+    bool visible = sphereVisibleWorld(pc.frame->camera.viewProj, meshletSphere);
+    if (pc.frame.useHiZOC)
+        if(visible) 
+            visible = !isOcludedByHiZ(textures[pc.depthPyramidSlot], pc.frame->hiZViewProj, meshletSphere);
+  
     SetMeshOutputCounts(visible ? meshlet.vertexCount  : 0,
                         visible ? meshlet.triangleCount : 0);
 

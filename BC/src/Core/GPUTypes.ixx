@@ -305,7 +305,7 @@ export struct alignas(16) BuildDrawCommandsPush {
     GpuPtr<GPUMeshTaskCommand> commands;     //Output. Actual draw command, built here
     GpuPtr<GPUDrawCommandCount> commandCount; //Output. Hands out each command's slot
     uint32_t                   instanceCount = 0;  //Amount of instances to draw
-    uint32_t                   _padding    = 0;
+    uint32_t                   depthPyramidSlot = INVALID_TEXTURE_INDEX; //Sampled slot of the full pyramid chain
 };
 
 static_assert(sizeof(BuildDrawCommandsPush) == 48);
@@ -331,9 +331,12 @@ export struct GPUMeshDrawPush {
     GpuPtr<GPUDrawData> drawData;
     GpuPtr<GPUMeshInstance>   instances;
     GpuPtr<GPUMaterial> materials;
+    /// Sampled slot of the full depth pyramid chain.
+    uint32_t depthPyramidSlot = INVALID_TEXTURE_INDEX;
+    uint32_t _padding = 0;
 };
 
-static_assert(sizeof(GPUMeshDrawPush) == 32);
+static_assert(sizeof(GPUMeshDrawPush) == 40);
 
 
 export struct GPUDepthPyramidCounter {
@@ -343,8 +346,14 @@ static_assert(sizeof(GPUDepthPyramidCounter) == 4);
 
 export struct GPUDepthPyramidPush {
     GpuPtr<GPUDepthPyramidCounter> counter;
+    /// Sampled slot of the depth image the pyramid is built from.
+    uint32_t depthSlot = INVALID_TEXTURE_INDEX;
+    /// Storage slot of pyramid mip 0; mip n is at pyramidMip0Slot + n.
+    uint32_t pyramidMip0Slot = INVALID_TEXTURE_INDEX;
+    uint32_t mipCount = 0;
+    uint32_t _padding = 0;
 };
-static_assert(sizeof(GPUDepthPyramidPush) == 8);
+static_assert(sizeof(GPUDepthPyramidPush) == 24);
 
 export struct GPUHIZOCPush {
     GpuPtr<GPUFrameData> frame;

@@ -227,6 +227,7 @@ set(VK_SLANG_MODULES
         "${VK_SHADER_DIR}/Core/mesh_vertex.slang"
         "${VK_SHADER_DIR}/Core/draw_meshlets.slang"
         "${VK_SHADER_DIR}/Core/draw_meshlets_visibility_sphere.slang"
+        "${VK_SHADER_DIR}/Core/HiZOCTest.slang"
 )
 
 set(VK_SPV_FILES "")
@@ -254,6 +255,7 @@ endfunction()
 
 add_slang_shader(Core/build_draw_commands.slang main     compute  build_draw_commands.spv)
 add_slang_shader(Core/scatter_instances.slang   main     compute  scatter_instances.spv)
+add_slang_shader(Core/build_depth_pyramid.slang main     compute  build_depth_pyramid.spv)
 add_slang_shader(Core/mesh.slang                meshMain mesh     mesh.spv)
 add_slang_shader(Core/mesh_frag.slang           fragMain fragment mesh_frag.spv)
 

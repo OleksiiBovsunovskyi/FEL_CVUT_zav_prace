@@ -10,6 +10,7 @@ module ForwardRenderer;
 import vulkan;
 import VkUtil;
 import Logger;
+import TextureManager;
 
 bool ForwardRenderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                            const std::filesystem::path& meshShaderPath,
@@ -40,7 +41,7 @@ void ForwardRenderer::render(
     GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
     const vk::RenderingAttachmentInfo& depthAttachment,
     const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback,
-    GpuPassTimings& timings) {
+    GpuPassTimings& timings, TextureSlot depthPyramidSlot) {
     const vk::CommandBuffer cmd = recording.commandBuffer();
 
     const vk::RenderingAttachmentInfo colorAttachment =
@@ -59,6 +60,7 @@ void ForwardRenderer::render(
         push.drawData = preparedMeshDraw.drawData;
         push.instances = preparedMeshDraw.instances;
         push.materials = materials;
+        push.depthPyramidSlot = depthPyramidSlot.value;
         meshDraw_.record(cmd, recording.extent(), push,
                          preparedMeshDraw.indirectCommands,
                          preparedMeshDraw.indirectCount,

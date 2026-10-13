@@ -185,6 +185,7 @@ void VulkanApp::drawUI() {
         ImGui::Checkbox("Show meshlets", &debugFlags.ShowMeshlets);
         ImGui::Checkbox("Show meshlet spheres", &debugFlags.ShowMeshletSpheres);
         ImGui::Checkbox("Draw normals", &debugFlags.DrawNormals);
+        ImGui::Checkbox("Use HiZ OC", &debugFlags.UseHIZOC);
         renderer_.setDebugFlags(debugFlags);
         ImGui::Separator();
         ImGui::TextUnformatted(window_.getCursorMode() == ECursorMode::UI ? "UI mode  (Tab to capture the mouse)"
