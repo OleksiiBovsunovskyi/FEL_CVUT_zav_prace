@@ -235,7 +235,6 @@ void Renderer::render(Frame::Recording& recording,
                       GpuPtr<GPUMaterial> materials) {
     timings_.beginFrame(recording);
 
-    const bool depthPyramidBuilt = !depthPyramidUndefined_;
     //Transition depth pyramid layout to DEPTH_PYRAMID_LAYOUT TODO: Shouldn't really happen here
     if (depthPyramidUndefined_) {
         transitionImage(recording.commandBuffer(), depthPyramid_->image().handle(),
@@ -260,7 +259,7 @@ void Renderer::render(Frame::Recording& recording,
             .debugShowMeshlets = debugFlags_.ShowMeshlets,
             .debugShowMeshletSpheres = debugFlags_.ShowMeshletSpheres,
             .debugDrawNormals = debugFlags_.DrawNormals,
-            .useHiZOC = depthPyramidBuilt,
+            .useHiZOC = debugFlags_.UseHIZOC && depthPyramidBuiltLastFrame_,
             .hiZViewProj = depthPyramidViewProjection_,
         });
     //Push changed instances to gpu
@@ -309,8 +308,9 @@ void Renderer::render(Frame::Recording& recording,
                         vk::AccessFlagBits2::eShaderSampledRead,
                         vk::ImageAspectFlagBits::eColor, 0, depthPyramid_->mipLevels());
         timings_.mark(cmd, "build depth pyramid end");
+        depthPyramidViewProjection_ = viewProjection;
     }
-    depthPyramidViewProjection_ = viewProjection;
+    depthPyramidBuiltLastFrame_ = debugFlags_.UseHIZOC;
     
     //Write stat for the frame end
     drawStats_.endFrame(recording);
@@ -323,6 +323,7 @@ bool Renderer::resize(vk::Extent2D extent) {
         return false;
     }
     depthPyramidUndefined_ = true;
+    depthPyramidBuiltLastFrame_ = false;
     if (!textures_->replaceSampledBorrowed(depthPyramidSlot_, depthPyramid_->view(), DEPTH_PYRAMID_LAYOUT))
     {
         logError("Renderer: depth pyramid replacement failed");

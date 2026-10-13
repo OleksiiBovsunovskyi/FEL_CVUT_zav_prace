@@ -133,6 +133,8 @@ private:
     bool                  depthPyramidUndefined_ = true;
     /// World-to-clip matrix of the depth the pyramid was last built from.
     glm::mat4             depthPyramidViewProjection_{1.0f};
+    /// Pyramid holds the previous frame's depth, built with depthPyramidViewProjection_.
+    bool                  depthPyramidBuiltLastFrame_ = false;
     ComputePass<GPUDepthPyramidPush> depthPyramidPass_;
     AllocatedBuffer<DeviceOnlyBuffer> depthPyramidCounter_;
     /// Push of depthPyramidPass_; its counter points into depthPyramidCounter_.
