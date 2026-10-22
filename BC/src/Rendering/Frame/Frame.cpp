@@ -12,9 +12,12 @@ import VkUtil;
 import Logger;
 
 Frame::Frame(VulkanContext& ctx, vk::Image image, vk::Format format, vk::Extent2D extent)
-    : device_(ctx.device()), queue_(ctx.graphicsQueue()), frameColor_(device_, image, format, extent) {
+    : device_(ctx.device()), queue_(ctx.graphicsQueue()) {
     if (!image)
         throw std::invalid_argument("Frame: image is required");
+    frameColor_.borrow(device_, image,
+                       ImageDesc{.format = format,
+                                 .extent = vk::Extent3D{extent.width, extent.height, 1}});
 
     vk::CommandPoolCreateInfo pool{};
     pool.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
@@ -29,7 +32,7 @@ Frame::Frame(VulkanContext& ctx, vk::Image image, vk::Format format, vk::Extent2
 
     completion_ = device_.createFenceUnique({vk::FenceCreateFlagBits::eSignaled});
     renderFinished_ = device_.createSemaphoreUnique({});
-    if (!frameColor_.view())
+    if (!frameColor_.view(vk::ImageAspectFlagBits::eColor))
         throw std::runtime_error("Frame: color attachment view creation failed");
 }
 
@@ -83,13 +86,14 @@ vk::CommandBuffer Frame::Recording::commandBuffer() const {
 
 vk::Extent2D Frame::Recording::extent() const {
     frame_.require(State::Recording, "Recording::extent");
-    return frame_.frameColor_.extent2D();
+    const vk::Extent3D extent = frame_.frameColor_.extent();
+    return vk::Extent2D{extent.width, extent.height};
 }
 
 void Frame::transition(ImageUse imageUse) {
     require(State::Recording, "transition");
 
-    transitionImage(commandBuffer_, frameColor_.image().handle(), recordingUse_.layout, imageUse.layout,
+    transitionImage(commandBuffer_, frameColor_.handle(),recordingUse_.layout, imageUse.layout,
                     recordingUse_.stageMask, recordingUse_.accessMask,
                     imageUse.stageMask, imageUse.accessMask);
     recordingUse_ = imageUse;
@@ -102,7 +106,7 @@ vk::RenderingAttachmentInfo Frame::Recording::getColorAttachment(vk::ClearColorV
                        vk::PipelineStageFlagBits2::eColorAttachmentOutput, colorAccess});
 
     vk::RenderingAttachmentInfo color{};
-    color.imageView = frame_.frameColor_.view().get();
+    color.imageView = frame_.frameColor_.view(vk::ImageAspectFlagBits::eColor).get();
     color.imageLayout = vk::ImageLayout::eColorAttachmentOptimal;
     color.loadOp = vk::AttachmentLoadOp::eClear;
     color.storeOp = vk::AttachmentStoreOp::eStore;

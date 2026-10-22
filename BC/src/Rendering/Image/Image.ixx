@@ -1,5 +1,7 @@
 module;
 
+#include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cstdint>
 #include <string>
@@ -11,8 +13,53 @@ import vulkan;
 import vk_mem_alloc;
 import Logger;
 
-export class Image;
+/* Warns at every call site. Clang only;*/
+#if defined(__clang__)
+#  define IMAGE_EXPENSIVE(msg) __attribute__((diagnose_if(true, msg, "warning")))
+#else
+#  define IMAGE_EXPENSIVE(msg)
+#endif
 
+/**
+ * Parameters a vk::Image is created with.
+ * usage is empty for a borrowed image.
+ */
+export struct ImageDesc {
+    vk::ImageType           type    = vk::ImageType::e2D;
+    vk::Format              format  = vk::Format::eUndefined;
+    vk::Extent3D            extent{1, 1, 1};
+    vk::ImageUsageFlags     usage{};
+    uint32_t                mipLevels   = 1;
+    uint32_t                arrayLayers = 1;
+    vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1;
+
+    bool operator==(const ImageDesc&) const = default;
+};
+
+/// @return true when every extent member is at least 1 and is 1 in the
+///         dimensions imageType does not have.
+export constexpr bool extentFitsType(vk::ImageType imageType, vk::Extent3D extent) {
+    if (extent.width == 0 || extent.height == 0 || extent.depth == 0) return false;
+    if (imageType == vk::ImageType::e1D) return extent.height == 1 && extent.depth == 1;
+    if (imageType == vk::ImageType::e2D) return extent.depth == 1;
+    return true;
+}
+
+/// @return levels in a chain that halves extent down to 1 in every dimension.
+export constexpr uint32_t maxMipLevels(vk::Extent3D extent) {
+    return std::bit_width(std::max({extent.width, extent.height, extent.depth}));
+}
+
+/// @return the view type covering every layer of an image of this type.
+export constexpr vk::ImageViewType viewTypeFor(vk::ImageType imageType, uint32_t arrayLayers) {
+    if (imageType == vk::ImageType::e1D)
+        return arrayLayers > 1 ? vk::ImageViewType::e1DArray : vk::ImageViewType::e1D;
+    if (imageType == vk::ImageType::e2D)
+        return arrayLayers > 1 ? vk::ImageViewType::e2DArray : vk::ImageViewType::e2D;
+    return vk::ImageViewType::e3D;
+}
+
+export class Image;
 /**
  * An image view.
  * Holds and asserts the version of the image it was taken from (debug builds only).
@@ -58,32 +105,24 @@ public:
      * Allocates the image and its memory, replacing whatever this held before.
      *
      * @param allocator VMA allocator the image is allocated from;
-     * @param imageType dimensions of the image.
-     * @param format texel format.
-     * @param extent size in texels.
-     * @param usage every way the image will ever be used.
-     * @param mipLevels levels in the chain.
-     * @param arrayLayers layers.
-     * @param samples samples per texel.
+     * @param desc parameters of the image.
      * @return false when the allocation failed.
      */
-    [[nodiscard]] bool allocate(vma::Allocator allocator, vk::ImageType imageType,
-                                vk::Format format, vk::Extent3D extent,
-                                vk::ImageUsageFlags usage,
-                                uint32_t mipLevels = 1, uint32_t arrayLayers = 1,
-                                vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1) {
+    [[nodiscard]] bool allocate(vma::Allocator allocator, const ImageDesc& desc) {
         assert(allocator && "Image::allocate: null vma::Allocator");
+        assert(desc.usage != vk::ImageUsageFlags{} && "Image::allocate: usage names no use");
+        validate(desc);
         destroy();
 
         vk::ImageCreateInfo imageInfo{};
-        imageInfo.imageType     = imageType;
-        imageInfo.format        = format;
-        imageInfo.extent        = extent;
-        imageInfo.mipLevels     = mipLevels;
-        imageInfo.arrayLayers   = arrayLayers;
-        imageInfo.samples       = samples;
+        imageInfo.imageType     = desc.type;
+        imageInfo.format        = desc.format;
+        imageInfo.extent        = desc.extent;
+        imageInfo.mipLevels     = desc.mipLevels;
+        imageInfo.arrayLayers   = desc.arrayLayers;
+        imageInfo.samples       = desc.samples;
         imageInfo.tiling        = vk::ImageTiling::eOptimal;
-        imageInfo.usage         = usage;
+        imageInfo.usage         = desc.usage;
         imageInfo.sharingMode   = vk::SharingMode::eExclusive;
         imageInfo.initialLayout = vk::ImageLayout::eUndefined;
 
@@ -103,9 +142,31 @@ public:
         device_     = allocator.getAllocatorInfo().device;
         image_      = image;
         allocation_ = allocation;
-        format_     = format;
-        extent_     = extent;
+        desc_       = desc;
         return true;
+    }
+
+    /**
+     * Frees the owned image and allocates a new one from the same allocator.
+     * Does nothing when desc equals the current parameters.
+     *
+     * @param desc parameters of the new image.
+     * @return false when the image is borrowed or the allocation failed.
+     * @note Every view of the old image is invalidated.
+     * @note The GPU must be done with the image before this is called.
+     */
+    [[nodiscard]] bool reallocate(const ImageDesc& desc)
+        IMAGE_EXPENSIVE("Image::reallocate frees and reallocates the image; every "
+                        "view of it is invalidated and the GPU must be done with it")
+    {
+        assert(owned() && "Image::reallocate: cannot reallocate a borrowed image");
+        if (!owned()) {
+            logError("Image::reallocate: cannot reallocate a borrowed image");
+            return false;
+        }
+        if (desc == desc_) return true;
+        const vma::Allocator allocator = allocator_;
+        return allocate(allocator, desc);
     }
 
     /**
@@ -114,22 +175,20 @@ public:
      *
      * @param device device the views are created on.
      * @param image image to borrow
-     * @param format texel format the image was created with.
-     * @param extent size in texels the image was created with.
+     * @param desc parameters the image was created with.
      * @note Borrowed image will not be owned by this class.
-     * @note View ranges are not validated for a borrowed image; its mip and layer
-     *       counts are not known here.
      * @note An ImageRef taken from a borrowed image is not invalidated when the
      *       owner destroys or recreates that image.
      */
-    void borrow(vk::Device device, vk::Image image, vk::Format format, vk::Extent3D extent) {
+    void borrow(vk::Device device, vk::Image image, const ImageDesc& desc) {
         assert(device && "Image::borrow: null vk::Device");
+        validate(desc);
         destroy();
 
-        device_ = device;
-        image_  = image;
-        format_ = format;
-        extent_ = extent;
+        allocator_ = nullptr;
+        device_    = device;
+        image_     = image;
+        desc_      = desc;
     }
 
     /**
@@ -179,13 +238,25 @@ public:
         return ImageRef{this, view, version_};
     }
 
+    /**
+     * @param aspect color, depth or stencil.
+     * @return a view of every mip level and array layer in the image's format. Empty when creation failed.
+     */
+    [[nodiscard]] ImageRef view(vk::ImageAspectFlags aspect) {
+        return view(viewTypeFor(desc_.type, desc_.arrayLayers), desc_.format,
+                    vk::ImageSubresourceRange{aspect, 0, desc_.mipLevels, 0, desc_.arrayLayers});
+    }
+
     /// @return version used to invalidate ImageRef.
     [[nodiscard]] uint32_t version() const { return version_; }
 
-    [[nodiscard]] vk::Image    handle() const { return image_; }
-    [[nodiscard]] vk::Format   format() const { return format_; }
-    [[nodiscard]] vk::Extent3D extent() const { return extent_; }
-    [[nodiscard]] vk::Device   device() const { return device_; }
+    [[nodiscard]] vk::Image        handle()      const { return image_; }
+    [[nodiscard]] const ImageDesc& desc()        const { return desc_; }
+    [[nodiscard]] vk::Format       format()      const { return desc_.format; }
+    [[nodiscard]] vk::Extent3D     extent()      const { return desc_.extent; }
+    [[nodiscard]] uint32_t         mipLevels()   const { return desc_.mipLevels; }
+    [[nodiscard]] uint32_t         arrayLayers() const { return desc_.arrayLayers; }
+    [[nodiscard]] vk::Device       device()      const { return device_; }
 
     /// @return true if image is owned by this class, false if borrowed.
     [[nodiscard]] bool owned() const { return allocation_ != nullptr; }
@@ -194,6 +265,25 @@ public:
     [[nodiscard]] explicit operator bool() const { return static_cast<bool>(image_); }
 
 private:
+    /**
+     * Debug builds only.
+     * Validates image parameters with asserts.
+     */
+    static void validate(const ImageDesc& desc) {
+        assert(desc.format != vk::Format::eUndefined && "Image: format is UNDEFINED");
+        assert(extentFitsType(desc.type, desc.extent) &&
+               "Image: extent members must be at least 1, and 1 in every "
+               "dimension the image type does not have");
+        assert(desc.mipLevels >= 1 && desc.mipLevels <= maxMipLevels(desc.extent) &&
+               "Image: mipLevels past what the extent can halve to 1");
+        assert(desc.arrayLayers >= 1 && "Image: arrayLayers must be at least 1");
+        assert((desc.type != vk::ImageType::e3D || desc.arrayLayers == 1) &&
+               "Image: a 3D image has one array layer");
+        assert(std::has_single_bit(static_cast<uint32_t>(desc.samples)) &&
+               "Image: samples must be one vk::SampleCountFlagBits value");
+        (void)desc;
+    }
+
     struct CachedView {
         vk::ImageViewType         viewType;
         vk::Format                format;
@@ -208,8 +298,7 @@ private:
     vk::Device      device_     = nullptr;
     vk::Image       image_      = nullptr;
 
-    vk::Format   format_ = vk::Format::eUndefined;
-    vk::Extent3D extent_{};
+    ImageDesc desc_{};
 
     uint32_t version_ = 0;
 };

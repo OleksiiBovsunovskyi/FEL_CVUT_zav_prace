@@ -8,7 +8,7 @@ export module Frame;
 
 import vulkan;
 export import FrameInFlightIndex;
-import renderTarget;
+import Image;
 import VulkanContext;
 
 /**
@@ -139,7 +139,7 @@ private:
 
     vk::Device device_;
     vk::Queue queue_;
-    ColorRenderTarget frameColor_;
+    Image frameColor_;
     vk::UniqueCommandPool commandPool_;
     vk::CommandBuffer commandBuffer_;
     vk::UniqueFence completion_;

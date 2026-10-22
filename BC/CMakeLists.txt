@@ -416,7 +416,7 @@ add_executable(pgr-vk
         src/Tests/TestDrawList.cpp
         src/Tests/TestInput.cpp
         # Compile-time checks; no runtime presence.
-        src/Tests/TestRenderTarget.cpp
+        src/Tests/TestImage.cpp
         src/Tests/TestFrame.cpp
         src/Object/RenderComponent.cpp
         src/Object/CameraComponent.cpp
@@ -479,17 +479,14 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Object/Mesh/MultiMesh/MultiMesh.ixx"
         "${PGR_VK_SRC}/Object/Mesh/MeshLoader/ModelLoader.ixx"
         "${PGR_VK_SRC}/shaders/ShadersLoader.ixx"
-        "${PGR_VK_SRC}/Rendering/RenderTarget/RenderTargetBase.ixx"
-        "${PGR_VK_SRC}/Rendering/RenderTarget/RenderTarget2D.ixx"
-        "${PGR_VK_SRC}/Rendering/RenderTarget/ColorRenderTarget.ixx"
-        "${PGR_VK_SRC}/Rendering/RenderTarget/DepthRenderTarget.ixx"
-        "${PGR_VK_SRC}/Rendering/RenderTarget/DepthPyramid.ixx"
-        "${PGR_VK_SRC}/Rendering/RenderTarget/RenderTarget.ixx"
         "${PGR_VK_SRC}/Rendering/Frame/Frame.ixx"
         "${PGR_VK_SRC}/VK_Renderer/MeshDrawResources.ixx"
         "${PGR_VK_SRC}/VK_Renderer/ForwardRenderer.ixx"
         "${PGR_VK_SRC}/VK_Renderer/Renderer.ixx"
+        "${PGR_VK_SRC}/Rendering/RendererConfig.ixx"
         "${PGR_VK_SRC}/Rendering/Image/Image.ixx"
+        "${PGR_VK_SRC}/Rendering/Image/ImageDescs/depthImageDesc.ixx"
+        "${PGR_VK_SRC}/Rendering/Image/ImageDescs/depthPyramidImageDesc.ixx"
         "${PGR_VK_SRC}/Rendering/Texture/TextureManager.ixx"
 )
 

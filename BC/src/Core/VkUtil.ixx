@@ -24,8 +24,6 @@ import VK_Buffers;
 export constexpr float DEPTH_CLEAR = 0.0f;
 export constexpr vk::CompareOp DEPTH_COMPARE_OP = vk::CompareOp::eGreaterOrEqual;
 
-export constexpr vk::Format DEPTH_FORMAT = vk::Format::eD32Sfloat;
-
 static_assert(DEPTH_CLEAR >= 0.0f && DEPTH_CLEAR <= 1.0f,
               "vk::ClearDepthStencilValue::depth must be within [0,1] unless "
               "VK_EXT_depth_range_unrestricted is enabled; the validation "
@@ -36,11 +34,6 @@ static_assert((DEPTH_COMPARE_OP == vk::CompareOp::eGreater ||
                   == (DEPTH_CLEAR == 0.0f),
               "DEPTH_CLEAR must be the far plane - 0 for a GREATER compare op, "
               "1 for a LESS one - or every fragment passes the depth test");
-
-static_assert(DEPTH_FORMAT == vk::Format::eD32Sfloat ||
-              DEPTH_FORMAT == vk::Format::eD32SfloatS8Uint,
-              "reverse-Z needs a float depth format; a UNORM one distributes "
-              "precision evenly and gains nothing from the flip");
 
 /// synchronization2 image layout transition.
 export inline void transitionImage(vk::CommandBuffer cmd, vk::Image image,

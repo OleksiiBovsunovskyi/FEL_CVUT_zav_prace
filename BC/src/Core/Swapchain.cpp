@@ -11,7 +11,6 @@ module VkSwapchain;
 
 import vulkan;
 import Logger;
-import renderTarget;
 
 bool Swapchain::init(VulkanContext& ctx, const AppWindow& window) {
     ctx_    = &ctx;

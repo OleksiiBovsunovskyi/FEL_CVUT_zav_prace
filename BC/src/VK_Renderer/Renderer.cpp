@@ -13,6 +13,8 @@ import vulkan;
 import Logger;
 import VkUtil;
 import Image;
+import depthImageDesc;
+import depthPyramidImageDesc;
 import ComputePass;
 
 namespace {
@@ -40,8 +42,10 @@ constexpr BufferAccess DEPTH_PYRAMID_COUNTER_BUILD{
  * @param level mip level
  * @return a view of mip `level`, or of the last mip past the chain.
  */
-ImageRef pyramidMipView(DepthPyramid& pyramid, uint32_t level) {
-    return pyramid.mipView(std::min(level, pyramid.mipLevels() - 1));
+ImageRef pyramidMipView(Image& pyramid, uint32_t level) {
+    const uint32_t mip = std::min(level, pyramid.mipLevels() - 1);
+    return pyramid.view(vk::ImageViewType::e2D, pyramid.format(),
+                        vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, mip, 1, 0, 1});
 }
 
 } // namespace
@@ -50,14 +54,14 @@ bool SharedRenderTargets::init(VulkanContext& ctx, vk::Extent2D extent,
                                TextureManager& textures) {
     textures_ = &textures;
     for (size_t i = 0; i < depth_.size(); ++i) {
-        auto& depth = depth_[i];
-        depth.emplace(ctx.allocator(), extent);
-        if (!depth->create()) {
+        Image& depth = depth_[i];
+        if (!depth.allocate(ctx.allocator(), depthDesc(extent))) {
             logError("SharedRenderTargets::init: depth target allocation failed");
             destroy();
             return false;
         }
-        depthSlots_[i] = textures.addSampledBorrowed(depth->view(), SAMPLED_DEPTH_LAYOUT);
+        depthSlots_[i] = textures.addSampledBorrowed(depth.view(vk::ImageAspectFlagBits::eDepth),
+                                                     SAMPLED_DEPTH_LAYOUT);
         if (!depthSlots_[i]) {
             logError("SharedRenderTargets::init: depth target registration failed");
             destroy();
@@ -68,17 +72,18 @@ bool SharedRenderTargets::init(VulkanContext& ctx, vk::Extent2D extent,
 }
 
 void SharedRenderTargets::destroy() {
-    for (auto& depth : depth_) depth.reset();
+    for (Image& depth : depth_) depth.destroy();
 }
 
 bool SharedRenderTargets::resize(vk::Extent2D extent) {
     for (size_t i = 0; i < depth_.size(); ++i) {
-        auto& depth = depth_[i];
-        if (!depth || !depth->resize(extent)) {
+        Image& depth = depth_[i];
+        if (!depth || !depth.reallocate(depthDesc(extent))) {
             logError("SharedRenderTargets::resize: depth target reallocation failed");
             return false;
         }
-        if (!textures_->replaceSampledBorrowed(depthSlots_[i], depth->view(),
+        if (!textures_->replaceSampledBorrowed(depthSlots_[i],
+                                               depth.view(vk::ImageAspectFlagBits::eDepth),
                                                SAMPLED_DEPTH_LAYOUT)) {
             logError("SharedRenderTargets::resize: depth target re-registration failed");
             return false;
@@ -88,8 +93,8 @@ bool SharedRenderTargets::resize(vk::Extent2D extent) {
 }
 
 TextureSlot SharedRenderTargets::sampledDepth(Frame::Recording& recording) {
-    DepthRenderTarget& depth = *recording.select(depth_);
-    transitionImage(recording.commandBuffer(), depth.image().handle(),
+    Image& depth = recording.select(depth_);
+    transitionImage(recording.commandBuffer(), depth.handle(),
                     vk::ImageLayout::eDepthAttachmentOptimal, SAMPLED_DEPTH_LAYOUT,
                     vk::PipelineStageFlagBits2::eLateFragmentTests,
                     vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -102,9 +107,8 @@ TextureSlot SharedRenderTargets::sampledDepth(Frame::Recording& recording) {
 vk::RenderingAttachmentInfo SharedRenderTargets::getDepthAttachment(
     Frame::Recording& recording) {
     const vk::CommandBuffer cmd = recording.commandBuffer();
-    DepthRenderTarget& depth = *recording.select(depth_);
-    //TODO: move those flags to DepthRenderTarget??? Evaluate potential uses of DepthRenderTarget.
-    transitionImage(cmd, depth.image().handle(), vk::ImageLayout::eUndefined,
+    Image& depth = recording.select(depth_);
+    transitionImage(cmd, depth.handle(), vk::ImageLayout::eUndefined,
                     vk::ImageLayout::eDepthAttachmentOptimal,
                     vk::PipelineStageFlagBits2::eTopOfPipe, {},
                     vk::PipelineStageFlagBits2::eEarlyFragmentTests |
@@ -114,7 +118,7 @@ vk::RenderingAttachmentInfo SharedRenderTargets::getDepthAttachment(
                     vk::ImageAspectFlagBits::eDepth);
 
     vk::RenderingAttachmentInfo attachment{};
-    attachment.imageView   = depth.view().get();
+    attachment.imageView   = depth.view(vk::ImageAspectFlagBits::eDepth).get();
     attachment.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
     attachment.loadOp      = vk::AttachmentLoadOp::eClear;
     attachment.storeOp     = vk::AttachmentStoreOp::eStore;
@@ -162,21 +166,21 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
     if (!timings_.init(ctx)) logError("Renderer: GPU pass timings unavailable");
     
     //Create depth pyramid
-    depthPyramid_.emplace(ctx.allocator(), extent);
-    if (!depthPyramid_->create()) {
+    if (!depthPyramid_.allocate(ctx.allocator(), depthPyramidDesc(extent))) {
         logError("Renderer: depth pyramid allocation failed");
         destroy();
         return false;
     }
     depthPyramidUndefined_ = true;
     //Register with texture manager
-    depthPyramidSlot_ = textures_->addSampledBorrowed(depthPyramid_->view(), DEPTH_PYRAMID_LAYOUT);
+    depthPyramidSlot_ = textures_->addSampledBorrowed(
+        depthPyramid_.view(vk::ImageAspectFlagBits::eColor), DEPTH_PYRAMID_LAYOUT);
     if (!depthPyramidSlot_) {
         destroy();
         return false;
     }
-    
-    if (depthPyramid_->mipLevels() > DepthPyramid::MAX_MIP_LEVELS) {
+
+    if (depthPyramid_.mipLevels() > DEPTH_PYRAMID_MAX_MIP_LEVELS) {
         logError("Renderer: depth pyramid has more mips than its storage slots");
         destroy();
         return false;
@@ -184,7 +188,7 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
     // Create storage slots for each of depth pyramid mips
     for (uint32_t level = 0; level < depthPyramidMipSlots_.size(); ++level) {
         depthPyramidMipSlots_[level] =
-            textures_->addStorage(pyramidMipView(*depthPyramid_, level));
+            textures_->addStorage(pyramidMipView(depthPyramid_, level));
         if (depthPyramidMipSlots_[level].value != depthPyramidMipSlots_[0].value + level) {
             logError("Renderer: depth pyramid storage slots are not consecutive");
             destroy();
@@ -192,7 +196,7 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
         }
     }
     depthPyramidPush_.pyramidMip0Slot = depthPyramidMipSlots_[0].value;
-    depthPyramidPush_.mipCount        = depthPyramid_->mipLevels();
+    depthPyramidPush_.mipCount        = depthPyramid_.mipLevels();
     //Prepare depth pyramid build pass
     if (!depthPyramidPass_.init(ctx.device(), shaderLoader, SHADER_DIR / "build_depth_pyramid.spv",
                                 textures.layout()))
@@ -214,7 +218,7 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
 void Renderer::destroy() {
     depthPyramidCounter_.destroy();
     depthPyramidPass_.destroy();
-    depthPyramid_.reset();
+    depthPyramid_.destroy();
     timings_.destroy();
     drawStats_.destroy();
     forward_.destroy();
@@ -237,13 +241,13 @@ void Renderer::render(Frame::Recording& recording,
 
     //Transition depth pyramid layout to DEPTH_PYRAMID_LAYOUT TODO: Shouldn't really happen here
     if (depthPyramidUndefined_) {
-        transitionImage(recording.commandBuffer(), depthPyramid_->image().handle(),
+        transitionImage(recording.commandBuffer(), depthPyramid_.handle(),
                         vk::ImageLayout::eUndefined, DEPTH_PYRAMID_LAYOUT,
                         vk::PipelineStageFlagBits2::eNone, {},
                         vk::PipelineStageFlagBits2::eComputeShader,
                         vk::AccessFlagBits2::eShaderStorageWrite |
                             vk::AccessFlagBits2::eShaderSampledRead,
-                        vk::ImageAspectFlagBits::eColor, 0, depthPyramid_->mipLevels());
+                        vk::ImageAspectFlagBits::eColor, 0, depthPyramid_.mipLevels());
         depthPyramidCounter_.resetAccess();
         (void)depthPyramidCounter_.use(DEPTH_PYRAMID_COUNTER_CLEAR);
         fillBufferWithZero(recording.commandBuffer(), depthPyramidCounter_.region());
@@ -282,7 +286,7 @@ void Renderer::render(Frame::Recording& recording,
         if (const auto barrier = depthPyramidCounter_.use(DEPTH_PYRAMID_COUNTER_BUILD))
             recordBarriers(cmd, std::span(&*barrier, 1));
         // Earlier sampled reads of the pyramid finish before the build overwrites it.
-        transitionImage(cmd, depthPyramid_->image().handle(),
+        transitionImage(cmd, depthPyramid_.handle(),
                         DEPTH_PYRAMID_LAYOUT, DEPTH_PYRAMID_LAYOUT,
                         vk::PipelineStageFlagBits2::eComputeShader |
                             vk::PipelineStageFlagBits2::eMeshShaderEXT |
@@ -291,14 +295,14 @@ void Renderer::render(Frame::Recording& recording,
                         vk::PipelineStageFlagBits2::eComputeShader,
                         vk::AccessFlagBits2::eShaderStorageRead |
                             vk::AccessFlagBits2::eShaderStorageWrite,
-                        vk::ImageAspectFlagBits::eColor, 0, depthPyramid_->mipLevels());
-        const vk::Extent3D pyramidExtent = depthPyramid_->extent();
+                        vk::ImageAspectFlagBits::eColor, 0, depthPyramid_.mipLevels());
+        const vk::Extent3D pyramidExtent = depthPyramid_.extent();
         depthPyramidPass_.recordGroups(cmd, depthPyramidPush_,
                                        std::max(1u, pyramidExtent.width / DEPTH_PYRAMID_TILE),
                                        std::max(1u, pyramidExtent.height / DEPTH_PYRAMID_TILE),
                                        textures_->set());
         // Build writes are visible to the next frame's sampled reads.
-        transitionImage(cmd, depthPyramid_->image().handle(),
+        transitionImage(cmd, depthPyramid_.handle(),
                         DEPTH_PYRAMID_LAYOUT, DEPTH_PYRAMID_LAYOUT,
                         vk::PipelineStageFlagBits2::eComputeShader,
                         vk::AccessFlagBits2::eShaderStorageWrite,
@@ -306,7 +310,7 @@ void Renderer::render(Frame::Recording& recording,
                             vk::PipelineStageFlagBits2::eMeshShaderEXT |
                             vk::PipelineStageFlagBits2::eFragmentShader,
                         vk::AccessFlagBits2::eShaderSampledRead,
-                        vk::ImageAspectFlagBits::eColor, 0, depthPyramid_->mipLevels());
+                        vk::ImageAspectFlagBits::eColor, 0, depthPyramid_.mipLevels());
         timings_.mark(cmd, "build depth pyramid end");
         depthPyramidViewProjection_ = viewProjection;
     }
@@ -317,28 +321,30 @@ void Renderer::render(Frame::Recording& recording,
 }
 
 bool Renderer::resize(vk::Extent2D extent) {
-    if (!depthPyramid_->resize(extent))
+    if (!depthPyramid_.reallocate(depthPyramidDesc(extent)))
     {
         logError("Renderer: depth pyramid resize failed");
         return false;
     }
     depthPyramidUndefined_ = true;
     depthPyramidBuiltLastFrame_ = false;
-    if (!textures_->replaceSampledBorrowed(depthPyramidSlot_, depthPyramid_->view(), DEPTH_PYRAMID_LAYOUT))
+    if (!textures_->replaceSampledBorrowed(depthPyramidSlot_,
+                                           depthPyramid_.view(vk::ImageAspectFlagBits::eColor),
+                                           DEPTH_PYRAMID_LAYOUT))
     {
         logError("Renderer: depth pyramid replacement failed");
         return false;
     }
-    if (depthPyramid_->mipLevels() > DepthPyramid::MAX_MIP_LEVELS) {
+    if (depthPyramid_.mipLevels() > DEPTH_PYRAMID_MAX_MIP_LEVELS) {
         logError("Renderer: depth pyramid has more mips than its storage slots");
         return false;
     }
     for (uint32_t level = 0; level < depthPyramidMipSlots_.size(); ++level) {
         if (!textures_->replaceStorage(depthPyramidMipSlots_[level],
-                                       pyramidMipView(*depthPyramid_, level)))
+                                       pyramidMipView(depthPyramid_, level)))
             return false;
     }
-    depthPyramidPush_.mipCount = depthPyramid_->mipLevels();
+    depthPyramidPush_.mipCount = depthPyramid_.mipLevels();
     if (!sharedTargets_.resize(extent)) return false;
     return forward_.resize(extent);
 }

@@ -22,6 +22,7 @@ module;
 module VulkanApp;
 
 import vulkan;
+import RendererConfig;
 import Logger;
 import DebugFlags;
 

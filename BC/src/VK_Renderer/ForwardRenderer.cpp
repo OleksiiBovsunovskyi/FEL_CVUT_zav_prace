@@ -9,6 +9,7 @@ module ForwardRenderer;
 
 import vulkan;
 import VkUtil;
+import RendererConfig;
 import Logger;
 import TextureManager;
 

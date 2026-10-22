@@ -3,7 +3,6 @@ module;
 #include <array>
 #include <cstdint>
 #include <functional>
-#include <optional>
 #include <span>
 
 #include <glm/glm.hpp>
@@ -21,9 +20,13 @@ import VK_Buffers;
 import ForwardRenderer;
 export import GpuPassTimings;
 export import GpuDrawStats;
-import renderTarget;
+import Image;
 import TextureManager;
 import ComputePass;
+
+/// Depth pyramid levels for an extent up to 65535 on either side.
+constexpr uint32_t DEPTH_PYRAMID_MAX_MIP_LEVELS = 16;
+static_assert(maxMipLevels(vk::Extent3D{65535, 65535, 1}) == DEPTH_PYRAMID_MAX_MIP_LEVELS);
 
 /**
  * Owns per-frame depth targets shared by renderer passes.
@@ -55,7 +58,7 @@ public:
     [[nodiscard]] TextureSlot sampledDepth(Frame::Recording& recording);
 
 private:
-    std::array<std::optional<DepthRenderTarget>, FRAMES_IN_FLIGHT> depth_;
+    std::array<Image, FRAMES_IN_FLIGHT> depth_;
     std::array<TextureSlot, FRAMES_IN_FLIGHT> depthSlots_;
     TextureManager* textures_ = nullptr;
 };
@@ -126,9 +129,9 @@ private:
 
     TextureManager* textures_ = nullptr;
     DebugFlags            debugFlags_;
-    std::optional<DepthPyramid> depthPyramid_;
+    Image                 depthPyramid_;
     TextureSlot           depthPyramidSlot_;
-    std::array<StorageSlot, DepthPyramid::MAX_MIP_LEVELS> depthPyramidMipSlots_;
+    std::array<StorageSlot, DEPTH_PYRAMID_MAX_MIP_LEVELS> depthPyramidMipSlots_;
     /// True while the depth pyramid image is in eUndefined.
     bool                  depthPyramidUndefined_ = true;
     /// World-to-clip matrix of the depth the pyramid was last built from.

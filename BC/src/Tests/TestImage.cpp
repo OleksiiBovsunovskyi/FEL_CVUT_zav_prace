@@ -1,8 +1,8 @@
-/* Compile-time checks of render target extent, mip chain and view type rules. */
+/* Compile-time checks of image extent, mip chain and view type rules. */
 
 module;
 
-module renderTarget;
+module Image;
 
 import vulkan;
 static_assert(!extentFitsType(vk::ImageType::e2D, {1920, 1080, 0}),

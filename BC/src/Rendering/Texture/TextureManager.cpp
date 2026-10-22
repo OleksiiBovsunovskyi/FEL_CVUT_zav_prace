@@ -301,11 +301,12 @@ TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer comman
         region.bufferOffset += upload.region.offset;
 
     Image& image = images_.emplace_back();
-    if (!image.allocate(allocator_, vk::ImageType::e2D, format,
-                        vk::Extent3D{extent.width, extent.height, 1},
-                        vk::ImageUsageFlagBits::eSampled |
-                            vk::ImageUsageFlagBits::eTransferDst,
-                        levelCount)) {
+    if (!image.allocate(allocator_,
+                        ImageDesc{.format    = format,
+                                  .extent    = vk::Extent3D{extent.width, extent.height, 1},
+                                  .usage     = vk::ImageUsageFlagBits::eSampled |
+                                               vk::ImageUsageFlagBits::eTransferDst,
+                                  .mipLevels = levelCount})) {
         images_.pop_back();
         return {};
     }
