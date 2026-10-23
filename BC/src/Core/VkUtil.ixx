@@ -36,7 +36,7 @@ static_assert((DEPTH_COMPARE_OP == vk::CompareOp::eGreater ||
               "1 for a LESS one - or every fragment passes the depth test");
 
 /// synchronization2 image layout transition.
-export inline void transitionImage(vk::CommandBuffer cmd, vk::Image image,
+export [[deprecated("Use IResource::Use instead")]]  inline void transitionImage(vk::CommandBuffer cmd, vk::Image image,
                                    vk::ImageLayout oldLayout, vk::ImageLayout newLayout,
                                    vk::PipelineStageFlags2 srcStage, vk::AccessFlags2 srcAccess,
                                    vk::PipelineStageFlags2 dstStage, vk::AccessFlags2 dstAccess,

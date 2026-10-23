@@ -94,10 +94,10 @@ public:
 protected:
     /**
      * Moves the resource to access and adds the barrier, if one is needed, to list.
-     * @param access use of the resource by the next recorded command
+     * @param targetAccess use of the resource by the next recorded command
      * @param list barriers to be recorded before that command
     */
-    virtual void collect(const ResourceAccess& access, BarrierList& list) = 0;
+    virtual void collect(const ResourceAccess& targetAccess, BarrierList& list) = 0;
     //Static helper to batch use for multiple resources.
     friend void use(vk::CommandBuffer cmd, std::initializer_list<Use> uses);
 

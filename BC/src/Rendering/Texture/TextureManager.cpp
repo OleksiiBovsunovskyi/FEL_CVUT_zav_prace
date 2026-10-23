@@ -16,6 +16,7 @@ import vk_mem_alloc;
 import Logger;
 import VkUtil;
 import AssetData;
+import Resource;
 
 namespace {
 
@@ -310,14 +311,15 @@ TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer comman
         images_.pop_back();
         return {};
     }
-
-    transitionImage(commandBuffer, image.handle(), vk::ImageLayout::eUndefined,
-                    vk::ImageLayout::eTransferDstOptimal,
-                    vk::PipelineStageFlagBits2::eTopOfPipe, {},
-                    vk::PipelineStageFlagBits2::eTransfer,
-                    vk::AccessFlagBits2::eTransferWrite,
-                    vk::ImageAspectFlagBits::eColor, 0, levelCount);
-
+    
+    ResourceAccess newUsage{
+        .stageMask = vk::PipelineStageFlagBits2::eTransfer,
+        .accessMask = vk::AccessFlagBits2::eTransferWrite,
+        .layout = vk::ImageLayout::eTransferDstOptimal
+    };
+    image.use(commandBuffer, newUsage);
+    
+    
     vk::CopyBufferToImageInfo2 copyInfo{};
     copyInfo.srcBuffer      = upload.region.buffer;
     copyInfo.dstImage       = image.handle();
@@ -325,15 +327,13 @@ TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer comman
     copyInfo.regionCount    = static_cast<uint32_t>(regions.size());
     copyInfo.pRegions       = regions.data();
     commandBuffer.copyBufferToImage2(copyInfo);
-
-    transitionImage(commandBuffer, image.handle(),
-                    vk::ImageLayout::eTransferDstOptimal,
-                    vk::ImageLayout::eShaderReadOnlyOptimal,
-                    vk::PipelineStageFlagBits2::eTransfer,
-                    vk::AccessFlagBits2::eTransferWrite,
-                    vk::PipelineStageFlagBits2::eFragmentShader,
-                    vk::AccessFlagBits2::eShaderSampledRead,
-                    vk::ImageAspectFlagBits::eColor, 0, levelCount);
+    
+    newUsage= {
+        .stageMask = vk::PipelineStageFlagBits2::eFragmentShader,
+        .accessMask = vk::AccessFlagBits2::eShaderSampledRead,
+        .layout = vk::ImageLayout::eShaderReadOnlyOptimal
+    };
+    image.use(commandBuffer, newUsage);
 
     const ImageRef view = image.view(
         vk::ImageViewType::e2D, format,

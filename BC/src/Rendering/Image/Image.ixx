@@ -12,6 +12,7 @@ export module Image;
 import vulkan;
 import vk_mem_alloc;
 import Logger;
+import Resource;
 
 /* Warns at every call site. Clang only;*/
 #if defined(__clang__)
@@ -93,14 +94,26 @@ private:
  *Borrowed image to be set with Image::borrow().
  *Owned images and views are destroyed on destruction
  */
-export class Image {
+export class Image : public IResource {
 public:
     Image() = default;
-    ~Image() { destroy(); }
+    //We override default IResource destructor.
+    ~Image() override {  destroy(); }
 
     Image(const Image&)            = delete;
     Image& operator=(const Image&) = delete;
-
+    /**
+    * Aspect defined by the given image format.
+    * @param format format of the image
+    * @return aspect from given format.
+    */
+    static constexpr vk::ImageAspectFlags aspectOf(vk::Format format) {
+        vk::ImageAspectFlags aspect{};
+        if (vk::hasDepthComponent(format))   aspect |= vk::ImageAspectFlagBits::eDepth;
+        if (vk::hasStencilComponent(format)) aspect |= vk::ImageAspectFlagBits::eStencil;
+        return aspect ? aspect : vk::ImageAspectFlagBits::eColor;
+    }
+    
     /**
      * Allocates the image and its memory, replacing whatever this held before.
      *
@@ -115,17 +128,18 @@ public:
         destroy();
 
         vk::ImageCreateInfo imageInfo{};
-        imageInfo.imageType     = desc.type;
-        imageInfo.format        = desc.format;
-        imageInfo.extent        = desc.extent;
-        imageInfo.mipLevels     = desc.mipLevels;
-        imageInfo.arrayLayers   = desc.arrayLayers;
-        imageInfo.samples       = desc.samples;
-        imageInfo.tiling        = vk::ImageTiling::eOptimal;
-        imageInfo.usage         = desc.usage;
-        imageInfo.sharingMode   = vk::SharingMode::eExclusive;
-        imageInfo.initialLayout = vk::ImageLayout::eUndefined;
-
+        {
+            imageInfo.imageType     = desc.type;
+            imageInfo.format        = desc.format;
+            imageInfo.extent        = desc.extent;
+            imageInfo.mipLevels     = desc.mipLevels;
+            imageInfo.arrayLayers   = desc.arrayLayers;
+            imageInfo.samples       = desc.samples;
+            imageInfo.tiling        = vk::ImageTiling::eOptimal;
+            imageInfo.usage         = desc.usage;
+            imageInfo.sharingMode   = vk::SharingMode::eExclusive;
+            imageInfo.initialLayout = vk::ImageLayout::eUndefined;
+        } //Fill out image create info from desc
         vma::AllocationCreateInfo allocInfo{};
         allocInfo.usage = vma::MemoryUsage::eAutoPreferDevice;
 
@@ -264,6 +278,26 @@ public:
     /// @return true while an image is valid, (owned or borrowed).
     [[nodiscard]] explicit operator bool() const { return static_cast<bool>(image_); }
 
+protected:
+    
+    /// IResource interface
+    void collect(const ResourceAccess& targetAccess, BarrierList& list) override
+    {
+        assert(image_ && "Image::collect: no image to barrier");
+        vk::ImageMemoryBarrier2 barrier{};
+        const std::optional<ResourceAccess> previous = exchangeAccess(targetAccess);
+        if (!previous) return; //No barrier needed
+        barrier.image = image_;
+        barrier.srcStageMask = previous->stageMask;
+        barrier.dstStageMask = targetAccess.stageMask;
+        barrier.srcAccessMask = previous->accessMask;
+        barrier.dstAccessMask = targetAccess.accessMask;
+        barrier.oldLayout = previous->layout;
+        barrier.newLayout = targetAccess.layout;
+        barrier.subresourceRange = {aspectOf(desc_.format), 0, desc_.mipLevels, 0, desc_.arrayLayers};
+        list.add(barrier);
+    }
+    
 private:
     /**
      * Debug builds only.
@@ -301,6 +335,8 @@ private:
     ImageDesc desc_{};
 
     uint32_t version_ = 0;
+
+
 };
 
 vk::ImageView ImageRef::get() const {

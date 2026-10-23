@@ -16,6 +16,7 @@ import Image;
 import depthImageDesc;
 import depthPyramidImageDesc;
 import ComputePass;
+import Resource;
 
 namespace {
 
@@ -94,13 +95,11 @@ bool SharedRenderTargets::resize(vk::Extent2D extent) {
 
 TextureSlot SharedRenderTargets::sampledDepth(Frame::Recording& recording) {
     Image& depth = recording.select(depth_);
-    transitionImage(recording.commandBuffer(), depth.handle(),
-                    vk::ImageLayout::eDepthAttachmentOptimal, SAMPLED_DEPTH_LAYOUT,
-                    vk::PipelineStageFlagBits2::eLateFragmentTests,
-                    vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-                    vk::PipelineStageFlagBits2::eComputeShader,
-                    vk::AccessFlagBits2::eShaderSampledRead,
-                    vk::ImageAspectFlagBits::eDepth);
+    depth.use(recording.commandBuffer(), ResourceAccess{
+        .stageMask = vk::PipelineStageFlagBits2::eComputeShader,
+        .accessMask = vk::AccessFlagBits2::eShaderSampledRead,
+        .layout = SAMPLED_DEPTH_LAYOUT
+    });
     return recording.select(depthSlots_);
 }
 
@@ -108,14 +107,13 @@ vk::RenderingAttachmentInfo SharedRenderTargets::getDepthAttachment(
     Frame::Recording& recording) {
     const vk::CommandBuffer cmd = recording.commandBuffer();
     Image& depth = recording.select(depth_);
-    transitionImage(cmd, depth.handle(), vk::ImageLayout::eUndefined,
-                    vk::ImageLayout::eDepthAttachmentOptimal,
-                    vk::PipelineStageFlagBits2::eTopOfPipe, {},
-                    vk::PipelineStageFlagBits2::eEarlyFragmentTests |
-                        vk::PipelineStageFlagBits2::eLateFragmentTests,
-                    vk::AccessFlagBits2::eDepthStencilAttachmentRead |
-                        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-                    vk::ImageAspectFlagBits::eDepth);
+    depth.use(cmd, ResourceAccess{
+        .stageMask = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                     vk::PipelineStageFlagBits2::eLateFragmentTests,
+        .accessMask = vk::AccessFlagBits2::eDepthStencilAttachmentRead |
+                      vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        .layout = vk::ImageLayout::eDepthAttachmentOptimal
+    });
 
     vk::RenderingAttachmentInfo attachment{};
     attachment.imageView   = depth.view(vk::ImageAspectFlagBits::eDepth).get();
@@ -241,13 +239,6 @@ void Renderer::render(Frame::Recording& recording,
 
     //Transition depth pyramid layout to DEPTH_PYRAMID_LAYOUT TODO: Shouldn't really happen here
     if (depthPyramidUndefined_) {
-        transitionImage(recording.commandBuffer(), depthPyramid_.handle(),
-                        vk::ImageLayout::eUndefined, DEPTH_PYRAMID_LAYOUT,
-                        vk::PipelineStageFlagBits2::eNone, {},
-                        vk::PipelineStageFlagBits2::eComputeShader,
-                        vk::AccessFlagBits2::eShaderStorageWrite |
-                            vk::AccessFlagBits2::eShaderSampledRead,
-                        vk::ImageAspectFlagBits::eColor, 0, depthPyramid_.mipLevels());
         depthPyramidCounter_.resetAccess();
         (void)depthPyramidCounter_.use(DEPTH_PYRAMID_COUNTER_CLEAR);
         fillBufferWithZero(recording.commandBuffer(), depthPyramidCounter_.region());
@@ -274,6 +265,15 @@ void Renderer::render(Frame::Recording& recording,
     // Get the depth attachment for the current frame.
     const vk::RenderingAttachmentInfo depthAttachment =
         sharedTargets_.getDepthAttachment(recording);
+
+    //Mesh shader samples depth pyramid, we need to transition it for the forward pass
+    depthPyramid_.use(recording.commandBuffer(), ResourceAccess{
+        .stageMask = vk::PipelineStageFlagBits2::eComputeShader |
+                     vk::PipelineStageFlagBits2::eMeshShaderEXT |
+                     vk::PipelineStageFlagBits2::eFragmentShader,
+        .accessMask = vk::AccessFlagBits2::eShaderSampledRead,
+        .layout = DEPTH_PYRAMID_LAYOUT
+    });
     // Start forward pass
     forward_.render(recording, meshDraw, frame, materials,
                     textures_ ? textures_->set() : nullptr, depthAttachment, draw_,
@@ -282,35 +282,25 @@ void Renderer::render(Frame::Recording& recording,
     if (debugFlags_.UseHIZOC)
     {
         const vk::CommandBuffer cmd = recording.commandBuffer();
+        //Set sampled depth image slot
         depthPyramidPush_.depthSlot = sharedTargets_.sampledDepth(recording).value;
+        
         if (const auto barrier = depthPyramidCounter_.use(DEPTH_PYRAMID_COUNTER_BUILD))
             recordBarriers(cmd, std::span(&*barrier, 1));
-        // Earlier sampled reads of the pyramid finish before the build overwrites it.
-        transitionImage(cmd, depthPyramid_.handle(),
-                        DEPTH_PYRAMID_LAYOUT, DEPTH_PYRAMID_LAYOUT,
-                        vk::PipelineStageFlagBits2::eComputeShader |
-                            vk::PipelineStageFlagBits2::eMeshShaderEXT |
-                            vk::PipelineStageFlagBits2::eFragmentShader,
-                        vk::AccessFlagBits2::eShaderSampledRead,
-                        vk::PipelineStageFlagBits2::eComputeShader,
-                        vk::AccessFlagBits2::eShaderStorageRead |
-                            vk::AccessFlagBits2::eShaderStorageWrite,
-                        vk::ImageAspectFlagBits::eColor, 0, depthPyramid_.mipLevels());
+        
+        // We need depth pyramid writable by compute shader.
+        depthPyramid_.use(cmd, ResourceAccess{
+            .stageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .accessMask = vk::AccessFlagBits2::eShaderStorageWrite | vk::AccessFlagBits2::eShaderStorageRead,
+            .layout = DEPTH_PYRAMID_LAYOUT
+        });
+        
         const vk::Extent3D pyramidExtent = depthPyramid_.extent();
         depthPyramidPass_.recordGroups(cmd, depthPyramidPush_,
                                        std::max(1u, pyramidExtent.width / DEPTH_PYRAMID_TILE),
                                        std::max(1u, pyramidExtent.height / DEPTH_PYRAMID_TILE),
                                        textures_->set());
-        // Build writes are visible to the next frame's sampled reads.
-        transitionImage(cmd, depthPyramid_.handle(),
-                        DEPTH_PYRAMID_LAYOUT, DEPTH_PYRAMID_LAYOUT,
-                        vk::PipelineStageFlagBits2::eComputeShader,
-                        vk::AccessFlagBits2::eShaderStorageWrite,
-                        vk::PipelineStageFlagBits2::eComputeShader |
-                            vk::PipelineStageFlagBits2::eMeshShaderEXT |
-                            vk::PipelineStageFlagBits2::eFragmentShader,
-                        vk::AccessFlagBits2::eShaderSampledRead,
-                        vk::ImageAspectFlagBits::eColor, 0, depthPyramid_.mipLevels());
+
         timings_.mark(cmd, "build depth pyramid end");
         depthPyramidViewProjection_ = viewProjection;
     }

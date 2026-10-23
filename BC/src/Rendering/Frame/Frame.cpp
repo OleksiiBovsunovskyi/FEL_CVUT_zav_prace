@@ -10,6 +10,7 @@ module Frame;
 import vulkan;
 import VkUtil;
 import Logger;
+import Resource;
 
 Frame::Frame(VulkanContext& ctx, vk::Image image, vk::Format format, vk::Extent2D extent)
     : device_(ctx.device()), queue_(ctx.graphicsQueue()) {
@@ -93,9 +94,13 @@ vk::Extent2D Frame::Recording::extent() const {
 void Frame::transition(ImageUse imageUse) {
     require(State::Recording, "transition");
 
-    transitionImage(commandBuffer_, frameColor_.handle(),recordingUse_.layout, imageUse.layout,
-                    recordingUse_.stageMask, recordingUse_.accessMask,
-                    imageUse.stageMask, imageUse.accessMask);
+    ResourceAccess newAccess
+    {
+        .stageMask = imageUse.stageMask,
+        .accessMask = imageUse.accessMask,
+        .layout = imageUse.layout
+    };
+    frameColor_.use(commandBuffer_, newAccess);
     recordingUse_ = imageUse;
 }
 
