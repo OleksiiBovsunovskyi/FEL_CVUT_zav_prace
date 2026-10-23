@@ -439,6 +439,7 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Core/VulkanContext.ixx"
         "${PGR_VK_SRC}/Core/Swapchain.ixx"
         "${PGR_VK_SRC}/Core/VkUtil.ixx"
+        "${PGR_VK_SRC}/Core/Resource.ixx"
         "${PGR_VK_SRC}/Core/FrameInFlightIndex.ixx"
         "${PGR_VK_SRC}/Core/FrameRunner/FrameRunner.ixx"
         "${PGR_VK_SRC}/Core/Buffer/BufferTypes.ixx"
