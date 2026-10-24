@@ -160,6 +160,4 @@ private:
     ComputePass<ScatterInstancesPush>  scatterInstances_;
     ComputePass<BuildDrawCommandsPush> buildDrawCommands_;
     VulkanContext*                     ctx_ = nullptr;
-
-    std::vector<vk::BufferMemoryBarrier2> barriers_;
 };

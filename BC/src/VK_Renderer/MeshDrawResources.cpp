@@ -19,6 +19,7 @@ import vulkan;
 import vk_mem_alloc;
 import Logger;
 import VkUtil;
+import RendererConfig;
 
 namespace {
 
@@ -54,29 +55,6 @@ uint32_t capacityFor(uint32_t count) {
 }
 
 constexpr double MIB = 1024.0 * 1024.0;
-
-constexpr BufferAccess TRANSFER_WRITE{vk::PipelineStageFlagBits2::eAllTransfer,
-                                      vk::AccessFlagBits2::eTransferWrite};
-constexpr BufferAccess COMPUTE_SCATTER_WRITE{
-    vk::PipelineStageFlagBits2::eComputeShader,
-    vk::AccessFlagBits2::eShaderStorageWrite};
-constexpr BufferAccess COMPUTE_READ{vk::PipelineStageFlagBits2::eComputeShader,
-                                    vk::AccessFlagBits2::eShaderStorageRead};
-constexpr BufferAccess COMPUTE_WRITE{
-    vk::PipelineStageFlagBits2::eComputeShader,
-    vk::AccessFlagBits2::eShaderStorageRead |
-        vk::AccessFlagBits2::eShaderStorageWrite};
-constexpr BufferAccess MESH_SHADER_READ{
-    vk::PipelineStageFlagBits2::eMeshShaderEXT,
-    vk::AccessFlagBits2::eShaderStorageRead};
-constexpr BufferAccess INDIRECT_READ{vk::PipelineStageFlagBits2::eDrawIndirect,
-                                     vk::AccessFlagBits2::eIndirectCommandRead};
-
-/// Keeps whichever barriers a group of AllocatedBuffer::use() calls produced.
-void addBarrierIfPresent(std::vector<vk::BufferMemoryBarrier2>& barriers,
-          std::optional<vk::BufferMemoryBarrier2> barrier) {
-    if (barrier) barriers.push_back(*barrier);
-}
 
 } // namespace
 
@@ -229,12 +207,11 @@ PreparedMeshDraw MeshDrawResources::prepare(
         slot.packPendingUpdates(instances);
 
     const vk::CommandBuffer commandBuffer = recording.commandBuffer();
-    barriers_.clear();
 
-    if (updates) addBarrierIfPresent(barriers_, slot.instances.use(COMPUTE_SCATTER_WRITE));
-    addBarrierIfPresent(barriers_, slot.count.use(TRANSFER_WRITE));
-    recordBarriers(commandBuffer, barriers_);
-    barriers_.clear();
+    if (updates)
+        use(commandBuffer, {{slot.instances, COMPUTE_SCATTER_WRITE}, {slot.count, TRANSFER_WRITE}});
+    else
+        slot.count.use(commandBuffer, TRANSFER_WRITE);
 
     ScatterInstancesPush scatter{};
     scatter.updates     = updates.gpu.data;
@@ -246,12 +223,10 @@ PreparedMeshDraw MeshDrawResources::prepare(
     
     fillBufferWithZero(commandBuffer, spans.count.region);
 
-    addBarrierIfPresent(barriers_, slot.instances.use(COMPUTE_READ));
-    addBarrierIfPresent(barriers_, slot.drawData.use(COMPUTE_WRITE));
-    addBarrierIfPresent(barriers_, slot.commands.use(COMPUTE_WRITE));
-    addBarrierIfPresent(barriers_, slot.count.use(COMPUTE_WRITE));
-    recordBarriers(commandBuffer, barriers_);
-    barriers_.clear();
+    use(commandBuffer, {{slot.instances, COMPUTE_READ},
+                        {slot.drawData, COMPUTE_WRITE},
+                        {slot.commands, COMPUTE_WRITE},
+                        {slot.count, COMPUTE_WRITE}});
 
     BuildDrawCommandsPush push{};
     push.frame = frameData;
@@ -263,11 +238,10 @@ PreparedMeshDraw MeshDrawResources::prepare(
     push.depthPyramidSlot = depthPyramidSlot.value;
     buildDrawCommands_.record(commandBuffer, push, instanceCount, textureSet);
 
-    addBarrierIfPresent(barriers_, slot.instances.use(MESH_SHADER_READ));
-    addBarrierIfPresent(barriers_, slot.drawData.use(MESH_SHADER_READ));
-    addBarrierIfPresent(barriers_, slot.commands.use(INDIRECT_READ));
-    addBarrierIfPresent(barriers_, slot.count.use(INDIRECT_READ));
-    recordBarriers(commandBuffer, barriers_);
+    use(commandBuffer, {{slot.instances, MESH_SHADER_READ},
+                        {slot.drawData, MESH_SHADER_READ},
+                        {slot.commands, INDIRECT_READ},
+                        {slot.count, INDIRECT_READ}});
     timings.mark(commandBuffer, "build_draw_commands");
 
     return PreparedMeshDraw{spans.instances.gpu.data, spans.drawData.gpu.data,

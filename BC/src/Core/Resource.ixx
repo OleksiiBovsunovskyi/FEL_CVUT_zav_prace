@@ -2,6 +2,7 @@ module;
 #include <cstdint>
 #include <initializer_list>
 #include <optional>
+#include <utility>
 #include <vector>
 
 export module Resource;
@@ -80,6 +81,16 @@ public:
     virtual ~IResource() = default;
 
     /**
+     * Releases the GPU object and forgets its recorded access.
+     * Safe to call twice.
+     * @note Not called by ~IResource(); every concrete class calls it from its own destructor.
+     */
+    void destroy() {
+        release();
+        access_ = {};
+    }
+
+    /**
      * Moves the resource to access and records the barrier, if one is needed.
      * @param cmd command buffer in the recording state
      * @param access use of the resource by the next recorded command
@@ -92,6 +103,20 @@ public:
 
 
 protected:
+    IResource() = default;
+
+    /// Takes other's recorded access; other's becomes undefined.
+    IResource(IResource&& other) noexcept : access_(std::exchange(other.access_, {})) {}
+    IResource& operator=(IResource&& other) noexcept {
+        access_ = std::exchange(other.access_, {});
+        return *this;
+    }
+
+    /**
+     * Destroys the GPU object and everything owned with it.
+     */
+    virtual void release() = 0;
+
     /**
      * Moves the resource to access and adds the barrier, if one is needed, to list.
      * @param targetAccess use of the resource by the next recorded command
@@ -126,6 +151,7 @@ protected:
         return previous;
     }
 
+private: 
     //What do we need to wait for before this resource is used (access we are transitioning from)
     ResourceAccess access_{};
 };

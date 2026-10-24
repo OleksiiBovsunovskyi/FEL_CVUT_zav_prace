@@ -17,6 +17,7 @@ import Logger;
 import VkUtil;
 import AssetData;
 import Resource;
+import RendererConfig;
 
 namespace {
 
@@ -312,28 +313,17 @@ TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer comman
         return {};
     }
     
-    ResourceAccess newUsage{
-        .stageMask = vk::PipelineStageFlagBits2::eTransfer,
-        .accessMask = vk::AccessFlagBits2::eTransferWrite,
-        .layout = vk::ImageLayout::eTransferDstOptimal
-    };
-    image.use(commandBuffer, newUsage);
-    
-    
+    image.use(commandBuffer, TEXTURE_TRANSFER_WRITE);
+
     vk::CopyBufferToImageInfo2 copyInfo{};
     copyInfo.srcBuffer      = upload.region.buffer;
     copyInfo.dstImage       = image.handle();
-    copyInfo.dstImageLayout = vk::ImageLayout::eTransferDstOptimal;
+    copyInfo.dstImageLayout = TEXTURE_TRANSFER_WRITE.layout;
     copyInfo.regionCount    = static_cast<uint32_t>(regions.size());
     copyInfo.pRegions       = regions.data();
     commandBuffer.copyBufferToImage2(copyInfo);
     
-    newUsage= {
-        .stageMask = vk::PipelineStageFlagBits2::eFragmentShader,
-        .accessMask = vk::AccessFlagBits2::eShaderSampledRead,
-        .layout = vk::ImageLayout::eShaderReadOnlyOptimal
-    };
-    image.use(commandBuffer, newUsage);
+    image.use(commandBuffer, TEXTURE_FRAGMENT_SAMPLED_READ);
 
     const ImageRef view = image.view(
         vk::ImageViewType::e2D, format,

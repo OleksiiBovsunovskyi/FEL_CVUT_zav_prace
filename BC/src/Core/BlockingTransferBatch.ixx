@@ -7,7 +7,6 @@ import VulkanContext;
 
 /**
  * Owns the command pool, command buffer and fence one blocking transfer needs.
- * Satisfies the TransferSubmitter concept.
  * Recorded copies run on the graphics queue.
  * One batch is open at a time, between BlockingTransferBatch::begin() and
  * BlockingTransferBatch::submitAndWait().

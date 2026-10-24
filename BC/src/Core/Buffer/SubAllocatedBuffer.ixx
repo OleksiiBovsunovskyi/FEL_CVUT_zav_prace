@@ -40,25 +40,17 @@ public:
     using Base = AllocatedBuffer<Placement>;
 
     SubAllocatedBuffer() = default;
-    ~SubAllocatedBuffer() { destroy(); }
+    ~SubAllocatedBuffer() override { this->destroy(); }
 
     SubAllocatedBuffer(const SubAllocatedBuffer&)            = delete;
     SubAllocatedBuffer& operator=(const SubAllocatedBuffer&) = delete;
+    SubAllocatedBuffer& operator=(SubAllocatedBuffer&& other) =delete;
+
 
     SubAllocatedBuffer(SubAllocatedBuffer&& other) noexcept
         : Base(std::move(other)) {
         std::swap(virtualBlock_, other.virtualBlock_);
-    }
-    SubAllocatedBuffer& operator=(SubAllocatedBuffer&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            Base::operator=(std::move(other));
-            std::swap(virtualBlock_, other.virtualBlock_);
-        }
-        return *this;
-    }
-
-    /**
+    }    /**
      * Creates the buffer and the virtual block covering it.
      * @param ctx supplies the device and the VMA allocator.
      * @param capacity size in bytes.
@@ -68,9 +60,6 @@ public:
      */
     [[nodiscard]] bool init(VulkanContext& ctx, vk::DeviceSize capacity,
                             vk::BufferUsageFlags usage, const char* debugName);
-
-    /// Releases every range and destroys the buffer. Safe to call twice.
-    void destroy();
 
     /**
      * Reserves a range.
@@ -121,6 +110,10 @@ public:
         return span;
     }
 
+protected:
+    /// Releases every range and destroys the buffer.
+    void release() override;
+
 private:
     vma::VirtualBlock virtualBlock_ = nullptr;
 };
@@ -141,20 +134,20 @@ bool SubAllocatedBuffer<Placement>::init(VulkanContext& ctx,
         vk::Result::eSuccess) {
         logError(std::string("SubAllocatedBuffer: vmaCreateVirtualBlock failed for ") +
                  (debugName ? debugName : "buffer"));
-        destroy();
+        this->destroy();
         return false;
     }
     return true;
 }
 
 template <typename Placement>
-void SubAllocatedBuffer<Placement>::destroy() {
+void SubAllocatedBuffer<Placement>::release() {
     if (virtualBlock_) {
         virtualBlock_.clearVirtualBlock();
         virtualBlock_.destroy();
         virtualBlock_ = nullptr;
     }
-    Base::destroy();
+    Base::release();
 }
 
 template <typename Placement>

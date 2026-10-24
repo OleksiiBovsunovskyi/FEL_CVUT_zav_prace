@@ -1,11 +1,10 @@
 module;
 
-#include <concepts>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <optional>
-#include <span>
 #include <string>
 #include <utility>
 
@@ -16,60 +15,8 @@ import vk_mem_alloc;
 import VulkanContext;
 import GPUTypes;
 import Logger;
+export import Resource;
 export import BufferTypes;
-
-/**
- * Stage and access mask a buffer's contents were last left in.
- * A default-constructed value means the contents are undefined.
- */
-export struct BufferAccess {
-    vk::PipelineStageFlags2 stageMask  = vk::PipelineStageFlagBits2::eNone;
-    vk::AccessFlags2        accessMask = vk::AccessFlagBits2::eNone;
-
-    /// @return true once some access has been recorded.
-    [[nodiscard]] bool defined() const {
-        return stageMask != vk::PipelineStageFlagBits2::eNone;
-    }
-
-    /// @return true when every access bit is a known read.
-    [[nodiscard]] bool readOnly() const {
-        constexpr vk::AccessFlags2 reads =
-            vk::AccessFlagBits2::eIndirectCommandRead |
-            vk::AccessFlagBits2::eIndexRead |
-            vk::AccessFlagBits2::eVertexAttributeRead |
-            vk::AccessFlagBits2::eUniformRead |
-            vk::AccessFlagBits2::eInputAttachmentRead |
-            vk::AccessFlagBits2::eShaderRead |
-            vk::AccessFlagBits2::eShaderStorageRead |
-            vk::AccessFlagBits2::eShaderSampledRead |
-            vk::AccessFlagBits2::eColorAttachmentRead |
-            vk::AccessFlagBits2::eDepthStencilAttachmentRead |
-            vk::AccessFlagBits2::eTransferRead |
-            vk::AccessFlagBits2::eHostRead |
-            vk::AccessFlagBits2::eMemoryRead;
-        return !(accessMask & ~reads);
-    }
-};
-
-/// Records one pipelineBarrier2 covering every barrier given.
-export inline void recordBarriers(
-    vk::CommandBuffer cmd, std::span<const vk::BufferMemoryBarrier2> barriers) {
-    if (barriers.empty()) return;
-
-    vk::DependencyInfo dependency{};
-    dependency.bufferMemoryBarrierCount = static_cast<uint32_t>(barriers.size());
-    dependency.pBufferMemoryBarriers    = barriers.data();
-    cmd.pipelineBarrier2(dependency);
-}
-
-/**
- * Records into a command buffer, submits it, and blocks until the GPU is done.
- */
-export template <typename T>
-concept TransferSubmitter = requires(T& submitter) {
-    { submitter.begin() } -> std::same_as<vk::CommandBuffer>;
-    { submitter.submitAndWait() } -> std::same_as<bool>;
-};
 
 /**
  * Owns one vk::Buffer, its VMA allocation, and the access its contents are in.
@@ -79,22 +26,16 @@ concept TransferSubmitter = requires(T& submitter) {
  * @note The device and the VMA allocator must outlive this.
  */
 export template <typename Placement>
-class AllocatedBuffer {
+class AllocatedBuffer : public IResource {
 public:
     AllocatedBuffer() = default;
-    ~AllocatedBuffer() { destroy(); }
+    ~AllocatedBuffer() override { destroy(); }
 
     AllocatedBuffer(const AllocatedBuffer&)            = delete;
     AllocatedBuffer& operator=(const AllocatedBuffer&) = delete;
 
-    AllocatedBuffer(AllocatedBuffer&& other) noexcept { swap(other); }
-    AllocatedBuffer& operator=(AllocatedBuffer&& other) noexcept {
-        if (this != &other) {
-            destroy();
-            swap(other);
-        }
-        return *this;
-    }
+    AllocatedBuffer(AllocatedBuffer&& other) noexcept : IResource(std::move(other)) { swap(other); }
+    AllocatedBuffer& operator=(AllocatedBuffer&& other) =delete;
 
     /**
      * Creates the buffer at the given capacity.
@@ -108,17 +49,11 @@ public:
     [[nodiscard]] bool init(VulkanContext& ctx, vk::DeviceSize capacity,
                             vk::BufferUsageFlags usage, const char* debugName);
 
-    /// Destroys the buffer. Safe to call twice.
-    void destroy();
-
     /// @return true while a buffer is owned.
     [[nodiscard]] explicit operator bool() const { return buffer_ != nullptr; }
 
     /// @return the capacity in bytes.
     [[nodiscard]] vk::DeviceSize capacity() const { return capacity_; }
-
-    /// @return the name passed to AllocatedBuffer::init().
-    [[nodiscard]] const char* debugName() const { return debugName_; }
 
     /// @return the whole buffer as a range.
     [[nodiscard]] BufferRegion region() const {
@@ -177,8 +112,7 @@ public:
     [[nodiscard]] bool write(const T* source, uint32_t count,
                              vk::DeviceSize offset = 0) {
         static_assert(Placement::hostWritable,
-                      "AllocatedBuffer::write() needs a host-writable placement; "
-                      "a DeviceOnlyBuffer is filled with AllocatedBuffer::upload()");
+                      "AllocatedBuffer::write() needs a host-writable placement");
         const vk::DeviceSize size = vk::DeviceSize{count} * sizeof(T);
         if (!source || !mapped_ || !region(offset, size)) return false;
 
@@ -186,72 +120,31 @@ public:
         return true;
     }
 
-    /**
-     * Records a copy into this buffer.
-     * @param cmd command buffer to record into.
-     * @param source range to copy from.
-     * @param offset byte offset into this buffer.
-     * @note The source must stay alive until `cmd` completes.
-     */
-    void upload(vk::CommandBuffer cmd, const BufferRegion& source,
-                vk::DeviceSize offset = 0) const;
-
-    /**
-     * Records several copies into this buffer.
-     * @param cmd command buffer to record into.
-     * @param source buffer to copy from.
-     * @param regions ranges to copy.
-     * @note The source must stay alive until `cmd` completes.
-     */
-    void upload(vk::CommandBuffer cmd, vk::Buffer source,
-                std::span<const vk::BufferCopy> regions) const;
-
-    /**
-     * Records a copy out of this buffer.
-     * @param cmd command buffer to record into.
-     * @param destination host-readable range to copy into.
-     * @note The destination holds the data only once `cmd` completes.
-     */
-    void readNonBlocking(vk::CommandBuffer cmd,
-                         const BufferRegion& destination) const;
-
-    /**
-     * Copies out of this buffer and blocks until the GPU is done.
-     * @param submitter owns the command buffer, the queue and the fence.
-     * @param destination host-readable range to copy into.
-     * @return false when the submission failed.
-     */
-    template <TransferSubmitter Batch>
-    [[nodiscard]] bool readBlocking(Batch& submitter,
-                                    const BufferRegion& destination) const {
-        const vk::CommandBuffer cmd = submitter.begin();
-        if (!cmd) return false;
-
-        readNonBlocking(cmd, destination);
-        return submitter.submitAndWait();
-    }
-
-    /**
-     * Declares the access the following commands need, and records it.
-     * @param nextAccess stage and access those commands use.
-     * @return the barrier to record, nothing when the recorded access already
-     *         covers it.
-     * @note The barrier must reach the command buffer before those commands.
-     */
-    [[nodiscard]] std::optional<vk::BufferMemoryBarrier2> use(BufferAccess nextAccess);
-
-    /// @return the access recorded by the last AllocatedBuffer::use().
-    [[nodiscard]] BufferAccess access() const { return access_; }
-
-    /**
-     * Forgets the recorded access.
-     * @note Legal once the GPU has finished every submission touching this.
-     */
-    void resetAccess() { access_ = {}; }
-
 protected:
     /// @return the mapping, nullptr when the allocation is not mapped.
     [[nodiscard]] std::byte* mapped() const { return mapped_; }
+
+    /// Destroys the buffer.
+    void release() override;
+
+    void collect(const ResourceAccess& targetAccess, BarrierList& list) override
+    {
+        assert(buffer_ && "AllocatedBuffer::collect: no buffer to barrier");
+
+        vk::BufferMemoryBarrier2 barrier{};
+        const std::optional<ResourceAccess> previous = exchangeAccess(targetAccess);
+        if (!previous) return; //No barrier needed
+        
+        barrier.srcStageMask        = previous->stageMask;
+        barrier.srcAccessMask       = previous->accessMask;
+        barrier.dstStageMask        = targetAccess.stageMask;
+        barrier.dstAccessMask       = targetAccess.accessMask;
+        barrier.buffer              = buffer_;
+        barrier.offset              = 0;
+        barrier.size                = capacity_;
+        
+        list.add(barrier);
+    }
 
 private:
     void swap(AllocatedBuffer& other) noexcept {
@@ -261,8 +154,6 @@ private:
         std::swap(capacity_, other.capacity_);
         std::swap(deviceAddress_, other.deviceAddress_);
         std::swap(mapped_, other.mapped_);
-        std::swap(debugName_, other.debugName_);
-        std::swap(access_, other.access_);
     }
 
     vma::Allocator    allocator_     = nullptr;
@@ -271,8 +162,6 @@ private:
     vk::DeviceSize    capacity_      = 0;
     GpuPtr<std::byte> deviceAddress_{};
     std::byte*        mapped_        = nullptr;
-    const char*       debugName_     = "";
-    BufferAccess      access_{};
 };
 
 /* ------------------------------------------------------------------------ */
@@ -313,7 +202,6 @@ bool AllocatedBuffer<Placement>::init(VulkanContext& ctx, vk::DeviceSize capacit
 
     capacity_  = capacity;
     mapped_    = static_cast<std::byte*>(resultInfo.pMappedData);
-    debugName_ = debugName;
     allocator_.setAllocationName(allocation_, debugName);
 
     if constexpr (Placement::hostWritable) {
@@ -349,7 +237,7 @@ bool AllocatedBuffer<Placement>::init(VulkanContext& ctx, vk::DeviceSize capacit
 }
 
 template <typename Placement>
-void AllocatedBuffer<Placement>::destroy() {
+void AllocatedBuffer<Placement>::release() {
     if (buffer_ && allocator_) allocator_.destroyBuffer(buffer_, allocation_);
     allocator_     = nullptr;
     buffer_        = nullptr;
@@ -357,67 +245,5 @@ void AllocatedBuffer<Placement>::destroy() {
     capacity_      = 0;
     deviceAddress_ = {};
     mapped_        = nullptr;
-    debugName_     = "";
-    access_        = {};
 }
 
-template <typename Placement>
-void AllocatedBuffer<Placement>::upload(vk::CommandBuffer cmd,
-                                        const BufferRegion& source,
-                                        vk::DeviceSize offset) const {
-    const BufferRegion destination = region(offset, source.size);
-    if (!source || !destination) return;
-
-    const vk::BufferCopy copy{source.offset, destination.offset, source.size};
-    cmd.copyBuffer(source.buffer, destination.buffer, 1, &copy);
-}
-
-template <typename Placement>
-void AllocatedBuffer<Placement>::upload(
-    vk::CommandBuffer cmd, vk::Buffer source,
-    std::span<const vk::BufferCopy> regions) const {
-    if (!buffer_ || !source || regions.empty()) return;
-
-    cmd.copyBuffer(source, buffer_, static_cast<uint32_t>(regions.size()),
-                   regions.data());
-}
-
-template <typename Placement>
-void AllocatedBuffer<Placement>::readNonBlocking(
-    vk::CommandBuffer cmd, const BufferRegion& destination) const {
-    const BufferRegion source = region(0, destination.size);
-    if (!source || !destination) return;
-
-    const vk::BufferCopy copy{source.offset, destination.offset, destination.size};
-    cmd.copyBuffer(source.buffer, destination.buffer, 1, &copy);
-}
-
-template <typename Placement>
-std::optional<vk::BufferMemoryBarrier2> AllocatedBuffer<Placement>::use(
-    BufferAccess nextAccess) {
-    const BufferAccess previous     = access_;
-    const bool         readAfterRead = previous.readOnly() && nextAccess.readOnly();
-
-    if (readAfterRead) {
-        access_.stageMask  |= nextAccess.stageMask;
-        access_.accessMask |= nextAccess.accessMask;
-    } else {
-        access_ = nextAccess;
-    }
-
-    if (!previous.defined()) return std::nullopt;
-    if (readAfterRead && (previous.stageMask & nextAccess.stageMask) == nextAccess.stageMask)
-        return std::nullopt;
-
-    vk::BufferMemoryBarrier2 barrier{};
-    barrier.srcStageMask        = previous.stageMask;
-    barrier.srcAccessMask       = previous.accessMask;
-    barrier.dstStageMask        = nextAccess.stageMask;
-    barrier.dstAccessMask       = nextAccess.accessMask;
-    barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-    barrier.buffer              = buffer_;
-    barrier.offset              = 0;
-    barrier.size                = capacity_;
-    return barrier;
-}

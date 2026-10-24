@@ -206,21 +206,6 @@ public:
     }
 
     /**
-     * Destroys every view, and the image itself when allocate() created it.
-     * Bumps the version, for ImageRef validation.
-     */
-    void destroy() {
-        assert((views_.empty() || device_) && "Image::destroy: views without a device");
-        for (const CachedView& cached : views_) device_.destroyImageView(cached.view);
-        views_.clear();
-
-        if (image_ && allocation_) allocator_.destroyImage(image_, allocation_);
-        image_      = nullptr;
-        allocation_ = nullptr;
-        ++version_;
-    }
-
-    /**
      * @param viewType how the view reads the image's dimensions and layers.
      * @param format texel format the view reinterprets the image as.
      * @param range mip levels and array layers the view covers.
@@ -279,7 +264,21 @@ public:
     [[nodiscard]] explicit operator bool() const { return static_cast<bool>(image_); }
 
 protected:
-    
+    /**
+     * Destroys every view, and the image itself when allocate() created it.
+     * Bumps the version, for ImageRef validation.
+     */
+    void release() override {
+        assert((views_.empty() || device_) && "Image::destroy: views without a device");
+        for (const CachedView& cached : views_) device_.destroyImageView(cached.view);
+        views_.clear();
+
+        if (image_ && allocation_) allocator_.destroyImage(image_, allocation_);
+        image_      = nullptr;
+        allocation_ = nullptr;
+        ++version_;
+    }
+
     /// IResource interface
     void collect(const ResourceAccess& targetAccess, BarrierList& list) override
     {
