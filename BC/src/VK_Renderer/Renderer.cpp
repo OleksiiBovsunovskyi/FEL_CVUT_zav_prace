@@ -33,8 +33,8 @@ constexpr uint32_t DEPTH_PYRAMID_TILE = 64;
  * @return a view of mip `level`, or of the last mip past the chain.
  */
 ImageRef pyramidMipView(Image& pyramid, uint32_t level) {
-    const uint32_t mip = std::min(level, pyramid.mipLevels() - 1);
-    return pyramid.view(vk::ImageViewType::e2D, pyramid.format(),
+    const uint32_t mip = std::min(level, pyramid.desc().mipLevels - 1);
+    return pyramid.view(vk::ImageViewType::e2D, pyramid.desc().format,
                         vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, mip, 1, 0, 1});
 }
 
@@ -157,7 +157,7 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
         return false;
     }
 
-    if (depthPyramid_.mipLevels() > DEPTH_PYRAMID_MAX_MIP_LEVELS) {
+    if (depthPyramid_.desc().mipLevels > DEPTH_PYRAMID_MAX_MIP_LEVELS) {
         logError("Renderer: depth pyramid has more mips than its storage slots");
         destroy();
         return false;
@@ -173,7 +173,7 @@ bool Renderer::init(VulkanContext& ctx, ShaderLoader& shaderLoader,
         }
     }
     depthPyramidPush_.pyramidMip0Slot = depthPyramidMipSlots_[0].value;
-    depthPyramidPush_.mipCount        = depthPyramid_.mipLevels();
+    depthPyramidPush_.mipCount        = depthPyramid_.desc().mipLevels;
     //Prepare depth pyramid build pass
     if (!depthPyramidPass_.init(ctx.device(), shaderLoader, SHADER_DIR / "build_depth_pyramid.spv",
                                 textures.layout()))
@@ -261,7 +261,7 @@ void Renderer::render(Frame::Recording& recording,
         use(cmd, {{depthPyramidCounter_, COMPUTE_WRITE},
                   {depthPyramid_, DEPTH_PYRAMID_COMPUTE_READ_WRITE}});
         
-        const vk::Extent3D pyramidExtent = depthPyramid_.extent();
+        const vk::Extent3D pyramidExtent = depthPyramid_.desc().extent;
         depthPyramidPass_.recordGroups(cmd, depthPyramidPush_,
                                        std::max(1u, pyramidExtent.width / DEPTH_PYRAMID_TILE),
                                        std::max(1u, pyramidExtent.height / DEPTH_PYRAMID_TILE),
@@ -291,7 +291,7 @@ bool Renderer::resize(vk::Extent2D extent) {
         logError("Renderer: depth pyramid replacement failed");
         return false;
     }
-    if (depthPyramid_.mipLevels() > DEPTH_PYRAMID_MAX_MIP_LEVELS) {
+    if (depthPyramid_.desc().mipLevels > DEPTH_PYRAMID_MAX_MIP_LEVELS) {
         logError("Renderer: depth pyramid has more mips than its storage slots");
         return false;
     }
@@ -300,7 +300,7 @@ bool Renderer::resize(vk::Extent2D extent) {
                                        pyramidMipView(depthPyramid_, level)))
             return false;
     }
-    depthPyramidPush_.mipCount = depthPyramid_.mipLevels();
+    depthPyramidPush_.mipCount = depthPyramid_.desc().mipLevels;
     if (!sharedTargets_.resize(extent)) return false;
     return forward_.resize(extent);
 }

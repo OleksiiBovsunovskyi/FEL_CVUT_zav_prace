@@ -87,7 +87,7 @@ vk::CommandBuffer Frame::Recording::commandBuffer() const {
 
 vk::Extent2D Frame::Recording::extent() const {
     frame_.require(State::Recording, "Recording::extent");
-    const vk::Extent3D extent = frame_.frameColor_.extent();
+    const vk::Extent3D extent = frame_.frameColor_.desc().extent;
     return vk::Extent2D{extent.width, extent.height};
 }
 

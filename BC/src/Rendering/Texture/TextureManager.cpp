@@ -299,8 +299,6 @@ TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer comman
         return {};
     }
     std::memcpy(upload.host, levels.data(), levels.size());
-    for (vk::BufferImageCopy2& region : regions)
-        region.bufferOffset += upload.region.offset;
 
     Image& image = images_.emplace_back();
     if (!image.allocate(allocator_,
@@ -313,16 +311,7 @@ TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer comman
         return {};
     }
     
-    image.use(commandBuffer, TEXTURE_TRANSFER_WRITE);
-
-    vk::CopyBufferToImageInfo2 copyInfo{};
-    copyInfo.srcBuffer      = upload.region.buffer;
-    copyInfo.dstImage       = image.handle();
-    copyInfo.dstImageLayout = TEXTURE_TRANSFER_WRITE.layout;
-    copyInfo.regionCount    = static_cast<uint32_t>(regions.size());
-    copyInfo.pRegions       = regions.data();
-    commandBuffer.copyBufferToImage2(copyInfo);
-    
+    image.copyFrom(commandBuffer, upload.region, regions);
     image.use(commandBuffer, TEXTURE_FRAGMENT_SAMPLED_READ);
 
     const ImageRef view = image.view(

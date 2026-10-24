@@ -4,6 +4,7 @@ module;
 #include <bit>
 #include <cassert>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,7 @@ import vulkan;
 import vk_mem_alloc;
 import Logger;
 import Resource;
+import BufferTypes;
 
 /* Warns at every call site. Clang only;*/
 #if defined(__clang__)
@@ -246,16 +248,40 @@ public:
                     vk::ImageSubresourceRange{aspect, 0, desc_.mipLevels, 0, desc_.arrayLayers});
     }
 
+    /**
+     * Records a copy from source into this image, transitioning it to eTransferDstOptimal first.
+     * @param cmd command buffer in the recording state
+     * @param source buffer range to copy from
+     * @param regions copies, with bufferOffset relative to source.offset
+     * @note The source must stay alive until `cmd` completes.
+     */
+    void copyFrom(vk::CommandBuffer cmd, const BufferRegion& source,
+                  std::span<const vk::BufferImageCopy2> regions) {
+        assert(image_ && "Image::copyFrom: no image to copy into");
+        assert(source && "Image::copyFrom: empty source range");
+
+        constexpr ResourceAccess transferDst{
+            .stageMask  = vk::PipelineStageFlagBits2::eAllTransfer,
+            .accessMask = vk::AccessFlagBits2::eTransferWrite,
+            .layout     = vk::ImageLayout::eTransferDstOptimal};
+        use(cmd, transferDst);
+
+        std::vector<vk::BufferImageCopy2> copies(regions.begin(), regions.end());
+        for (vk::BufferImageCopy2& copy : copies) copy.bufferOffset += source.offset;
+
+        vk::CopyBufferToImageInfo2 info{};
+        info.srcBuffer      = source.buffer;
+        info.dstImage       = image_;
+        info.dstImageLayout = transferDst.layout;
+        info.regionCount    = static_cast<uint32_t>(copies.size());
+        info.pRegions       = copies.data();
+        cmd.copyBufferToImage2(info);
+    }
+
     /// @return version used to invalidate ImageRef.
     [[nodiscard]] uint32_t version() const { return version_; }
 
-    [[nodiscard]] vk::Image        handle()      const { return image_; }
-    [[nodiscard]] const ImageDesc& desc()        const { return desc_; }
-    [[nodiscard]] vk::Format       format()      const { return desc_.format; }
-    [[nodiscard]] vk::Extent3D     extent()      const { return desc_.extent; }
-    [[nodiscard]] uint32_t         mipLevels()   const { return desc_.mipLevels; }
-    [[nodiscard]] uint32_t         arrayLayers() const { return desc_.arrayLayers; }
-    [[nodiscard]] vk::Device       device()      const { return device_; }
+    [[nodiscard]] const ImageDesc& desc() const { return desc_; }
 
     /// @return true if image is owned by this class, false if borrowed.
     [[nodiscard]] bool owned() const { return allocation_ != nullptr; }

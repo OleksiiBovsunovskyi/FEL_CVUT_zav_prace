@@ -67,12 +67,6 @@ export constexpr ResourceAccess DEPTH_PYRAMID_COMPUTE_READ_WRITE{
                   vk::AccessFlagBits2::eShaderStorageWrite,
     .layout     = DEPTH_PYRAMID_LAYOUT};
 
-/// Texture filled by a buffer-to-image copy.
-export constexpr ResourceAccess TEXTURE_TRANSFER_WRITE{
-    .stageMask  = vk::PipelineStageFlagBits2::eTransfer,
-    .accessMask = vk::AccessFlagBits2::eTransferWrite,
-    .layout     = vk::ImageLayout::eTransferDstOptimal};
-
 /// Texture sampled by fragment shaders.
 export constexpr ResourceAccess TEXTURE_FRAGMENT_SAMPLED_READ{
     .stageMask  = vk::PipelineStageFlagBits2::eFragmentShader,
