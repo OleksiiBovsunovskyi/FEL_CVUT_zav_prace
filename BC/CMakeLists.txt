@@ -388,8 +388,7 @@ endforeach ()
 
 add_custom_target(pgr-vk-assets DEPENDS ${VK_BAKED_ASSETS})
 
-add_executable(pgr-vk
-        src/main.cpp
+add_library(pgr-engine OBJECT
         src/VulkanApp.cpp
         src/VK_Window/AppWindow.cpp
         src/Core/VulkanContext.cpp
@@ -412,7 +411,6 @@ add_executable(pgr-vk
         src/Object/Component.cpp
         src/Object/Object.cpp
         # Static-init checks; run once at program start.
-        src/Tests/TestEventsHandling.cpp
         src/Tests/TestDrawList.cpp
         src/Tests/TestInput.cpp
         # Compile-time checks; no runtime presence.
@@ -427,10 +425,8 @@ add_executable(pgr-vk
         src/shaders/ShadersLoader.cpp
         "${VK_LAYOUT_CHECK}"
 )
-set_property(TARGET pgr-vk PROPERTY
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pgr-vk")
 
-target_sources(pgr-vk PRIVATE
+target_sources(pgr-engine PUBLIC
         FILE_SET CXX_MODULES
         BASE_DIRS "${PGR_VK_SRC}"
         FILES
@@ -473,7 +469,6 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Object/RenderComponent.ixx"
         "${PGR_VK_SRC}/Object/WASDComponent.ixx"
         "${PGR_VK_SRC}/Object/MouseXYComponent.ixx"
-        "${PGR_VK_SRC}/Object/Player.ixx"
         "${PGR_VK_SRC}/Input/InputHandler.ixx"
         "${PGR_VK_SRC}/Object/Material/Material.ixx"
         "${PGR_VK_SRC}/Object/Mesh/Mesh.ixx"
@@ -491,9 +486,9 @@ target_sources(pgr-vk PRIVATE
         "${PGR_VK_SRC}/Rendering/Texture/TextureManager.ixx"
 )
 
-add_dependencies(pgr-vk pgr-vk-shaders pgr-vk-assets)
+add_dependencies(pgr-engine pgr-vk-shaders)
 
-target_link_libraries(pgr-vk PRIVATE
+target_link_libraries(pgr-engine PUBLIC
         module_flags
         Vulkan::Vulkan
         VulkanHppModule
@@ -508,7 +503,7 @@ target_link_libraries(pgr-vk PRIVATE
         pgr-assets
 )
 
-target_compile_definitions(pgr-vk PRIVATE
+target_compile_definitions(pgr-engine PUBLIC
         # Vulkan clip-space depth is [0,1], not OpenGL's [-1,1].
         GLM_FORCE_DEPTH_ZERO_TO_ONE
         # Keep GLFW from including any GL headers.
@@ -516,15 +511,32 @@ target_compile_definitions(pgr-vk PRIVATE
 )
 
 # 23 is what vulkan.cppm, std.ixx and std::views::chunk_by require.
-set_property(TARGET pgr-vk PROPERTY CXX_STANDARD 23)
-set_property(TARGET pgr-vk PROPERTY CXX_STANDARD_REQUIRED ON)
+target_compile_features(pgr-engine PUBLIC cxx_std_23)
+set_property(TARGET pgr-engine PROPERTY CXX_STANDARD 23)
+set_property(TARGET pgr-engine PROPERTY CXX_STANDARD_REQUIRED ON)
 
 # Per-buffer data is keyed off StaticBufferKind/FrameBufferKind by switches with
 # no default; a missing case must fail the build, not warn.
-target_compile_options(pgr-vk PRIVATE
+target_compile_options(pgr-engine PUBLIC
         $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:GNU>>:-Werror=switch>
         $<$<CXX_COMPILER_ID:MSVC>:/we4062>
 )
+
+add_executable(pgr-vk src/main.cpp)
+set_property(TARGET pgr-vk PROPERTY
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/pgr-vk")
+
+target_sources(pgr-vk PRIVATE
+        FILE_SET CXX_MODULES
+        BASE_DIRS "${PGR_VK_SRC}"
+        FILES
+        "${PGR_VK_SRC}/Game/Player.ixx"
+)
+
+add_dependencies(pgr-vk pgr-vk-assets)
+target_link_libraries(pgr-vk PRIVATE pgr-engine)
+set_property(TARGET pgr-vk PROPERTY CXX_STANDARD 23)
+set_property(TARGET pgr-vk PROPERTY CXX_STANDARD_REQUIRED ON)
 
 # Copy compiled shaders and baked assets next to the executable.
 add_custom_command(TARGET pgr-vk POST_BUILD

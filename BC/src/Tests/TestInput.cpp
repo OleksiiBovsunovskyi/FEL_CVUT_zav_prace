@@ -8,7 +8,8 @@
 #include <glm/glm.hpp>
 
 import VkScene;
-import Player;
+import WASDComponent;
+import MouseXYComponent;
 
 namespace {
 
@@ -65,37 +66,39 @@ static_assert(broadcastReachesTheHandler(),
               "broadcast must reach onInput through the stored entry");
 
 /// Holds W for a second, then turns a quarter circle to the left.
-bool inputMovesAndTurnsThePlayer() {
+bool inputMovesAndTurnsTheOwner() {
     Scene scene;
 
     constexpr float SPEED = 2.0f;
-    Player& player = scene.addObject(std::make_unique<Player>(SPEED));
+    Object& owner = scene.addObject(std::make_unique<Object>());
+    owner.addComponent(WASDComponent{SPEED});
+    owner.addComponent(MouseXYComponent{});
 
     scene.input({Key::W, 1.0f});
     scene.tick(1.0f);
 
     /* Unrotated, so forward is -Z. */
-    const glm::vec3 moved{player.getTransform()[3]};
+    const glm::vec3 moved{owner.getTransform()[3]};
     if (std::abs(moved.z + SPEED) > 1e-4f) return false;
 
     scene.input({Key::W, 0.0f});
 
-    MouseXYComponent* look = player.getComponent<MouseXYComponent>();
+    MouseXYComponent* look = owner.getComponent<MouseXYComponent>();
     if (!look) return false;
 
     const float quarterTurnPixels = 1.5707963f / look->getSensitivity();
     scene.input({Key::MouseX, -quarterTurnPixels});
     scene.tick(1.0f);
 
-    const glm::vec3 forward{-glm::vec3{player.getTransform()[2]}};
+    const glm::vec3 forward{-glm::vec3{owner.getTransform()[2]}};
     /* Yawed a quarter turn left of -Z, which is -X. */
     return std::abs(forward.x + 1.0f) < 1e-3f &&
-           std::abs(glm::vec3{player.getTransform()[3]}.z + SPEED) < 1e-4f;
+           std::abs(glm::vec3{owner.getTransform()[3]}.z + SPEED) < 1e-4f;
 }
 
 [[maybe_unused]] const bool steeringChecked = [] {
-    const bool passed = inputMovesAndTurnsThePlayer();
-    assert(passed && "a held movement key translates the Player along its own "
+    const bool passed = inputMovesAndTurnsTheOwner();
+    assert(passed && "a held movement key translates the Object along its own "
                      "forward axis, and a cursor delta turns it");
     return passed;
 }();

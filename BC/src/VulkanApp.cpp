@@ -103,9 +103,6 @@ void VulkanApp::init() {
 }
 
 void VulkanApp::run() {
-    /* Whatever the caller put in the scene decides where the camera sits. */
-    frameScene();
-
     input_.setupWindowInputCallbacks(window_);
     window_.setResizeCallback([this](int, int) { frames_.notifyResized(); });
     window_.setUICallback([this] { drawUI(); });
@@ -206,48 +203,6 @@ void VulkanApp::publishFrameMetrics() {
     metrics.set("fps", io.Framerate);
     metrics.set("frame_ms", io.DeltaTime * 1000.0f);
     metrics.endFrame();
-}
-
-void VulkanApp::frameScene() {
-    glm::vec3 min{ std::numeric_limits<float>::max() };
-    glm::vec3 max{ std::numeric_limits<float>::lowest() };
-
-    const DrawList& drawList = scene_.getDrawList();
-    const std::span<const GPUMeshInstance> items = drawList.getItems();
-
-    for (uint32_t i = 0; i < items.size(); ++i) {
-        const glm::mat4& world  = items[i].transform;
-        const glm::vec4& sphere = drawList.getItemBoundingSphere(i);
-        const glm::vec3  center =
-            glm::vec3(world * glm::vec4(glm::vec3(sphere), 1.0f));
-        /* Largest axis scale; only used to place a camera. */
-        const float scale = std::max({
-            glm::length(glm::vec3(world[0])),
-            glm::length(glm::vec3(world[1])),
-            glm::length(glm::vec3(world[2])) });
-        const float radius = sphere.w * scale;
-
-        min = glm::min(min, center - radius);
-        max = glm::max(max, center + radius);
-    }
-
-    if (min.x > max.x) {
-        sceneCenter_ = glm::vec3{0.0f};
-        sceneRadius_ = 1.0f;
-    } else {
-        sceneCenter_ = (min + max) * 0.5f;
-        sceneRadius_ = std::max(glm::length(max - min) * 0.5f, 1e-3f);
-    }
-
-    CameraComponent* camera = scene_.getActiveCamera();
-    if (!camera) return;
-
-    Object& viewer = camera->getOwner();
-    viewer.setTransform(glm::translate(
-        glm::mat4{1.0f}, sceneCenter_ + glm::vec3{0.0f, 0.0f, sceneRadius_ * 2.5f}));
-
-    if (WASDComponent* movement = viewer.getComponent<WASDComponent>())
-        movement->setSpeed(sceneRadius_ * 0.8f);
 }
 
 void VulkanApp::dispatchInput() {

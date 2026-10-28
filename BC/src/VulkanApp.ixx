@@ -27,7 +27,6 @@ import ModelLoader;
 import RenderComponent;
 import VkScene;
 import InputHandler;
-import WASDComponent;
 import GPUTypes;
 import ShaderPrint;
 import Metrics;
@@ -58,8 +57,9 @@ public:
      * getLoader() is only usable after this returns.
      */
     void init();
+    
 
-    /// Fits the camera to whatever is in the scene, then runs the main loop.
+    /// Runs the main loop until the window closes or the frame budget is spent.
     void run();
 
     /// The world to fill. Valid for the app's lifetime.
@@ -89,8 +89,6 @@ private:
     uint32_t              framesDrawn_ = 0;
     int                   lastFrameMs_ = 0;
     Scene                 scene_;
-    glm::vec3             sceneCenter_{0.0f};
-    float                 sceneRadius_ = 1.0f;
 
     vk::Device device_ = nullptr;
 
@@ -107,15 +105,6 @@ private:
 
     /// Records this frame's rates and totals and ends the Metrics row.
     void publishFrameMetrics();
-
-    /**
-     * Measures the scene, then places the active camera's Object so the whole
-     * of it is in front and sets the movement speed from its size.
-     *
-     * @note The placement leaves the Object unrotated, which is the
-     *       orientation MouseXYComponent starts from.
-     */
-    void frameScene();
 
     /// Broadcasts everything the window reported since the previous frame.
     void dispatchInput();
