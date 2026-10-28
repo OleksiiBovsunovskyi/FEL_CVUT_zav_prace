@@ -391,18 +391,18 @@ add_custom_target(pgr-vk-assets DEPENDS ${VK_BAKED_ASSETS})
 add_library(pgr-engine OBJECT
         src/VulkanApp.cpp
         src/VK_Window/AppWindow.cpp
-        src/Core/VulkanContext.cpp
-        src/Core/Swapchain.cpp
+        src/Core/Device/VulkanContext.cpp
+        src/Core/Device/Swapchain.cpp
         src/Core/FrameRunner/FrameRunner.cpp
         src/Rendering/Frame/Frame.cpp
-        src/Core/BufferManager.cpp
+        src/Core/Buffer/BufferManager.cpp
         src/Core/BlockingTransferBatch.cpp
-        src/Core/Pipeline.cpp
-        src/Core/MeshDraw.cpp
+        src/Core/Pipeline/Pipeline.cpp
+        src/Core/Pipeline/MeshDraw.cpp
         src/Rendering/Texture/TextureManager.cpp
-        src/VK_Renderer/MeshDrawResources.cpp
-        src/VK_Renderer/ForwardRenderer.cpp
-        src/VK_Renderer/Renderer.cpp
+        src/Rendering/Renderer/MeshDrawResources.cpp
+        src/Rendering/Renderer/Forward/ForwardRenderer.cpp
+        src/Rendering/Renderer/Renderer.cpp
         src/Debug/ShaderPrint.cpp
         src/Debug/GpuPassTimings.cpp
         src/Debug/GpuDrawStats.cpp
@@ -432,23 +432,23 @@ target_sources(pgr-engine PUBLIC
         FILES
         "${PGR_VK_SRC}/VulkanApp.ixx"
         "${PGR_VK_SRC}/VK_Window/AppWindow.ixx"
-        "${PGR_VK_SRC}/Core/VulkanContext.ixx"
-        "${PGR_VK_SRC}/Core/Swapchain.ixx"
+        "${PGR_VK_SRC}/Core/Device/VulkanContext.ixx"
+        "${PGR_VK_SRC}/Core/Device/Swapchain.ixx"
         "${PGR_VK_SRC}/Core/VkUtil.ixx"
         "${PGR_VK_SRC}/Core/Resource.ixx"
-        "${PGR_VK_SRC}/Core/FrameInFlightIndex.ixx"
+        "${PGR_VK_SRC}/Core/FrameRunner/FrameInFlightIndex.ixx"
         "${PGR_VK_SRC}/Core/FrameRunner/FrameRunner.ixx"
         "${PGR_VK_SRC}/Core/Buffer/BufferTypes.ixx"
         "${PGR_VK_SRC}/Core/Buffer/AllocatedBuffer.ixx"
         "${PGR_VK_SRC}/Core/Buffer/PerFrameRecord.ixx"
         "${PGR_VK_SRC}/Core/Buffer/SubAllocatedBuffer.ixx"
         "${PGR_VK_SRC}/Core/Buffer/StaticBuffers.ixx"
-        "${PGR_VK_SRC}/Core/VK_Buffers.ixx"
-        "${PGR_VK_SRC}/Core/BufferManager.ixx"
+        "${PGR_VK_SRC}/Core/Buffer/VK_Buffers.ixx"
+        "${PGR_VK_SRC}/Core/Buffer/BufferManager.ixx"
         "${PGR_VK_SRC}/Core/BlockingTransferBatch.ixx"
-        "${PGR_VK_SRC}/Core/Pipeline.ixx"
-        "${PGR_VK_SRC}/Core/ComputePass.ixx"
-        "${PGR_VK_SRC}/Core/MeshDraw.ixx"
+        "${PGR_VK_SRC}/Core/Pipeline/Pipeline.ixx"
+        "${PGR_VK_SRC}/Core/Pipeline/ComputePass.ixx"
+        "${PGR_VK_SRC}/Core/Pipeline/MeshDraw.ixx"
         "${PGR_VK_SRC}/Debug/ShaderPrint.ixx"
         "${PGR_VK_SRC}/Debug/DebugFlags.ixx"
         "${PGR_VK_SRC}/Debug/GpuPassTimings.ixx"
@@ -476,9 +476,9 @@ target_sources(pgr-engine PUBLIC
         "${PGR_VK_SRC}/Object/Mesh/MeshLoader/ModelLoader.ixx"
         "${PGR_VK_SRC}/shaders/ShadersLoader.ixx"
         "${PGR_VK_SRC}/Rendering/Frame/Frame.ixx"
-        "${PGR_VK_SRC}/VK_Renderer/MeshDrawResources.ixx"
-        "${PGR_VK_SRC}/VK_Renderer/ForwardRenderer.ixx"
-        "${PGR_VK_SRC}/VK_Renderer/Renderer.ixx"
+        "${PGR_VK_SRC}/Rendering/Renderer/MeshDrawResources.ixx"
+        "${PGR_VK_SRC}/Rendering/Renderer/Forward/ForwardRenderer.ixx"
+        "${PGR_VK_SRC}/Rendering/Renderer/Renderer.ixx"
         "${PGR_VK_SRC}/Rendering/RendererConfig.ixx"
         "${PGR_VK_SRC}/Rendering/Image/Image.ixx"
         "${PGR_VK_SRC}/Rendering/Image/ImageDescs/depthImageDesc.ixx"
