@@ -2,8 +2,8 @@ project(pgr-template)
 
 add_subdirectory(framework)
 
-# Dear ImGui with the GLFW + OpenGL3 backends. pgr-vk builds its own from the
-# same fetched sources with the Vulkan backend.
+# Dear ImGui with the GLFW + OpenGL3 backends. The engine builds its own from
+# the same fetched sources with the Vulkan backend.
 add_library(imgui STATIC
         "${imgui_SOURCE_DIR}/imgui.cpp"
         "${imgui_SOURCE_DIR}/imgui_draw.cpp"

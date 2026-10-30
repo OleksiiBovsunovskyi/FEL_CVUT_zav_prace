@@ -14,7 +14,7 @@ call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliar
 set "BUILD_DIR=%~1"
 if "%BUILD_DIR%"=="" set "BUILD_DIR=cmake-build-debug"
 set "TARGET=%~2"
-if "%TARGET%"=="" set "TARGET=pgr-vk"
+if "%TARGET%"=="" set "TARGET=app"
 
 if not exist "%~dp0%BUILD_DIR%\CMakeCache.txt" (
   if /i "%BUILD_DIR%"=="cmake-build-release" (set "CFG=Release") else (set "CFG=Debug")

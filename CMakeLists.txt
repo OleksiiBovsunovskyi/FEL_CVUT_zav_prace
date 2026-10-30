@@ -30,9 +30,10 @@ FetchContent_MakeAvailable(glfw imgui)
 #VK
 find_package(Vulkan QUIET)
 if (Vulkan_FOUND)
-  add_subdirectory(BC)
+  add_subdirectory(BC/Engine)
+  add_subdirectory(BC/App)
 else ()
-  message(STATUS "Vulkan SDK not found - skipping the pgr-vk target. "
+  message(STATUS "Vulkan SDK not found - skipping the engine and app targets. "
                  "Install https://vulkan.lunarg.com/ and reconfigure to enable it.")
 endif ()
 
@@ -51,5 +52,5 @@ else ()
           "${RED}PGR-sem/framework not found${RST} - skipping the pgr-template "
           "(OpenGL) target. Fetch it with\n"
           "\tgit clone https://github.com/bi-pgr/framework\n"
-          "into PGR-sem/. pgr-vk does not need it.")
+          "into PGR-sem/. The Vulkan app does not need it.")
 endif ()
