@@ -1,7 +1,7 @@
 module;
 
 #include <algorithm>
-#include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <format>
 #include <string_view>
@@ -39,12 +39,11 @@ bool Metrics::open(const std::filesystem::path& directory) {
         return false;
     }
 
-    const auto now = std::chrono::floor<std::chrono::seconds>(
-        std::chrono::system_clock::now());
-    const std::filesystem::path path =
-        directory / std::format("{:%Y-%m-%d_%H-%M-%S}.csv",
-                                std::chrono::zoned_time{
-                                    std::chrono::current_zone(), now});
+    // Local time; libc++ on MinGW has no std::chrono time zone database.
+    const std::time_t now = std::time(nullptr);
+    char fileName[32];
+    std::strftime(fileName, sizeof(fileName), "%Y-%m-%d_%H-%M-%S.csv", std::localtime(&now));
+    const std::filesystem::path path = directory / fileName;
 
     file_.open(path, std::ios::out);
     if (!file_) {

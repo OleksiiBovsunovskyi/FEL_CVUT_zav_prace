@@ -1,7 +1,14 @@
-﻿export module VisibilityByfferImageDesc;
+﻿module;
+
+#include <cstdint>
+
+export module VisibilityByfferImageDesc;
 
 import vulkan;
 import Image;
+
+/// Triangle ID of a texel no triangle covers.
+export constexpr uint32_t VISIBILITY_CLEAR = 0xFFFFFFFF;
 
 export constexpr ImageDesc visibilityBufferDesc(vk::Extent2D extent) {
     const vk::Extent3D extent3D{extent.width, extent.height, 1};

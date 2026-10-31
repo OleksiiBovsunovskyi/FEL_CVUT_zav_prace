@@ -93,7 +93,7 @@ vk::Extent2D Frame::Recording::extent() const {
 
 void Frame::transition(ImageUse imageUse) {
     require(State::Recording, "transition");
-
+    
     ResourceAccess newAccess
     {
         .stageMask = imageUse.stageMask,

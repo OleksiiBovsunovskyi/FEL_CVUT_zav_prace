@@ -15,6 +15,7 @@ import VkUtil;
 import Image;
 import depthImageDesc;
 import depthPyramidImageDesc;
+import VisibilityByfferImageDesc;
 import ComputePass;
 import Resource;
 import RendererConfig;
@@ -56,11 +57,17 @@ bool SharedRenderTargets::init(VulkanContext& ctx, vk::Extent2D extent,
             return false;
         }
     }
+        if (!visibility_.allocate(ctx.allocator(), visibilityBufferDesc(extent))) {
+            logError("SharedRenderTargets::init: visibility target allocation failed");
+            destroy();
+            return false;
+        }
     return true;
 }
 
 void SharedRenderTargets::destroy() {
     for (Image& depth : depth_) depth.destroy();
+    visibility_.destroy();
 }
 
 bool SharedRenderTargets::resize(vk::Extent2D extent) {
@@ -76,6 +83,11 @@ bool SharedRenderTargets::resize(vk::Extent2D extent) {
             logError("SharedRenderTargets::resize: depth target re-registration failed");
             return false;
         }
+    }
+        if (!visibility_ || !visibility_.reallocate(visibilityBufferDesc(extent))) {
+            logError("SharedRenderTargets::resize: visibility target reallocation failed");
+            return false;
+        
     }
     return true;
 }
@@ -98,6 +110,21 @@ vk::RenderingAttachmentInfo SharedRenderTargets::getDepthAttachment(
     attachment.loadOp      = vk::AttachmentLoadOp::eClear;
     attachment.storeOp     = vk::AttachmentStoreOp::eStore;
     attachment.clearValue.depthStencil.depth = DEPTH_CLEAR;
+    return attachment;
+}
+
+vk::RenderingAttachmentInfo SharedRenderTargets::getVisibilityAttachment(
+    Frame::Recording& recording) {
+    
+    visibility_.use(recording.commandBuffer(), VISIBILITY_ATTACHMENT_WRITE);
+    
+    vk::RenderingAttachmentInfo attachment{};
+    attachment.imageView   = visibility_.view(vk::ImageAspectFlagBits::eColor).get();
+    attachment.imageLayout = VISIBILITY_ATTACHMENT_WRITE.layout;
+    attachment.loadOp      = vk::AttachmentLoadOp::eClear;
+    attachment.storeOp     = vk::AttachmentStoreOp::eStore;
+    attachment.clearValue.color =
+        vk::ClearColorValue{std::array<uint32_t, 4>{VISIBILITY_CLEAR, 0, 0, 0}};
     return attachment;
 }
 

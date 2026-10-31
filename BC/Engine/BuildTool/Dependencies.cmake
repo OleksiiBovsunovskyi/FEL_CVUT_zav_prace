@@ -1,4 +1,12 @@
 #Load all the dependencies
+# libc++'s std.cppm, installed under <toolchain>/share/libc++/v1 next to the compiler's bin/.
+cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH _CXX_BIN_DIR)
+cmake_path(GET _CXX_BIN_DIR PARENT_PATH _CXX_TOOLCHAIN_DIR)
+set(LIBCXX_MODULES_DIR "${_CXX_TOOLCHAIN_DIR}/share/libc++/v1")
+if (NOT EXISTS "${LIBCXX_MODULES_DIR}/std.cppm")
+  message(FATAL_ERROR "No libc++ std.cppm under ${LIBCXX_MODULES_DIR}; configure with the MSYS2 clang64 clang++.")
+endif ()
+
 #vulkan
 find_package(Vulkan REQUIRED)
 

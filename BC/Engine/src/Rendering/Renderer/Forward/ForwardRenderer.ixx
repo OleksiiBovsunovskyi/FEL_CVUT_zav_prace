@@ -12,7 +12,7 @@ import VulkanContext;
 import Frame;
 import GPUTypes;
 import GpuPassTimings;
-import MeshDraw;
+import DrawPass;
 import MeshDrawResources;
 import ShadersLoader;
 import TextureManager;
@@ -75,5 +75,5 @@ public:
     [[nodiscard]] bool resize(vk::Extent2D extent);
 
 private:
-    MeshDraw meshDraw_;
+    DrawPass<GPUMeshDrawPush> meshDraw_;
 };

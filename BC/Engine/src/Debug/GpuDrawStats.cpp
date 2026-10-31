@@ -2,6 +2,8 @@ module;
 #include "imgui.h"
 
 #include <cstdint>
+// Declares ::operator new for libc++ allocations in PerFrameRecord::init(); clang 22 crashes without it.
+#include <new>
 #include <optional>
 
 module GpuDrawStats;

@@ -3,6 +3,11 @@ cmake_minimum_required(VERSION 3.28)
 # Container for both VK and GL renderers
 project(pgr)
 
+# libc++, libunwind and winpthreads are linked into every executable; no toolchain DLLs at run time.
+if (MINGW)
+  add_link_options(-static)
+endif ()
+
 #Thirdparty
 include(FetchContent)
 

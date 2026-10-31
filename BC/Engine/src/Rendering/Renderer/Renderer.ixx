@@ -29,9 +29,9 @@ constexpr uint32_t DEPTH_PYRAMID_MAX_MIP_LEVELS = 16;
 static_assert(maxMipLevels(vk::Extent3D{65535, 65535, 1}) == DEPTH_PYRAMID_MAX_MIP_LEVELS);
 
 /**
- * Owns per-frame depth targets shared by renderer passes.
- * In future probably will own other targets.
+ * Owns per-frame depth and visibility targets shared by renderer passes.
  * Stores Depth render target for all FRAMES_IN_FLIGHT, including past ones. TODO: store only 2.
+ * Stores one visibility target per FRAMES_IN_FLIGHT slot.
  */
 class SharedRenderTargets {
 public:
@@ -52,6 +52,12 @@ public:
         Frame::Recording& recording);
 
     /**
+     * Transitions this recording's visibility target and describes it as a cleared attachment.
+     * @return visibility attachment descriptor, cleared to VISIBILITY_CLEAR.
+     */
+    [[nodiscard]] vk::RenderingAttachmentInfo getVisibilityAttachment(Frame::Recording& recording);
+
+    /**
      * Transitions this recording's depth to a compute-readable layout.
      * @return sampled slot of this recording's depth.
      */
@@ -60,6 +66,8 @@ public:
 private:
     std::array<Image, FRAMES_IN_FLIGHT> depth_;
     std::array<TextureSlot, FRAMES_IN_FLIGHT> depthSlots_;
+    //Visibility buffer is needed only for one frame.
+    Image visibility_;
     TextureManager* textures_ = nullptr;
 };
 

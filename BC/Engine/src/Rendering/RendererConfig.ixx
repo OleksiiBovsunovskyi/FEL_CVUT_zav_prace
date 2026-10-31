@@ -52,6 +52,12 @@ export constexpr ResourceAccess DEPTH_ATTACHMENT_READ_WRITE{
                   vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
     .layout     = vk::ImageLayout::eDepthAttachmentOptimal};
 
+/// Shared visibility target written by the visibility pass.
+export constexpr ResourceAccess VISIBILITY_ATTACHMENT_WRITE{
+    .stageMask  = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+    .accessMask = vk::AccessFlagBits2::eColorAttachmentWrite,
+    .layout     = vk::ImageLayout::eColorAttachmentOptimal};
+
 /// Depth pyramid sampled for occlusion culling.
 export constexpr ResourceAccess DEPTH_PYRAMID_SAMPLED_READ{
     .stageMask  = vk::PipelineStageFlagBits2::eComputeShader |
