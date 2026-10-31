@@ -1,0 +1,3 @@
+# Logging: log output, used by every other module and by bake.
+name = "Logging"
+depends = ["std_module"]

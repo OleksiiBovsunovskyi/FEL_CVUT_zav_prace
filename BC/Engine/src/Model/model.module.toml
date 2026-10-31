@@ -1,0 +1,3 @@
+# Model: meshes, materials and loading a .pmma onto the GPU.
+name = "Model"
+depends = ["Rendering"]

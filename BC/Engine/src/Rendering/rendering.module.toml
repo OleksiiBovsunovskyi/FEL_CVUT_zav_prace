@@ -1,0 +1,3 @@
+# Rendering: renderers, draw list, textures, render target descriptions.
+name = "Rendering"
+depends = ["Core", "Debug"]

@@ -1,0 +1,3 @@
+# VulkanApp: owns the engine systems and runs the main loop.
+name = "VulkanApp"
+depends = ["Components", "Input", "Model", "Debug", "imgui-vk"]

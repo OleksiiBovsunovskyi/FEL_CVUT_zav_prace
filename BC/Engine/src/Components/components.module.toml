@@ -1,0 +1,3 @@
+# Components
+name = "Components"
+depends = ["Scene", "Model"]

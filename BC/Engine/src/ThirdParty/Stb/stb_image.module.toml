@@ -1,0 +1,3 @@
+# stb_image: PNG and JPEG decoder; stb_image_impl.cpp compiles the header's implementation.
+name = "stb_image"
+include_dirs = ["${stb_SOURCE_DIR}"]

@@ -1,0 +1,6 @@
+# std: the MSVC STL's named module; VCToolsInstallDir is set by a Visual Studio developer environment.
+# std.ixx is consumed by clang under -fms-compatibility.
+name = "std_module"
+extra_module_interfaces =["$ENV{VCToolsInstallDir}/modules/std.ixx"]
+# The two warnings std.ixx trips are about its own spelling.
+private_options = ["-Wno-reserved-module-identifier", "-Wno-include-angled-in-module-purview"]

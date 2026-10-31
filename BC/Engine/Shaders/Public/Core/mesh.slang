@@ -1,0 +1,81 @@
+import GPUTypes;
+import AtomicAdd;
+import mesh_vertex;
+import SphereVisibilityTest;
+import HiZOCTest;
+[[vk_push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
+[[vk_binding(0, 0)]] Sampler2D textures[];
+
+// meshopt's limits, matching MESHLET_MAX_* in ClusterLODGenerator.ixx.
+static const uint MAX_VERTICES  = 64;
+static const uint MAX_TRIANGLES = 64;
+
+// One workgroup per meshlet; build_draw_commands.slang sets groupCountX.
+[shader("mesh")]
+[numthreads(64, 1, 1)]
+[outputtopology("triangle")]
+void meshMain(
+    uint  groupId : SV_GroupID,
+    uint  laneId  : SV_GroupIndex,
+    uint  drawId  : SV_DrawIndex,
+    out vertices MeshVertex verts[MAX_VERTICES],
+    out indices  uint3      tris[MAX_TRIANGLES])
+{
+    // Slot handed out by the atomic in build_draw_commands.slang.
+    const GPUDrawData draw   = pc.drawData[drawId];
+
+    const GPUMeshInstance instance = pc.instances[draw.instanceIndex];
+    // Every section of the mesh is reached through its header.
+    const GPUMeshHeader mesh = draw.mesh[0];
+
+    const GPUMeshlet meshlet = mesh.meshlets[groupId];
+
+    const float4 meshletSphere = worldSphere(instance.transform, meshlet.boundingSphere);
+    bool visible = sphereVisibleWorld(pc.frame->camera.viewProj, meshletSphere);
+    if (pc.frame.useHiZOC)
+        if(visible) 
+            visible = !isOcludedByHiZ(textures[pc.depthPyramidSlot], pc.frame->hiZViewProj, meshletSphere);
+  
+    SetMeshOutputCounts(visible ? meshlet.vertexCount  : 0,
+                        visible ? meshlet.triangleCount : 0);
+
+    // Count metrics
+    if (laneId == 0) {
+        GPUDrawCounters* counters = pc.frame->drawCounters;
+        if (visible) {
+            atomicAdd(&counters->meshletsDrawn, 1);
+            atomicAdd(&counters->trianglesDrawn, meshlet.triangleCount);
+        } else {
+            atomicAdd(&counters->meshletsCulled, 1);
+        }
+    }
+    if (!visible) return;
+    const float4x4 mvp = mul(pc.frame->camera.viewProj, instance.transform);
+    const float3x3 model = float3x3(instance.transform);
+    // Inverse transponse 
+    const float3x3 normalMatrix = float3x3(cross(model[1], model[2]),
+                                           cross(model[2], model[0]),
+                                           cross(model[0], model[1]));
+
+    for (uint i = laneId; i < meshlet.vertexCount; i += 64) {
+        const uint      index  = mesh.meshletVertexIndices[meshlet.vertexOffset + i].value;
+        const GPUVertex vertex = mesh.vertices[index];
+
+        verts[i].position      = mul(mvp, float4(vertex.position.xyz, 1.0));
+        verts[i].worldPosition = mul(instance.transform, float4(vertex.position.xyz, 1.0)).xyz;
+        verts[i].normal        = normalize(mul(normalMatrix, vertex.normal.xyz));
+        // w is handedness and survives the transform unchanged.
+        verts[i].tangent       = float4(mul(model, vertex.tangent.xyz),
+                                        vertex.tangent.w);
+        verts[i].texCoord      = vertex.texCoord;
+        verts[i].materialIndex = mesh.material.value;
+        verts[i].meshletId     = groupId ^ (draw.instanceIndex * 0x9E3779B9u);
+        verts[i].meshletSphere = meshletSphere;
+    }
+
+    for (uint i = laneId; i < meshlet.triangleCount; i += 64) {
+        // One triangle per uint: i0 | (i1 << 8) | (i2 << 16).
+        const uint packed = mesh.meshletTriangles[meshlet.triangleOffset + i].packed;
+        tris[i] = uint3(packed & 0xffu, (packed >> 8) & 0xffu, (packed >> 16) & 0xffu);
+    }
+}

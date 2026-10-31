@@ -1,0 +1,9 @@
+name = "Core"
+depends = [
+    "assets", "VK_Window",
+    "VulkanHppModule", "VmaHppModule",
+    "vk-bootstrap::vk-bootstrap",
+    "GPUOpen::VulkanMemoryAllocator",
+    "VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp",
+]
+private_depends = ["${SLANG_LIBRARY}"]

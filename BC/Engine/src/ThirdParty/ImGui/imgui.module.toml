@@ -1,0 +1,13 @@
+# imgui-vk: Dear ImGui with the GLFW platform and Vulkan renderer backends.
+name = "imgui-vk"
+extra_translation_units = [
+    "${imgui_SOURCE_DIR}/imgui.cpp",
+    "${imgui_SOURCE_DIR}/imgui_draw.cpp",
+    "${imgui_SOURCE_DIR}/imgui_tables.cpp",
+    "${imgui_SOURCE_DIR}/imgui_widgets.cpp",
+    "${imgui_SOURCE_DIR}/imgui_demo.cpp",
+    "${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp",
+    "${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp",
+]
+include_dirs = ["${imgui_SOURCE_DIR}", "${imgui_SOURCE_DIR}/backends"]
+depends = ["glfw", "Vulkan::Vulkan"]

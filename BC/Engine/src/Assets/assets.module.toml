@@ -1,0 +1,7 @@
+name = "assets"
+depends = ["Logging", "ShaderTypes", "glm::glm", "Vulkan::Headers"]
+private_depends = ["fastgltf::fastgltf", "meshoptimizer", "stb_image", "bc7enc"]
+# clusterlod.h ships in meshoptimizer's demo directory.
+private_include_dirs = ["${meshoptimizer_SOURCE_DIR}/demo"]
+# GLM depth range [0, 1].
+definitions = ["GLM_FORCE_DEPTH_ZERO_TO_ONE"]

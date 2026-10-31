@@ -1,0 +1,9 @@
+# vulkan: Vulkan-Hpp's named module from the Vulkan SDK.
+# Declared after FetchContent_MakeAvailable(vma): VMA-Hpp defines its own module
+# target when Vulkan::HppModule already exists, and that target sets
+# CXX_MODULE_STD ON, which CMake supports only for libc++ and libstdc++.
+name = "VulkanHppModule"
+extra_module_interfaces =["${Vulkan_INCLUDE_DIR}/vulkan/vulkan.cppm"]
+depends = ["Vulkan::Headers", "std_module"]
+alias = "Vulkan::HppModule"
+definitions = ["VULKAN_HPP_CXX_MODULE_EXPERIMENTAL_WARNING="]

@@ -1,0 +1,2 @@
+name = "ShaderTypes"
+depends = ["GPUCoreTypes", "glm::glm", "Vulkan::Headers"]

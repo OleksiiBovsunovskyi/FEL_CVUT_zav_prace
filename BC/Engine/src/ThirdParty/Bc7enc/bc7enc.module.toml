@@ -1,0 +1,4 @@
+# bc7enc: BC7 block encoder; only the encoder translation unit is built.
+name = "bc7enc"
+extra_translation_units =["${bc7enc_SOURCE_DIR}/bc7enc.c"]
+include_dirs = ["${bc7enc_SOURCE_DIR}"]

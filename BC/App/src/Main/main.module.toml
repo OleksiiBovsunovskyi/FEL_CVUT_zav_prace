@@ -1,0 +1,4 @@
+# Main
+name = "Main"
+object = true
+depends = ["engine"]

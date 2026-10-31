@@ -1,0 +1,4 @@
+# Tests: static-init checks, run once at program start.
+name = "Tests"
+whole_archive = true
+depends = ["Components"]

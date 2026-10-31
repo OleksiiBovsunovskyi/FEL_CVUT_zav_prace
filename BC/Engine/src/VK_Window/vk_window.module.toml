@@ -1,0 +1,5 @@
+# VK_Window: GLFW window and its ImGui platform backend.
+name = "VK_Window"
+depends = ["Logging", "VulkanHppModule", "glfw", "imgui-vk"]
+# GLFW includes no GL headers.
+definitions = ["GLFW_INCLUDE_NONE"]

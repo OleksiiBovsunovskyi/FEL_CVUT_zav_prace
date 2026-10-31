@@ -1,0 +1,8 @@
+# vma: VMA-Hpp's named module.
+name = "VmaHppModule"
+extra_module_interfaces =["${vma_SOURCE_DIR}/include/vk_mem_alloc.cppm"]
+depends = [
+    "VulkanMemoryAllocator-Hpp::VulkanMemoryAllocator-Hpp",
+    "GPUOpen::VulkanMemoryAllocator",
+    "VulkanHppModule", "std_module",
+]
