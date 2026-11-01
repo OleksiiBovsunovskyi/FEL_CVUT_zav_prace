@@ -249,6 +249,17 @@ public:
     }
 
     /**
+     * @param aspect color, depth or stencil.
+     * @param level mip level
+     * @return a view of that mip level and every array layer in the image's format. Empty when creation failed.
+     */
+    [[nodiscard]] ImageRef mipView(vk::ImageAspectFlags aspect, uint32_t level) {
+        assert(level < desc_.mipLevels && "Image::mipView: level past the mip chain");
+        return view(viewTypeFor(desc_.type, desc_.arrayLayers), desc_.format,
+                    vk::ImageSubresourceRange{aspect, level, 1, 0, desc_.arrayLayers});
+    }
+
+    /**
      * Records a copy from source into this image, transitioning it to eTransferDstOptimal first.
      * @param cmd command buffer in the recording state
      * @param source buffer range to copy from

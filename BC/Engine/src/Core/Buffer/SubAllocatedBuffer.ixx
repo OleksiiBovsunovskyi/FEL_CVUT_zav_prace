@@ -14,6 +14,7 @@ import GPUTypes;
 import Logger;
 export import BufferTypes;
 export import AllocatedBuffer;
+export import RangeAllocator;
 
 /**
  * Identifies one range reserved inside a SubAllocatedBuffer.
@@ -21,12 +22,12 @@ export import AllocatedBuffer;
  * `host` is non-null only for a host-writable placement.
  */
 export struct SubAllocationHandle {
-    BufferRegion           region{};
-    GpuPtr<std::byte>      address{};
-    std::byte*             host    = nullptr;
-    vma::VirtualAllocation handle  = nullptr;
+    BufferRegion      region{};
+    GpuPtr<std::byte> address{};
+    std::byte*        host = nullptr;
+    RangeAllocation   range{};
 
-    [[nodiscard]] explicit operator bool() const { return handle != nullptr; }
+    [[nodiscard]] explicit operator bool() const { return static_cast<bool>(range); }
 };
 
 /**
@@ -48,9 +49,9 @@ public:
 
 
     SubAllocatedBuffer(SubAllocatedBuffer&& other) noexcept
-        : Base(std::move(other)) {
-        std::swap(virtualBlock_, other.virtualBlock_);
-    }    /**
+        : Base(std::move(other)), ranges_(std::move(other.ranges_)) {}
+
+    /**
      * Creates the buffer and the virtual block covering it.
      * @param ctx supplies the device and the VMA allocator.
      * @param capacity size in bytes.
@@ -75,24 +76,16 @@ public:
      * @param allocation range to release.
      * @note The GPU must be done with the range before this is called.
      */
-    void free(const SubAllocationHandle& allocation) {
-        if (virtualBlock_ && allocation.handle)
-            virtualBlock_.virtualFree(allocation.handle);
-    }
+    void free(const SubAllocationHandle& allocation) { ranges_.free(allocation.range); }
 
     /**
      * Releases every range at once.
      * @note The GPU must be done with every range before this is called.
      */
-    void clear() {
-        if (virtualBlock_) virtualBlock_.clearVirtualBlock();
-    }
+    void clear() { ranges_.clear(); }
 
     /// @return bytes currently reserved.
-    [[nodiscard]] vk::DeviceSize used() const {
-        if (!virtualBlock_) return 0;
-        return virtualBlock_.getVirtualBlockStatistics().allocationBytes;
-    }
+    [[nodiscard]] vk::DeviceSize used() const { return ranges_.used(); }
 
     /**
      * Fills in whichever span type the placement declares.
@@ -115,7 +108,8 @@ protected:
     void release() override;
 
 private:
-    vma::VirtualBlock virtualBlock_ = nullptr;
+    /// Units are bytes.
+    RangeAllocator ranges_;
 };
 
 /* ------------------------------------------------------------------------ */
@@ -127,11 +121,7 @@ bool SubAllocatedBuffer<Placement>::init(VulkanContext& ctx,
                                          const char* debugName) {
     if (!Base::init(ctx, capacity, usage, debugName)) return false;
 
-    /* Block units are bytes; VMA alignment must be a power of two. */
-    vma::VirtualBlockCreateInfo virtualBlockInfo{};
-    virtualBlockInfo.size = capacity;
-    if (vma::createVirtualBlock(&virtualBlockInfo, &virtualBlock_) !=
-        vk::Result::eSuccess) {
+    if (!ranges_.init(capacity)) {
         logError(std::string("SubAllocatedBuffer: vmaCreateVirtualBlock failed for ") +
                  (debugName ? debugName : "buffer"));
         this->destroy();
@@ -142,32 +132,19 @@ bool SubAllocatedBuffer<Placement>::init(VulkanContext& ctx,
 
 template <typename Placement>
 void SubAllocatedBuffer<Placement>::release() {
-    if (virtualBlock_) {
-        virtualBlock_.clearVirtualBlock();
-        virtualBlock_.destroy();
-        virtualBlock_ = nullptr;
-    }
+    ranges_.destroy();
     Base::release();
 }
 
 template <typename Placement>
 SubAllocationHandle SubAllocatedBuffer<Placement>::allocate(vk::DeviceSize bytes,
                                                       vk::DeviceSize alignment) {
-    if (!virtualBlock_ || bytes == 0) return {};
-
-    vma::VirtualAllocationCreateInfo allocationInfo{};
-    allocationInfo.size      = bytes;
-    allocationInfo.alignment = alignment;
-
-    vma::VirtualAllocation handle = nullptr;
-    vk::DeviceSize         offset = 0;
-    if (virtualBlock_.virtualAllocate(&allocationInfo, &handle, &offset) !=
-        vk::Result::eSuccess)
-        return {};
+    const RangeAllocation range = ranges_.allocate(bytes, alignment);
+    if (!range) return {};
 
     return SubAllocationHandle{
-        Base::region(offset, bytes),
-        Base::template gpuAddress<std::byte>(offset),
-        Base::mapped() ? Base::mapped() + offset : nullptr,
-        handle};
+        Base::region(range.offset, bytes),
+        Base::template gpuAddress<std::byte>(range.offset),
+        Base::mapped() ? Base::mapped() + range.offset : nullptr,
+        range};
 }

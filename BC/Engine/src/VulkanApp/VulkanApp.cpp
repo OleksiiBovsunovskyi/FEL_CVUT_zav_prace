@@ -76,7 +76,7 @@ void VulkanApp::init() {
         throw std::runtime_error("ShaderLoader::init failed");
 
     /* Before the Renderer: the mesh pipeline layout names its set layout. */
-    if (!textures_.init(ctx_))
+    if (!textures_.init(ctx_, releaser_))
         throw std::runtime_error("TextureManager::init failed");
 
     if (!renderer_.init(ctx_, shaders_, swapchain_.format(), swapchain_.extent(),
@@ -91,7 +91,7 @@ void VulkanApp::init() {
             throw std::runtime_error("Renderer::resize failed");
     });
 
-    if (!buffers_.init(ctx_))
+    if (!buffers_.init(ctx_, releaser_))
         throw std::runtime_error("BufferManager::init failed");
     if (!transfers_.init(ctx_))
         throw std::runtime_error("BlockingTransferBatch::init failed");
@@ -108,6 +108,9 @@ void VulkanApp::run() {
     window_.setResizeCallback([this](int, int) { frames_.notifyResized(); });
     window_.setUICallback([this] { drawUI(); });
     window_.setDrawCallback([this] {
+        releaser_.setLastSubmittedFrameSerial(frames_.submittedSerial());
+        releaser_.releaseCompleted(frames_.getCompletedSerial());
+
         dispatchInput();
         scene_.tick(elapseFrame());
         frames_.drawFrame([this](Frame::Recording& recording) {
@@ -265,9 +268,10 @@ void VulkanApp::cleanup() {
         imguiPool_ = nullptr;
     }
 
-    /* Meshes retire buffer ranges on destruction; must precede shutdown. */
+    /* Meshes and render targets retire ranges and slots on destruction; must precede releaseAll. */
     scene_.clearObjects();
     renderer_.destroy();
+    releaser_.releaseAll();
     textures_.destroy();
     transfers_.destroy();
     buffers_.shutdown();

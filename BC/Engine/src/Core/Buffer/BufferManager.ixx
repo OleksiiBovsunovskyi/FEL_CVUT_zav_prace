@@ -15,6 +15,7 @@ import vk_mem_alloc;
 import VulkanContext;
 import GPUTypes;
 export import VK_Buffers;
+import Releaser;
 import Logger;
 
 export class BufferManager;
@@ -80,7 +81,8 @@ export struct BufferUsage {
 };
 
 /**
- * Owns the static mega-buffers, static range retirement, and the upload buffer.
+ * Owns the static mega-buffers and the upload buffer.
+ * Retired static ranges are freed by the Releaser passed to BufferManager::init().
  */
 export class BufferManager {
 public:
@@ -97,11 +99,15 @@ public:
      * A growable kind takes its first block on its first allocation.
      *
      * @param ctx supplies the device and VMA allocator; must outlive this.
+     * @param releaser runs the frees of retired static ranges; must outlive this.
      * @return false if called twice, or if any buffer could not be created.
      */
-    bool init(VulkanContext& ctx);
+    bool init(VulkanContext& ctx, Releaser& releaser);
 
-    /// Destroys every buffer. Safe to call twice.
+    /**
+     * Destroys every buffer. Safe to call twice.
+     * @note Every range retired through the Releaser must be freed before this is called.
+     */
     void shutdown();
 
     /**
@@ -175,32 +181,14 @@ public:
     void resetUpload();
 
     /**
-     * Stamps subsequently retired ranges, so they are held until this serial
-     * completes.
-     *
-     * @param serial newest submission that may reference static allocations.
+     * Hands the free of a range to the Releaser.
+     * Called by DeviceArray on destruction. Not part of the allocation API.
      */
-    void setRetirementSerial(uint64_t serial) { retirementSerial_ = serial; }
-
-    /**
-     * Reuses ranges whose last referencing submission has finished.
-     *
-     * @param completedSerial highest serial the GPU has completed.
-     */
-    void collect(uint64_t completedSerial);
-
-    /// Called by DeviceArray on destruction. Not part of the allocation API.
     void retire(StaticBufferKind kind, const SubAllocationHandle& allocation);
 
 private:
     using StaticBuffer = SubAllocatedBuffer<DeviceOnlyBuffer>;
     using UploadBuffer = SubAllocatedBuffer<HostDeviceReadableBuffer>;
-
-    struct RetiredAllocation {
-        StaticBufferKind    kind   = StaticBufferKind::Count;
-        SubAllocationHandle allocation{};
-        uint64_t            serial = 0;
-    };
 
     [[nodiscard]] SubAllocationHandle allocateStaticRaw(
         StaticBufferKind kind, vk::DeviceSize bytes, vk::DeviceSize alignment);
@@ -217,9 +205,10 @@ private:
     /// One entry per kind, in allocation order. A block is never destroyed alone.
     std::array<std::vector<StaticBuffer>, STATIC_BUFFER_COUNT> staticBuffers_{};
     UploadBuffer                                  upload_{};
-    std::vector<RetiredAllocation>                retired_;
+    Releaser*                                     releaser_         = nullptr;
+    /// Frees handed to releaser_ and not yet run.
+    uint32_t                                      pendingReleases_  = 0;
     VulkanContext*                                ctx_              = nullptr;
-    uint64_t                                      retirementSerial_ = 0;
     bool                                          initialized_      = false;
 };
 

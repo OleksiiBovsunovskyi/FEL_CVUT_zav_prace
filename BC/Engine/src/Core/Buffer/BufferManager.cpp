@@ -2,6 +2,7 @@ module;
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <string>
 #include <type_traits>
@@ -61,12 +62,13 @@ BufferManager::~BufferManager() {
     }
 }
 
-bool BufferManager::init(VulkanContext& ctx) {
+bool BufferManager::init(VulkanContext& ctx, Releaser& releaser) {
     if (initialized()) {
         logError("BufferManager: init called twice");
         return false;
     }
-    ctx_ = &ctx;
+    ctx_      = &ctx;
+    releaser_ = &releaser;
 
     /* A fixed-size kind is indexed from its base address, which has to answer
      * before anything is allocated. */
@@ -123,15 +125,16 @@ BufferManager::StaticBuffer* BufferManager::blockOf(StaticBufferKind kind,
 }
 
 void BufferManager::shutdown() {
-    retired_.clear();
+    assert(pendingReleases_ == 0 &&
+           "BufferManager::shutdown: retired ranges still wait in the Releaser");
     upload_.destroy();
 
     for (auto& blocks : staticBuffers_)
         blocks.clear();
 
-    ctx_              = nullptr;
-    retirementSerial_ = 0;
-    initialized_      = false;
+    releaser_    = nullptr;
+    ctx_         = nullptr;
+    initialized_ = false;
 }
 
 SubAllocationHandle BufferManager::allocateStaticRaw(
@@ -203,19 +206,11 @@ BufferUsage BufferManager::staticUsage(StaticBufferKind kind) const {
 
 void BufferManager::retire(StaticBufferKind kind, const SubAllocationHandle& allocation) {
     if (!initialized() || kind == StaticBufferKind::Count || !allocation) return;
-    retired_.push_back({kind, allocation, retirementSerial_});
-}
-
-void BufferManager::collect(uint64_t completedSerial) {
-    auto out = retired_.begin();
-    for (auto it = retired_.begin(); it != retired_.end(); ++it) {
-        if (it->serial <= completedSerial) {
-            if (StaticBuffer* block = blockOf(it->kind, it->allocation.address))
-                block->free(it->allocation);
-        } else
-            *out++ = *it;
-    }
-    retired_.erase(out, retired_.end());
+    ++pendingReleases_;
+    releaser_->retire([this, kind, allocation] {
+        if (StaticBuffer* block = blockOf(kind, allocation.address)) block->free(allocation);
+        --pendingReleases_;
+    });
 }
 
 void BufferManager::resetUpload() {

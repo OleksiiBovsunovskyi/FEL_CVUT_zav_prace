@@ -2,6 +2,7 @@ module;
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -42,13 +43,14 @@ TextureManager::~TextureManager() {
     if (device_) logError("TextureManager: destroy() was not called before destruction");
 }
 
-bool TextureManager::init(VulkanContext& ctx) {
+bool TextureManager::init(VulkanContext& ctx, Releaser& releaser) {
     if (device_) {
         logError("TextureManager: init called twice");
         return false;
     }
     device_    = ctx.device();
     allocator_ = ctx.allocator();
+    releaser_  = &releaser;
 
     vk::PhysicalDeviceDescriptorIndexingProperties IndexingProperties{};
     vk::PhysicalDeviceProperties2 properties{};
@@ -69,6 +71,12 @@ bool TextureManager::init(VulkanContext& ctx) {
     }
     logMessage("TextureManager: " + std::to_string(imageCapacity_) + " texture slots, " +
                std::to_string(storageCapacity_) + " storage slots");
+    if (!sampledSlots_.init(imageCapacity_) || !storageSlots_.init(storageCapacity_)) {
+        logError("TextureManager: the slot allocators could not be created");
+        destroy();
+        return false;
+    }
+    storageRuns_.assign(storageCapacity_, RangeAllocation{});
 
     vk::SamplerCreateInfo samplerInfo{};
     samplerInfo.magFilter    = vk::Filter::eLinear;
@@ -145,13 +153,34 @@ bool TextureManager::init(VulkanContext& ctx) {
 }
 
 TextureSlot TextureManager::reserveSlot(bool borrowed) {
-    if (borrowed_.size() >= imageCapacity_) {
+    const RangeAllocation range = sampledSlots_.allocate(1);
+    if (!range) {
         logError("TextureManager: the bindless array holds " +
                  std::to_string(imageCapacity_) + " textures and is full");
         return {};
     }
-    borrowed_.push_back(borrowed);
-    return TextureSlot{static_cast<uint32_t>(borrowed_.size() - 1)};
+    const TextureSlot slot{static_cast<uint32_t>(range.offset)};
+    if (slot.value >= sampledRecords_.size()) sampledRecords_.resize(slot.value + 1);
+    sampledRecords_[slot.value] = SampledSlotRecord{range, borrowed};
+    return slot;
+}
+
+void TextureManager::unreserveSlot(TextureSlot slot) {
+    if (SampledSlotRecord* record = sampledRecord(slot)) {
+        sampledSlots_.free(record->range);
+        *record = {};
+    }
+}
+
+TextureManager::SampledSlotRecord* TextureManager::sampledRecord(TextureSlot slot) {
+    if (!slot || slot.value >= sampledRecords_.size() || !sampledRecords_[slot.value].range)
+        return nullptr;
+    return &sampledRecords_[slot.value];
+}
+
+const RangeAllocation* TextureManager::storageRunOf(StorageSlot slot) const {
+    if (!slot || slot.value >= storageRuns_.size() || !storageRuns_[slot.value]) return nullptr;
+    return &storageRuns_[slot.value];
 }
 
 void TextureManager::writeSampledDescriptor(TextureSlot slot, ImageRef view, vk::ImageLayout layout) {
@@ -185,28 +214,34 @@ void TextureManager::writeStorageDescriptor(StorageSlot slot, ImageRef view) {
     device_.updateDescriptorSets(1, &write, 0, nullptr);
 }
 
-StorageSlot TextureManager::addStorage(ImageRef view) {
+StorageRun TextureManager::addStorage(std::span<const ImageRef> views) {
     if (!device_) {
         logError("TextureManager::addStorage: called before init");
         return {};
     }
-    if (!view) {
+    if (views.empty() || std::ranges::any_of(views, [](const ImageRef& view) { return !view; })) {
         logError("TextureManager::addStorage: empty view");
         return {};
     }
-    if (storageCount_ >= storageCapacity_) {
+    const RangeAllocation range = storageSlots_.allocate(views.size());
+    if (!range) {
         logError("TextureManager::addStorage: the storage array holds " +
-                 std::to_string(storageCapacity_) + " images and is full");
+                 std::to_string(storageCapacity_) + " images and has no " +
+                 std::to_string(views.size()) + " consecutive free slots");
         return {};
     }
-    const StorageSlot slot{storageCount_++};
-    writeStorageDescriptor(slot, view);
-    return slot;
+    const StorageRun run{StorageSlot{static_cast<uint32_t>(range.offset)},
+                         static_cast<uint32_t>(views.size())};
+    for (uint32_t index = 0; index < run.count; ++index) {
+        storageRuns_[run[index].value] = range;
+        writeStorageDescriptor(run[index], views[index]);
+    }
+    return run;
 }
 
 bool TextureManager::replaceStorage(StorageSlot slot, ImageRef view) {
-    if (!slot || slot.value >= storageCount_) {
-        logError("TextureManager::replaceStorage: slot was not handed out by addStorage");
+    if (!storageRunOf(slot)) {
+        logError("TextureManager::replaceStorage: slot is not inside a live run from addStorage");
         return false;
     }
     if (!view) {
@@ -217,13 +252,25 @@ bool TextureManager::replaceStorage(StorageSlot slot, ImageRef view) {
     return true;
 }
 
+void TextureManager::retireStorage(StorageRun run) {
+    if (!device_) return;
+    const RangeAllocation* range = storageRunOf(run.first);
+    if (!range || range->offset != run.first.value || range->size != run.count) {
+        logError("TextureManager::retireStorage: run was not handed out by addStorage");
+        return;
+    }
+    const RangeAllocation retiredRange = *range;
+    for (uint32_t index = 0; index < run.count; ++index) storageRuns_[run[index].value] = {};
+    retireRange(storageSlots_, retiredRange);
+}
+
 TextureSlot TextureManager::addSampledBorrowed(ImageRef view, vk::ImageLayout layout) {
     if (!device_) {
-        logError("TextureManager::addBorrowed: called before init");
+        logError("TextureManager::addSampledBorrowed: called before init");
         return {};
     }
     if (!view) {
-        logError("TextureManager::addBorrowed: empty view");
+        logError("TextureManager::addSampledBorrowed: empty view");
         return {};
     }
     const TextureSlot slot = reserveSlot(true);
@@ -232,16 +279,36 @@ TextureSlot TextureManager::addSampledBorrowed(ImageRef view, vk::ImageLayout la
 }
 
 bool TextureManager::replaceSampledBorrowed(TextureSlot slot, ImageRef view, vk::ImageLayout layout) {
-    if (!slot || slot.value >= borrowed_.size() || !borrowed_[slot.value]) {
-        logError("TextureManager::replaceBorrowed: slot was not handed out by addBorrowed");
+    const SampledSlotRecord* record = sampledRecord(slot);
+    if (!record || !record->borrowed) {
+        logError("TextureManager::replaceSampledBorrowed: slot is not a live one from addSampledBorrowed");
         return false;
     }
     if (!view) {
-        logError("TextureManager::replaceBorrowed: empty view");
+        logError("TextureManager::replaceSampledBorrowed: empty view");
         return false;
     }
     writeSampledDescriptor(slot, view, layout);
     return true;
+}
+
+void TextureManager::retireSampledBorrowed(TextureSlot slot) {
+    if (!device_) return;
+    SampledSlotRecord* record = sampledRecord(slot);
+    if (!record || !record->borrowed) {
+        logError("TextureManager::retireSampledBorrowed: slot is not a live one from addSampledBorrowed");
+        return;
+    }
+    retireRange(sampledSlots_, record->range);
+    *record = {};
+}
+
+void TextureManager::retireRange(RangeAllocator& slots, const RangeAllocation& range) {
+    ++pendingReleases_;
+    releaser_->retire([this, &slots, range] {
+        slots.free(range);
+        --pendingReleases_;
+    });
 }
 
 TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer commandBuffer,
@@ -261,12 +328,6 @@ TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer comman
                  " has no known level size");
         return {};
     }
-    if (borrowed_.size() >= imageCapacity_) {
-        logError("TextureManager::add: the bindless array holds " +
-                 std::to_string(imageCapacity_) + " textures and is full");
-        return {};
-    }
-
     /* One region per level, over the levels laid out largest first. */
     std::vector<vk::BufferImageCopy2> regions;
     regions.reserve(levelCount);
@@ -291,11 +352,15 @@ TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer comman
         levelOffset += bytes;
     }
 
+    const TextureSlot slot = reserveSlot(false);
+    if (!slot) return {};
+
     const MappedSpan<std::byte> upload =
         buffers.allocateUpload(levels.size(), TEXTURE_UPLOAD_ALIGNMENT);
     if (!upload) {
         logError("TextureManager::add: no upload space for " +
                  std::to_string(levels.size()) + " bytes");
+        unreserveSlot(slot);
         return {};
     }
     std::memcpy(upload.host, levels.data(), levels.size());
@@ -308,36 +373,39 @@ TextureSlot TextureManager::add(BufferManager& buffers, vk::CommandBuffer comman
                                                vk::ImageUsageFlagBits::eTransferDst,
                                   .mipLevels = levelCount})) {
         images_.pop_back();
+        unreserveSlot(slot);
         return {};
     }
-    
-    image.copyFrom(commandBuffer, upload.region, regions);
-    image.use(commandBuffer, TEXTURE_FRAGMENT_SAMPLED_READ);
 
+    /* Every failure path returns before the copy is recorded into the open batch. */
     const ImageRef view = image.view(
         vk::ImageViewType::e2D, format,
         vk::ImageSubresourceRange{vk::ImageAspectFlagBits::eColor, 0, levelCount, 0, 1});
     if (!view) {
         images_.pop_back();
+        unreserveSlot(slot);
         return {};
     }
 
-    const TextureSlot slot = reserveSlot(false);
-    if (!slot) {
-        images_.pop_back();
-        return {};
-    }
+    image.copyFrom(commandBuffer, upload.region, regions);
+    image.use(commandBuffer, TEXTURE_FRAGMENT_SAMPLED_READ);
+
     writeSampledDescriptor(slot, view, vk::ImageLayout::eShaderReadOnlyOptimal);
     return slot;
 }
 
 void TextureManager::destroy() {
     if (!device_) return;
+    assert(pendingReleases_ == 0 &&
+           "TextureManager::destroy: retired slots still wait in the Releaser");
 
     for (Image& image : images_) image.destroy();
     images_.clear();
-    borrowed_.clear();
-    storageCount_ = 0;
+    releaser_ = nullptr;
+    sampledRecords_.clear();
+    storageRuns_.clear();
+    sampledSlots_.destroy();
+    storageSlots_.destroy();
 
     device_.destroyDescriptorPool(pool_);
     device_.destroyDescriptorSetLayout(layout_);
