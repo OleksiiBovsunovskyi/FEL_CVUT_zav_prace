@@ -75,5 +75,5 @@ public:
     [[nodiscard]] bool resize(vk::Extent2D extent);
 
 private:
-    DrawPass<GPUMeshDrawPush> meshDraw_;
+    DrawPass<GPUForwardMeshDrawPush> meshDraw_;
 };

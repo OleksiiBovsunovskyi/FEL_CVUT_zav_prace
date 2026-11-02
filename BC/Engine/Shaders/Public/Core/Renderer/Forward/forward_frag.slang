@@ -3,7 +3,7 @@ import mesh_vertex;
 import draw_meshlets;
 import draw_meshlets_visibility_sphere;
 
-[[vk::push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
+[[vk::push_constant]] ConstantBuffer<GPUForwardMeshDrawPush> pc;
 
 // Bindless textures, indexed by GPUMaterial::textures. Owned by TextureManager,
 // which is the only thing that assigns a slot.

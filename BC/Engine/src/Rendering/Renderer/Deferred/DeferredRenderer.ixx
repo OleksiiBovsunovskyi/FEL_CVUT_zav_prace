@@ -15,8 +15,10 @@ import TextureManager;
 import Image;
 import Logger;
 import GPUVisibilityPass;
-import VisibilityByfferImageDesc;
+import VisibilityBufferImageDesc;
 import RendererConfig;
+import GPUDeferredDrawPush;
+import SharedResources;
 
 export class DeferredRenderer
 {
@@ -27,6 +29,7 @@ public:
      * @param shaderLoader loads the mesh and fragment shader modules.
      * @param meshShaderPath mesh shader SPIR-V file.
      * @param fragmentShaderPath fragment shader SPIR-V file.
+     * @param visibilityMeshShaderPath
      * @param visibilityFragmentShaderPath fragment shader SPIR-V file for the visibility pass.
      * @param colorFormat swapchain format.
      * @param extent rendering size in texels.
@@ -36,11 +39,12 @@ public:
     [[nodiscard]] bool init(VulkanContext& ctx, ShaderLoader& shaderLoader,
                             const std::filesystem::path& meshShaderPath,
                             const std::filesystem::path& fragmentShaderPath,
+                            const std::filesystem::path& visibilityMeshShaderPath,
                             const std::filesystem::path& visibilityFragmentShaderPath,
                             vk::Format colorFormat, vk::Extent2D extent,
                             vk::DescriptorSetLayout textureLayout)
     {
-      if (!visibilityPass_.init(ctx.device(), shaderLoader, meshShaderPath, visibilityFragmentShaderPath,
+      if (!visibilityPass_.init(ctx.device(), shaderLoader, visibilityMeshShaderPath, visibilityFragmentShaderPath,
                             visibilityBufferDesc(extent).format, DEPTH_FORMAT, ctx.cmdDrawMeshTasksIndirectCount(),
                             textureLayout))
       {
@@ -49,13 +53,20 @@ public:
       }
         if (!drawPass_.init(ctx.device(), shaderLoader, meshShaderPath, fragmentShaderPath,
                             colorFormat, DEPTH_FORMAT, ctx.cmdDrawMeshTasksIndirectCount(),
-                            textureLayout))
+                            textureLayout, true, true))
         {
             logError("Failed to initialize draw pass");
             return false;
         }
       return true;
     }
+
+    /// Destroys both pipelines. Safe to call twice.
+    void destroy() {
+        drawPass_.destroy();
+        visibilityPass_.destroy();
+    }
+
        /**
     * Records dynamic rendering, the prepared mesh draw, and the draw callback.
     * @param recording active Frame recording interface.
@@ -63,8 +74,7 @@ public:
     * @param frameData address of this recording's GPUFrameData.
     * @param materials base address of the Materials mega-buffer.
     * @param textureSet TextureManager's bindless set.
-    * @param depthAttachment depth attachment prepared for this recording.
-    * @param visibilityAttachment visibility attachment prepared for this recording.
+    * @param sharedResources visibility attachment prepared for this recording.
     * @param drawCallback callback recorded inside the rendering pass.
     * @param timings marked after the mesh draw and after the callback.
     * @param depthPyramidSlot sampled slot of the full depth pyramid chain.
@@ -72,22 +82,25 @@ public:
     void render(Frame::Recording& recording, const PreparedMeshDraw& preparedMeshDraw,
                 GpuPtr<GPUFrameData> frameData,
                 GpuPtr<GPUMaterial> materials, vk::DescriptorSet textureSet,
-                const vk::RenderingAttachmentInfo& depthAttachment,
-                const vk::RenderingAttachmentInfo& visibilityAttachment,
+                SharedResources & sharedResources,
                 const std::function<void(vk::CommandBuffer, vk::Extent2D)>& drawCallback,
                 GpuPassTimings& timings, TextureSlot depthPyramidSlot)
     {
         const vk::CommandBuffer cmd = recording.commandBuffer();
-    
+
+
         if (preparedMeshDraw)
         {
+
             //!Visibility pass
+            vk::RenderingAttachmentInfo visibility_attachment = sharedResources.getVisibilityAttachment(recording);
+            vk::RenderingAttachmentInfo depth_attachment = sharedResources.getDepthAttachment(recording);
             vk::RenderingInfo visibilityRenderingInfo{};
             visibilityRenderingInfo.renderArea = vk::Rect2D{{0, 0}, recording.extent()};
             visibilityRenderingInfo.layerCount = 1;
             visibilityRenderingInfo.colorAttachmentCount = 1;
-            visibilityRenderingInfo.pColorAttachments = &visibilityAttachment;
-            visibilityRenderingInfo.pDepthAttachment = &depthAttachment;
+            visibilityRenderingInfo.pColorAttachments = &visibility_attachment;
+            visibilityRenderingInfo.pDepthAttachment = &depth_attachment;
 
             cmd.beginRendering(visibilityRenderingInfo);
             GPUVisibilityPassPush visibilityPush{
@@ -106,34 +119,35 @@ public:
                 textureSet);
             timings.mark(cmd, "Deferred renderer: Visibility pass");
             cmd.endRendering();
-            
+            logMessage("Starting deferred draw pass");
             //!Draw pass
             const vk::RenderingAttachmentInfo colorAttachment =
                 recording.getColorAttachment(vk::ClearColorValue{std::array<float, 4>{0.2f, 0.1f, 0.3f, 1.0f}});
+            depth_attachment.loadOp = vk::AttachmentLoadOp::eLoad;
             //depthAttachment.loadOp = vk::AttachmentLoadOp::eLoad; TODO depth attachment is const, but we should keep it for the draw pass.
             vk::RenderingInfo DrawRenderingInfo{};
             DrawRenderingInfo.renderArea = vk::Rect2D{{0, 0}, recording.extent()};
             DrawRenderingInfo.layerCount = 1;
             DrawRenderingInfo.colorAttachmentCount = 1;
             DrawRenderingInfo.pColorAttachments = &colorAttachment;
-            DrawRenderingInfo.pDepthAttachment = &depthAttachment;
+            DrawRenderingInfo.pDepthAttachment = &depth_attachment;
+            TextureSlot visibilityBufferSlot = sharedResources.getSampledVisibilitySlot(recording);
             cmd.beginRendering(DrawRenderingInfo);
-            GPUMeshDrawPush drawPush{
+            GPUDeferredDrawPush deferredDrawPush{
                 .frame = frameData,
                 .drawData = preparedMeshDraw.drawData,
                 .instances = preparedMeshDraw.instances,
                 .materials = materials,
-                .depthPyramidSlot = depthPyramidSlot.value
+                .depthPyramidSlot = depthPyramidSlot.value,
+                .visibilityBufferSlot = visibilityBufferSlot.value
             };
             drawPass_.record(
                 cmd,
                 recording.extent(),
-                drawPush,preparedMeshDraw.indirectCommands,
-                preparedMeshDraw.indirectCount,
-                preparedMeshDraw.instanceCount,
+                deferredDrawPush,
                 textureSet);
             timings.mark(cmd, "Deferred renderer: Draw pass");
-            cmd.endRendering();
+
         }
             
         
@@ -141,10 +155,10 @@ public:
             drawCallback(cmd, recording.extent());
             timings.mark(cmd, "draw callback");
         }
- 
+        cmd.endRendering();
     }
 
 private:
-    DrawPass<GPUMeshDrawPush>       drawPass_;
+    DrawPass<GPUDeferredDrawPush> drawPass_;
     DrawPass<GPUVisibilityPassPush> visibilityPass_;
 };

@@ -42,7 +42,7 @@ public:
                             const std::filesystem::path& fragmentShaderPath,
                             vk::Format colorFormat, vk::Format depthFormat,
                             PFN_vkCmdDrawMeshTasksIndirectCountEXT drawIndirectCount,
-                            vk::DescriptorSetLayout textureLayout);
+                            vk::DescriptorSetLayout textureLayout, bool disableDepthTest = false, bool disableDepthWrite = false);
 
     /**
      * Records one indirect draw.
@@ -57,6 +57,11 @@ public:
                 const BufferRegion& commands, const BufferRegion& count,
                 uint32_t maxDrawCount, vk::DescriptorSet textureSet) const;
 
+    /**
+     * Record version for the single direct draw command
+     */
+    void record(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
+                                const Push& push, vk::DescriptorSet textureSet) const;
     void destroy();
 
 private:
@@ -78,7 +83,7 @@ bool DrawPass<Push>::init(vk::Device device, ShaderLoader& shaderLoader,
                           const std::filesystem::path& fragmentShaderPath,
                           vk::Format colorFormat, vk::Format depthFormat,
                           PFN_vkCmdDrawMeshTasksIndirectCountEXT drawIndirectCount,
-                          vk::DescriptorSetLayout textureLayout) {
+                          vk::DescriptorSetLayout textureLayout, bool disableDepthTest, bool disableDepthWrite) {
     if (device_) {
         logError("DrawPass: init called twice");
         return false;
@@ -113,7 +118,7 @@ bool DrawPass<Push>::init(vk::Device device, ShaderLoader& shaderLoader,
     vk::ShaderModule fragShader = shaderLoader.load(fragmentShaderPath);
     if (meshShader && fragShader) {
         pipeline_ = createMeshPipeline(device_, pipelineLayout_, meshShader, fragShader,
-                                       colorFormat, depthFormat);
+                                       colorFormat, depthFormat, disableDepthTest, disableDepthWrite);
     } else {
         logError("DrawPass: failed to load " + meshShaderPath.string() + " / " +
                  fragmentShaderPath.string());
@@ -126,6 +131,23 @@ bool DrawPass<Push>::init(vk::Device device, ShaderLoader& shaderLoader,
         return false;
     }
     return true;
+}
+template <typename Push>
+void DrawPass<Push>::record(vk::CommandBuffer commandBuffer, vk::Extent2D extent,
+                            const Push& push, vk::DescriptorSet textureSet) const {
+
+    if (!pipeline_) return;
+
+    const auto [viewport, scissor] = viewportAndScissor(extent);
+
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline_);
+    if (textureSet)
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                         pipelineLayout_, 0, 1, &textureSet, 0, nullptr);
+    commandBuffer.setViewport(0, 1, &viewport);
+    commandBuffer.setScissor(0, 1, &scissor);
+    commandBuffer.pushConstants(pipelineLayout_, PUSH_STAGES, 0, sizeof(push), &push);
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 }
 
 template <typename Push>

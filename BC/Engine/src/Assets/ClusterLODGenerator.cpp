@@ -27,9 +27,9 @@ void appendMeshlet(GeneratedClusterLOD& output,
                    const meshopt_Bounds& cone,
                    int32_t group, int32_t refinedGroup) {
     GPUMeshlet meshlet{};
-    meshlet.vertexOffset =
-        static_cast<uint32_t>(output.meshletVertexIndices.size());
-    meshlet.triangleOffset =
+    meshlet.firstMeshletVertex =
+        static_cast<uint32_t>(output.meshletVertices.size());
+    meshlet.firstMeshletTriangle =
         static_cast<uint32_t>(output.meshletTriangles.size());
     meshlet.vertexCount = static_cast<uint32_t>(localVertices.size());
     meshlet.triangleCount = triangleCount;
@@ -40,8 +40,8 @@ void appendMeshlet(GeneratedClusterLOD& output,
     const uint32_t meshletIndex =
         static_cast<uint32_t>(output.meshlets.size());
     output.meshlets.push_back(meshlet);
-    output.meshletVertexIndices.insert(
-        output.meshletVertexIndices.end(),
+    output.meshletVertices.insert(
+        output.meshletVertices.end(),
         localVertices.begin(), localVertices.end());
 
     for (uint32_t triangle = 0; triangle < triangleCount; ++triangle) {
@@ -215,9 +215,9 @@ bool validate(const GeneratedClusterLOD& output, size_t vertexCount) {
             return false;
         }
 
-        if (meshlet.vertexOffset + meshlet.vertexCount >
-                output.meshletVertexIndices.size() ||
-            meshlet.triangleOffset + meshlet.triangleCount >
+        if (meshlet.firstMeshletVertex + meshlet.vertexCount >
+                output.meshletVertices.size() ||
+            meshlet.firstMeshletTriangle + meshlet.triangleCount >
                 output.meshletTriangles.size()) {
             logError("ClusterLOD: meshlet " + std::to_string(m) +
                      " ranges outside the index arrays");
@@ -225,7 +225,7 @@ bool validate(const GeneratedClusterLOD& output, size_t vertexCount) {
         }
 
         for (uint32_t i = 0; i < meshlet.vertexCount; ++i) {
-            if (output.meshletVertexIndices[meshlet.vertexOffset + i] >= vertexCount) {
+            if (output.meshletVertices[meshlet.firstMeshletVertex + i] >= vertexCount) {
                 logError("ClusterLOD: meshlet " + std::to_string(m) +
                          " references a vertex past the end");
                 return false;
@@ -234,7 +234,7 @@ bool validate(const GeneratedClusterLOD& output, size_t vertexCount) {
 
         for (uint32_t t = 0; t < meshlet.triangleCount; ++t) {
             const uint32_t packed =
-                output.meshletTriangles[meshlet.triangleOffset + t];
+                output.meshletTriangles[meshlet.firstMeshletTriangle + t];
             for (uint32_t shift : {0u, 8u, 16u}) {
                 if (((packed >> shift) & 0xffu) >= meshlet.vertexCount) {
                     logError("ClusterLOD: meshlet " + std::to_string(m) +

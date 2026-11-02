@@ -32,7 +32,7 @@ constexpr vk::DeviceSize alignUp(vk::DeviceSize value) {
  */
 struct BlobLayout {
     vk::DeviceSize meshlets             = 0;
-    vk::DeviceSize meshletVertexIndices = 0;
+    vk::DeviceSize meshletVertices      = 0;
     vk::DeviceSize meshletTriangles     = 0;
     vk::DeviceSize vertices             = 0;
     vk::DeviceSize size                 = 0;
@@ -45,9 +45,9 @@ BlobLayout layoutOf(const MeshUploadData& data) {
     layout.meshlets = cursor;
     cursor = alignUp(cursor + data.meshlets.size() * sizeof(GPUMeshlet));
 
-    layout.meshletVertexIndices = cursor;
-    cursor = alignUp(cursor + data.meshletVertexIndices.size() *
-                                  sizeof(GPUMeshletVertexIndex));
+    layout.meshletVertices = cursor;
+    cursor = alignUp(cursor + data.meshletVertices.size() *
+                                  sizeof(GPUMeshVertexIndex));
 
     layout.meshletTriangles = cursor;
     cursor = alignUp(cursor + data.meshletTriangles.size() *
@@ -88,7 +88,7 @@ bool Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
         return false;
     }
     if (uploaded() || !material || data.vertices.empty() ||
-        data.meshlets.empty() || data.meshletVertexIndices.empty() ||
+        data.meshlets.empty() || data.meshletVertices.empty() ||
         data.meshletTriangles.empty()) {
         return false;
     }
@@ -117,14 +117,14 @@ bool Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
     GPUMeshHeader header{};
     header.vertices = GpuPtr<GPUVertex>{base + layout.vertices};
     header.meshlets = GpuPtr<GPUMeshlet>{base + layout.meshlets};
-    header.meshletVertexIndices =
-        GpuPtr<GPUMeshletVertexIndex>{base + layout.meshletVertexIndices};
+    header.meshletVertices =
+        GpuPtr<GPUMeshVertexIndex>{base + layout.meshletVertices};
     header.meshletTriangles =
         GpuPtr<GPUMeshletTriangle>{base + layout.meshletTriangles};
     header.vertexCount    = static_cast<uint32_t>(data.vertices.size());
     header.meshletCount   = static_cast<uint32_t>(data.meshlets.size());
     header.material       = material->gpuIndex();
-    header.triangleCount  = static_cast<uint32_t>(data.meshletTriangles.size());
+    header.meshTriangleCount = static_cast<uint32_t>(data.meshletTriangles.size());
     header.boundingSphere = glm::vec4(data.bounds.center, data.bounds.radius);
 
     std::byte* image = upload.host;
@@ -135,9 +135,9 @@ bool Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
 
     /* The two index arrays are single-field records over the generator's
      * uint32 output, so they copy as raw bytes. */
-    std::memcpy(image + layout.meshletVertexIndices,
-                data.meshletVertexIndices.data(),
-                data.meshletVertexIndices.size() * sizeof(uint32_t));
+    std::memcpy(image + layout.meshletVertices,
+                data.meshletVertices.data(),
+                data.meshletVertices.size() * sizeof(uint32_t));
     std::memcpy(image + layout.meshletTriangles, data.meshletTriangles.data(),
                 data.meshletTriangles.size() * sizeof(uint32_t));
 

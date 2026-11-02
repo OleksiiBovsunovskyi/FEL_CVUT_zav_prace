@@ -26,15 +26,15 @@ export struct alignas(16) GPUVertex {
 static_assert(sizeof(GPUVertex) == 64);
 
 /// Meshlet-local vertex slot to an index of a GPUVertex in the same mesh.
-export struct GPUMeshletVertexIndex {
+export struct GPUMeshVertexIndex {
     uint32_t value = 0;
 };
 
-static_assert(sizeof(GPUMeshletVertexIndex) == 4);
+static_assert(sizeof(GPUMeshVertexIndex) == 4);
 
 /// One triangle, meshlet-local: i0 | (i1 << 8) | (i2 << 16).
 export struct GPUMeshletTriangle {
-    uint32_t packed = 0;
+    uint32_t packedTriangle = 0;
 };
 
 static_assert(sizeof(GPUMeshletTriangle) == 4);
@@ -42,15 +42,15 @@ static_assert(sizeof(GPUMeshletTriangle) == 4);
 /**
  * One meshlet, processed by one mesh-shader workgroup.
  *
- * vertexOffset and triangleOffset index the owning mesh's meshletVertexIndices
- * and meshletTriangles. Triangle indices are meshlet-local. Bounds and normal
- * cone are in mesh space.
+ * firstMeshletVertex and firstMeshletTriangle index the owning mesh's
+ * meshletVertices and meshletTriangles. Triangle indices are meshlet-local.
+ * Bounds and normal cone are in mesh space.
  */
 export struct alignas(16) GPUMeshlet {
-    uint32_t vertexOffset   = 0;
-    uint32_t triangleOffset = 0;
-    uint32_t vertexCount    = 0;
-    uint32_t triangleCount  = 0;
+    uint32_t firstMeshletVertex   = 0;
+    uint32_t firstMeshletTriangle = 0;
+    uint32_t vertexCount          = 0;
+    uint32_t triangleCount        = 0;
 
     glm::vec4 boundingSphere{};
     /// xyz = unit cone axis, w = cosine cutoff used for backface cone culling.
@@ -101,13 +101,13 @@ static_assert(sizeof(GPUClusterGroup) == 48);
 export struct alignas(16) GPUMeshHeader {
     GpuPtr<GPUVertex>             vertices{};
     GpuPtr<GPUMeshlet>            meshlets{};
-    GpuPtr<GPUMeshletVertexIndex> meshletVertexIndices{};
+    GpuPtr<GPUMeshVertexIndex>    meshletVertices{};
     GpuPtr<GPUMeshletTriangle>    meshletTriangles{};
     uint32_t vertexCount  = 0;
     uint32_t meshletCount = 0;
     GPUMaterialIndex material{};
     /// Triangles of every meshlet.
-    uint32_t triangleCount = 0;
+    uint32_t meshTriangleCount = 0;
     glm::vec4 boundingSphere{};
 };
 

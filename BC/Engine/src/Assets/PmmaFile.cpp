@@ -50,7 +50,7 @@ struct PmmaHeader {
 struct PmmaMesh {
     PmmaRange vertices;
     PmmaRange meshlets;
-    PmmaRange meshletVertexIndices;
+    PmmaRange meshletVertices;
     PmmaRange meshletTriangles;
     PmmaRange clusters;
     PmmaRange clusterGroups;
@@ -156,7 +156,7 @@ bool writePmma(const fs::path& path, const AssetModel& model) {
         PmmaMesh record{};
         record.vertices             = appendSection(blob, geometry.vertices);
         record.meshlets             = appendSection(blob, geometry.meshlets);
-        record.meshletVertexIndices = appendSection(blob, geometry.meshletVertexIndices);
+        record.meshletVertices      = appendSection(blob, geometry.meshletVertices);
         record.meshletTriangles     = appendSection(blob, geometry.meshletTriangles);
         record.clusters             = appendSection(blob, geometry.clusters);
         record.clusterGroups        = appendSection(blob, geometry.clusterGroups);
@@ -301,8 +301,8 @@ bool PmmaAsset::read(const fs::path& path) {
         MeshUploadData geometry{};
         geometry.vertices = sectionOf<GPUVertex>(blob, record.vertices, "vertices");
         geometry.meshlets = sectionOf<GPUMeshlet>(blob, record.meshlets, "meshlets");
-        geometry.meshletVertexIndices = sectionOf<uint32_t>(
-            blob, record.meshletVertexIndices, "meshlet vertex indices");
+        geometry.meshletVertices = sectionOf<uint32_t>(
+            blob, record.meshletVertices, "meshlet vertices");
         geometry.meshletTriangles =
             sectionOf<uint32_t>(blob, record.meshletTriangles, "meshlet triangles");
         geometry.clusters = sectionOf<GPUCluster>(blob, record.clusters, "clusters");
@@ -311,7 +311,7 @@ bool PmmaAsset::read(const fs::path& path) {
         geometry.bounds = MeshBounds{glm::vec3(record.bounds), record.bounds.w};
 
         if (geometry.vertices.empty() || geometry.meshlets.empty() ||
-            geometry.meshletVertexIndices.empty() || geometry.meshletTriangles.empty())
+            geometry.meshletVertices.empty() || geometry.meshletTriangles.empty())
             return false;
 
         meshes_.push_back(AssetMesh{geometry, AssetMaterialIndex{record.material}});

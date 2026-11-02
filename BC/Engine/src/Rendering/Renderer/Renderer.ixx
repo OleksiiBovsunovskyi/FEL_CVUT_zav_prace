@@ -22,54 +22,10 @@ export import GpuPassTimings;
 export import GpuDrawStats;
 import Image;
 import TextureManager;
+import RegisteredImage;
 import ComputePass;
-
-/// Depth pyramid levels for an extent up to 65535 on either side.
-constexpr uint32_t DEPTH_PYRAMID_MAX_MIP_LEVELS = 16;
-static_assert(maxMipLevels(vk::Extent3D{65535, 65535, 1}) == DEPTH_PYRAMID_MAX_MIP_LEVELS);
-
-/**
- * Owns per-frame depth and visibility targets shared by renderer passes.
- * Stores Depth render target for all FRAMES_IN_FLIGHT, including past ones. TODO: store only 2.
- * Stores one visibility target per FRAMES_IN_FLIGHT slot.
- */
-class SharedRenderTargets {
-public:
-    SharedRenderTargets() = default;
-    ~SharedRenderTargets() { destroy(); }
-
-    SharedRenderTargets(const SharedRenderTargets&)            = delete;
-    SharedRenderTargets& operator=(const SharedRenderTargets&) = delete;
-
-    /**
-     * @param textures table the depth targets are registered in as sampled textures;
-     *        must outlive this object.
-     */
-    [[nodiscard]] bool init(VulkanContext& ctx, vk::Extent2D extent, TextureManager& textures);
-    void destroy();
-    [[nodiscard]] bool resize(vk::Extent2D extent);
-    [[nodiscard]] vk::RenderingAttachmentInfo getDepthAttachment(
-        Frame::Recording& recording);
-
-    /**
-     * Transitions this recording's visibility target and describes it as a cleared attachment.
-     * @return visibility attachment descriptor, cleared to VISIBILITY_CLEAR.
-     */
-    [[nodiscard]] vk::RenderingAttachmentInfo getVisibilityAttachment(Frame::Recording& recording);
-
-    /**
-     * Transitions this recording's depth to a compute-readable layout.
-     * @return sampled slot of this recording's depth.
-     */
-    [[nodiscard]] TextureSlot sampledDepth(Frame::Recording& recording);
-
-private:
-    std::array<Image, FRAMES_IN_FLIGHT> depth_;
-    std::array<TextureSlot, FRAMES_IN_FLIGHT> depthSlots_;
-    //Visibility buffer is needed only for one frame.
-    Image visibility_;
-    TextureManager* textures_ = nullptr;
-};
+import DeferredRenderer;
+import SharedResources;
 
 /**
  * Owns shared mesh-draw resources, shared depth targets, renderers, and the draw callback.
@@ -127,27 +83,35 @@ public:
     DebugFlags getDebugFlags() const { return debugFlags_; }
     void setDebugFlags(DebugFlags flags) { debugFlags_ = flags; }
 private:
-    MeshDrawResources     meshDrawResources_;
-    PerFrameRecord<GPUFrameData> frameRecord_;
-    SharedRenderTargets   sharedTargets_;
+    ///Renderers
     ForwardRenderer       forward_;
-    DrawFn                draw_;
+    DeferredRenderer      deferred_;
+
+    ///Stats
     GpuPassTimings        timings_;
     GpuDrawStats          drawStats_;
 
+    ///Passes
+    ComputePass<GPUDepthPyramidPush> depthPyramidPass_;
+
+    ///Resources
     TextureManager* textures_ = nullptr;
-    DebugFlags            debugFlags_;
-    Image                 depthPyramid_;
-    TextureSlot           depthPyramidSlot_;
-    std::array<StorageSlot, DEPTH_PYRAMID_MAX_MIP_LEVELS> depthPyramidMipSlots_;
-    /// True while the depth pyramid image is in eUndefined.
-    bool                  depthPyramidUndefined_ = true;
+    SharedResources sharedResources_;
+
+    PerFrameRecord<GPUFrameData> frameRecord_;
+    MeshDrawResources     meshDrawResources_;
+
+    /// True until depthPyramidCounter_ is zeroed after init or resize.
+    bool                  depthPyramidCounterUnset_ = true;
     /// World-to-clip matrix of the depth the pyramid was last built from.
     glm::mat4             depthPyramidViewProjection_{1.0f};
+    AllocatedBuffer<DeviceOnlyBuffer> depthPyramidCounter_;
     /// Pyramid holds the previous frame's depth, built with depthPyramidViewProjection_.
     bool                  depthPyramidBuiltLastFrame_ = false;
-    ComputePass<GPUDepthPyramidPush> depthPyramidPass_;
-    AllocatedBuffer<DeviceOnlyBuffer> depthPyramidCounter_;
     /// Push of depthPyramidPass_; its counter points into depthPyramidCounter_.
     GPUDepthPyramidPush   depthPyramidPush_{};
+
+    DrawFn                draw_;
+    DebugFlags            debugFlags_;
+
 };

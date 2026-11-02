@@ -56,7 +56,7 @@ void ForwardRenderer::render(
 
     cmd.beginRendering(rendering);
     if (preparedMeshDraw) {
-        GPUMeshDrawPush push{};
+        GPUForwardMeshDrawPush push{};
         push.frame = frameData;
         push.drawData = preparedMeshDraw.drawData;
         push.instances = preparedMeshDraw.instances;

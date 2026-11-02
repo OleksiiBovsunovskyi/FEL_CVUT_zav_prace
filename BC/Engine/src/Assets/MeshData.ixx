@@ -16,12 +16,12 @@ export struct MeshBounds {
 
 
 export struct MeshUploadData {
-    /// Vertex data referenced by meshletVertexIndices.
+    /// Vertex data referenced by meshletVertices.
     std::span<const GPUVertex> vertices;
     /// Every generated meshlet across all hierarchy levels.
     std::span<const GPUMeshlet> meshlets;
     /// Flattened global vertex indices used by meshlets.
-    std::span<const uint32_t> meshletVertexIndices;
+    std::span<const uint32_t> meshletVertices;
     /// One triangle per uint32: i0 | (i1 << 8) | (i2 << 16).
     std::span<const uint32_t> meshletTriangles;
     /// One DAG record per meshlet.

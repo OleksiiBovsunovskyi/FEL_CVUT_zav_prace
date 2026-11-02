@@ -20,7 +20,7 @@ void main(uint3 threadId : SV_DispatchThreadID) {
     if (mesh.meshletCount == 0) return;
 
     GPUDrawCounters* counters = pc.frame->drawCounters;
-    atomicAdd(&counters->trianglesSubmitted, mesh.triangleCount);
+    atomicAdd(&counters->trianglesSubmitted, mesh.meshTriangleCount);
 
     //Culling
     //FS, takes sphere in model space

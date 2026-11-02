@@ -41,10 +41,10 @@ export struct ScatterInstancesPush {
 static_assert(sizeof(ScatterInstancesPush) == 24);
 
 /**
- * Arguments to mesh.slang.
+ * Arguments to forward_mesh.slang.
  * Geometry is reached through the mesh header a GPUDrawData points at.
  */
-export struct GPUMeshDrawPush {
+export struct GPUForwardMeshDrawPush {
     GpuPtr<GPUFrameData> frame;
     GpuPtr<GPUDrawData> drawData;
     GpuPtr<GPUMeshInstance>   instances;
@@ -54,7 +54,7 @@ export struct GPUMeshDrawPush {
     uint32_t _padding = 0;
 };
 
-static_assert(sizeof(GPUMeshDrawPush) == 40);
+static_assert(sizeof(GPUForwardMeshDrawPush) == 40);
 
 
 export struct GPUDepthPyramidPush {

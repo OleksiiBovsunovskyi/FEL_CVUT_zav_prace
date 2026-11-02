@@ -8,6 +8,7 @@ export module Frame;
 
 import vulkan;
 export import FrameInFlightIndex;
+export import SubmissionSerial;
 import Image;
 import VulkanContext;
 
@@ -17,7 +18,7 @@ import VulkanContext;
  */
 export class Frame {
 public:
-    using SubmissionSerial = uint64_t;
+    using SubmissionSerial = ::SubmissionSerial;
 
     /**
      * Describes the image layout and memory use at a submission boundary.

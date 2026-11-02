@@ -26,7 +26,7 @@ export struct ClusterLODSettings {
 
 export struct GeneratedClusterLOD {
     std::vector<GPUMeshlet> meshlets;
-    std::vector<uint32_t> meshletVertexIndices;
+    std::vector<uint32_t> meshletVertices;
     std::vector<uint32_t> meshletTriangles;
     std::vector<GPUCluster> clusters;
     std::vector<GPUClusterGroup> groups;
@@ -38,7 +38,7 @@ export struct GeneratedClusterLOD {
         return MeshUploadData{
             vertices,
             meshlets,
-            meshletVertexIndices,
+            meshletVertices,
             meshletTriangles,
             clusters,
             groups,

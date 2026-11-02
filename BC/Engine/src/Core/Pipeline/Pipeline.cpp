@@ -46,7 +46,7 @@ vk::Pipeline createComputePipeline(vk::Device device, vk::PipelineLayout layout,
 vk::Pipeline createMeshPipeline(vk::Device device, vk::PipelineLayout layout,
                                 vk::ShaderModule meshShader,
                                 vk::ShaderModule fragmentShader,
-                                vk::Format colorFormat, vk::Format depthFormat) {
+                                vk::Format colorFormat, vk::Format depthFormat, bool disableDepthTest, bool disableDepthWrite) {
     if (!device || !layout || !meshShader || !fragmentShader) {
         logError("createMeshPipeline: device, layout and both shaders are required");
         return nullptr;
@@ -73,8 +73,8 @@ vk::Pipeline createMeshPipeline(vk::Device device, vk::PipelineLayout layout,
 
     /* Reverse-Z: the far plane is 0, so a nearer fragment compares greater. */
     vk::PipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.depthTestEnable  = vk::True;
-    depthStencil.depthWriteEnable = vk::True;
+    depthStencil.depthTestEnable  = disableDepthTest? vk::False : vk::True;
+    depthStencil.depthWriteEnable = disableDepthWrite? vk::False : vk::True;
     depthStencil.depthCompareOp   = DEPTH_COMPARE_OP;
     depthStencil.maxDepthBounds   = 1.0f;
 

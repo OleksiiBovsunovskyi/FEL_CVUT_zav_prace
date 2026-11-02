@@ -25,4 +25,4 @@ export [[nodiscard]] vk::PipelineShaderStageCreateInfo shaderStage(
 export [[nodiscard]] vk::Pipeline createMeshPipeline(
     vk::Device device, vk::PipelineLayout layout,
     vk::ShaderModule meshShader, vk::ShaderModule fragmentShader,
-    vk::Format colorFormat, vk::Format depthFormat);
+    vk::Format colorFormat, vk::Format depthFormat, bool disableDepthTest = false, bool disableDepthWrite = false);

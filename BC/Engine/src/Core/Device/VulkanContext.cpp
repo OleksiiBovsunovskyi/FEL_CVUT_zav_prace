@@ -125,6 +125,7 @@ bool VulkanContext::selectAndCreateDevice() {
     features10.drawIndirectFirstInstance = VK_TRUE; // per-draw instance offset
     features10.shaderInt64              = VK_TRUE;  // 64-bit math on buffer pointers
     features10.textureCompressionBC     = VK_TRUE;  // the BC7 the baker writes
+    features10.geometryShader           = VK_TRUE;  // SV_PrimitiveID in the visibility-buffer fragment shader
     // One RWTexture2D[] array holds storage images of every format.
     features10.shaderStorageImageReadWithoutFormat  = VK_TRUE;
     features10.shaderStorageImageWriteWithoutFormat = VK_TRUE;

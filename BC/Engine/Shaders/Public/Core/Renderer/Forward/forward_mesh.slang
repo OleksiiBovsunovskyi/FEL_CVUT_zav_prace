@@ -1,18 +1,15 @@
 import GPUTypes;
-import AtomicAdd;
 import mesh_vertex;
 import SphereVisibilityTest;
-import HiZOCTest;
-[[vk_push_constant]] ConstantBuffer<GPUMeshDrawPush> pc;
-[[vk_binding(0, 0)]] Sampler2D textures[];
+import GPURendererConstants;
+import common_mesh;
 
-// meshopt's limits, matching MESHLET_MAX_* in ClusterLODGenerator.ixx.
-static const uint MAX_VERTICES  = 64;
-static const uint MAX_TRIANGLES = 64;
+[[vk_push_constant]] ConstantBuffer<GPUForwardMeshDrawPush> pc;
+[[vk_binding(0, 0)]] Sampler2D textures[];
 
 // One workgroup per meshlet; build_draw_commands.slang sets groupCountX.
 [shader("mesh")]
-[numthreads(64, 1, 1)]
+[numthreads(MESH_GROUP_SIZE, 1, 1)]
 [outputtopology("triangle")]
 void meshMain(
     uint  groupId : SV_GroupID,
@@ -31,24 +28,12 @@ void meshMain(
     const GPUMeshlet meshlet = mesh.meshlets[groupId];
 
     const float4 meshletSphere = worldSphere(instance.transform, meshlet.boundingSphere);
-    bool visible = sphereVisibleWorld(pc.frame->camera.viewProj, meshletSphere);
-    if (pc.frame.useHiZOC)
-        if(visible) 
-            visible = !isOcludedByHiZ(textures[pc.depthPyramidSlot], pc.frame->hiZViewProj, meshletSphere);
-  
+    const bool visible = isMeshletVisible(pc.frame, textures[pc.depthPyramidSlot], meshletSphere);
+
     SetMeshOutputCounts(visible ? meshlet.vertexCount  : 0,
                         visible ? meshlet.triangleCount : 0);
 
-    // Count metrics
-    if (laneId == 0) {
-        GPUDrawCounters* counters = pc.frame->drawCounters;
-        if (visible) {
-            atomicAdd(&counters->meshletsDrawn, 1);
-            atomicAdd(&counters->trianglesDrawn, meshlet.triangleCount);
-        } else {
-            atomicAdd(&counters->meshletsCulled, 1);
-        }
-    }
+    if (laneId == 0) incrementMetricCounters(pc.frame, meshlet, visible);
     if (!visible) return;
     const float4x4 mvp = mul(pc.frame->camera.viewProj, instance.transform);
     const float3x3 model = float3x3(instance.transform);
@@ -57,9 +42,8 @@ void meshMain(
                                            cross(model[2], model[0]),
                                            cross(model[0], model[1]));
 
-    for (uint i = laneId; i < meshlet.vertexCount; i += 64) {
-        const uint      index  = mesh.meshletVertexIndices[meshlet.vertexOffset + i].value;
-        const GPUVertex vertex = mesh.vertices[index];
+    for (uint i = laneId; i < meshlet.vertexCount; i += MESH_GROUP_SIZE) {
+        const GPUVertex vertex = getMeshletVertex(mesh, meshlet, i);
 
         verts[i].position      = mul(mvp, float4(vertex.position.xyz, 1.0));
         verts[i].worldPosition = mul(instance.transform, float4(vertex.position.xyz, 1.0)).xyz;
@@ -73,9 +57,6 @@ void meshMain(
         verts[i].meshletSphere = meshletSphere;
     }
 
-    for (uint i = laneId; i < meshlet.triangleCount; i += 64) {
-        // One triangle per uint: i0 | (i1 << 8) | (i2 << 16).
-        const uint packed = mesh.meshletTriangles[meshlet.triangleOffset + i].packed;
-        tris[i] = uint3(packed & 0xffu, (packed >> 8) & 0xffu, (packed >> 16) & 0xffu);
-    }
+    for (uint i = laneId; i < meshlet.triangleCount; i += MESH_GROUP_SIZE)
+        tris[i] = getMeshletTriangle(mesh, meshlet, i);
 }
