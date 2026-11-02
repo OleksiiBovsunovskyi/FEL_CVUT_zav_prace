@@ -39,21 +39,3 @@ public void incrementMetricCounters(GPUFrameData* frame, GPUMeshlet meshlet, boo
         atomicAdd(&counters->meshletsCulled, 1);
     }
 }
-
-/**
- * @param i vertex within the meshlet, 0..meshlet.vertexCount-1
- * @return vertex i of the meshlet.
- */
-public GPUVertex getMeshletVertex(GPUMeshHeader mesh, GPUMeshlet meshlet, uint i) {
-    return mesh.vertices[mesh.meshletVertices[meshlet.firstMeshletVertex + i].value];
-}
-
-/**
- * @param i triangle within the meshlet, 0..meshlet.triangleCount-1
- * @return meshlet-local vertex indices of triangle i.
- */
-public uint3 getMeshletTriangle(GPUMeshHeader mesh, GPUMeshlet meshlet, uint i) {
-    // One triangle per uint: i0 | (i1 << 8) | (i2 << 16).
-    const uint packed = mesh.meshletTriangles[meshlet.firstMeshletTriangle + i].packedTriangle;
-    return uint3(packed & 0xffu, (packed >> 8) & 0xffu, (packed >> 16) & 0xffu);
-}

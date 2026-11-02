@@ -7,6 +7,7 @@ import GPUInstance;
 import SphereVisibilityTest;
 import visibility_buffer_vertex;
 import common_mesh;
+import Vertex;
 
 [[vk_push_constant]] GPUVisibilityPassPush pc;
 [[vk_binding(0, 0)]] Sampler2D textures[];

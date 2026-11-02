@@ -3,6 +3,7 @@ import mesh_vertex;
 import SphereVisibilityTest;
 import GPURendererConstants;
 import common_mesh;
+import Vertex;
 
 [[vk_push_constant]] ConstantBuffer<GPUForwardMeshDrawPush> pc;
 [[vk_binding(0, 0)]] Sampler2D textures[];

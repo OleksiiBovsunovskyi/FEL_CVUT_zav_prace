@@ -1,5 +1,6 @@
 module visibility_buffer_vertex;
 import GPURendererConstants;
+import Vertex;
 
 /// Vertex output of the visibility-buffer mesh shader.
 public struct VisVertex {
@@ -16,18 +17,20 @@ public struct VisTriangle {
     public uint triangleIndex : SV_PrimitiveID;
 };
 
-/// Triangle a visibility-buffer pixel is covered by.
-public struct VisPrimitive {
-    /// Index into drawData; SV_DrawIndex of the visibility pass.
-    public nointerpolation uint drawIndex : DRAWINDEX;
-    /// Meshlet within the draw's mesh.
-    public nointerpolation uint meshletIndex : MESHLETINDEX;
-    /// Triangle within the meshlet, 0..MAX_TRIANGLES-1.
-    public nointerpolation uint triangleIndex : TRIANGLEINDEX;
-
-    /// @return false for a texel no triangle covers.
+public extension Triangle {
+    /// @return false for a visibility-buffer texel no triangle covers.
     public bool isValid() {
         return drawIndex != VISIBILITY_CLEAR;
+    }
+
+    /// @return triangle stored in a visibility-buffer texel.
+    public static Triangle fromTexel(uint2 texel) {
+        return PackedVisPrimitive(texel).unpack();
+    }
+
+    /// @return visibility-buffer texel holding this triangle.
+    public uint2 toTexel() {
+        return PackedVisPrimitive(this).toTexel();
     }
 };
 
@@ -43,31 +46,31 @@ public struct PackedVisPrimitive {
      * Bits 31..TRIANGLE_BITS hold the meshlet, bits TRIANGLE_BITS-1..0 the triangle.
      */
     public nointerpolation uint meshletAndTriangleIndex : MESHLETANDTRIANGLEINDEX;
-};
 
-public VisPrimitive unpackVisPrimitive(PackedVisPrimitive packed)
-{
-    VisPrimitive result;
-    result.drawIndex = packed.drawIndex;
-    result.meshletIndex = packed.meshletAndTriangleIndex >> TRIANGLE_BITS;
-    result.triangleIndex = packed.meshletAndTriangleIndex & TRIANGLE_MASK;
-    return result;
-}
-public PackedVisPrimitive packVisPrimitive(VisPrimitive primitive)
-{
-    static_assert(MAX_TRIANGLES <= (1u << TRIANGLE_BITS), "triangle index does not fit TRIANGLE_BITS");
-    PackedVisPrimitive result;
-    result.drawIndex = primitive.drawIndex;
-    result.meshletAndTriangleIndex = (primitive.meshletIndex << TRIANGLE_BITS) | primitive.triangleIndex;
-    return result;
-}
-public VisPrimitive fromTexel(uint2 texel) {
-    PackedVisPrimitive packed;
-    packed.drawIndex = texel.x;
-    packed.meshletAndTriangleIndex = texel.y;
-    return unpackVisPrimitive(packed);
-}
-public uint2 toTexel(VisPrimitive primitive) {
-    PackedVisPrimitive packed = packVisPrimitive(primitive);
-    return uint2(packed.drawIndex, packed.meshletAndTriangleIndex);
-}
+    /// @param triangle triangle to pack
+    public __init(Triangle triangle) {
+        static_assert(MAX_TRIANGLES <= (1u << TRIANGLE_BITS), "triangle index does not fit TRIANGLE_BITS");
+        drawIndex = triangle.drawIndex;
+        meshletAndTriangleIndex = (triangle.meshletIndex << TRIANGLE_BITS) | triangle.triangleIndex;
+    }
+
+    /// @param texel visibility-buffer texel
+    public __init(uint2 texel) {
+        drawIndex = texel.x;
+        meshletAndTriangleIndex = texel.y;
+    }
+
+    /// @return the packed triangle.
+    public Triangle unpack() {
+        Triangle result;
+        result.drawIndex = drawIndex;
+        result.meshletIndex = meshletAndTriangleIndex >> TRIANGLE_BITS;
+        result.triangleIndex = meshletAndTriangleIndex & TRIANGLE_MASK;
+        return result;
+    }
+
+    /// @return visibility-buffer texel holding this record.
+    public uint2 toTexel() {
+        return uint2(drawIndex, meshletAndTriangleIndex);
+    }
+};

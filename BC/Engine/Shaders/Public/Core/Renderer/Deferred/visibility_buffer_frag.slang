@@ -1,11 +1,12 @@
 import visibility_buffer_vertex;
+import Vertex;
 
 [shader("fragment")]
 uint2 fragMain(VisVertex vertex, uint triangleIndex : SV_PrimitiveID) : SV_Target
 {
-    VisPrimitive primitive;
+    Triangle primitive;
     primitive.drawIndex     = vertex.drawIndex;
     primitive.meshletIndex  = vertex.meshletIndex;
     primitive.triangleIndex = triangleIndex;
-    return toTexel(primitive);
+    return primitive.toTexel();
 }
