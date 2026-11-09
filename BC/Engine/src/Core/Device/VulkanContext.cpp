@@ -124,6 +124,7 @@ bool VulkanContext::selectAndCreateDevice() {
     features10.multiDrawIndirect        = VK_TRUE;  // >1 draw per indirect call
     features10.drawIndirectFirstInstance = VK_TRUE; // per-draw instance offset
     features10.shaderInt64              = VK_TRUE;  // 64-bit math on buffer pointers
+    features10.shaderInt16              = VK_TRUE;  // uint16_t arithmetic on Meshlet counts
     features10.textureCompressionBC     = VK_TRUE;  // the BC7 the baker writes
     features10.geometryShader           = VK_TRUE;  // SV_PrimitiveID in the visibility-buffer fragment shader
     // One RWTexture2D[] array holds storage images of every format.
@@ -134,12 +135,17 @@ bool VulkanContext::selectAndCreateDevice() {
     features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
     // gl_DrawID in the mesh shader, which indexes the per-draw GPUDrawData.
     features11.shaderDrawParameters = VK_TRUE;
+    // uint16_t fields of Meshlet read through buffer pointers.
+    features11.storageBuffer16BitAccess = VK_TRUE;
 
     VkPhysicalDeviceVulkan12Features features12{};
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
     features12.bufferDeviceAddress = VK_TRUE;
     features12.scalarBlockLayout   = VK_TRUE;   // C-like struct layout in shaders
     features12.timelineSemaphore   = VK_TRUE;
+    // uint8_t fields of Triangle read through buffer pointers.
+    features12.storageBuffer8BitAccess = VK_TRUE;
+    features12.shaderInt8              = VK_TRUE;
     // Draw count sourced from a GPU buffer - the culling compute pass writes it.
     features12.drawIndirectCount   = VK_TRUE;
 
