@@ -125,14 +125,12 @@ def structToSlang(s:ParsedStruct) -> str:
     structAlignment = 1
     lines:List[str] = []
     paddingCount = 0
-    runBits = 0  # bits used in the uint of the current bitfield run, 0 outside a run
+    runBits = 0  # bits used in the uint of the current bitfield run, 0 outside a run; a bitfield that does not fit starts a new uint
     for f in s.fields:
         if f.bit_width is not None:
             width = bitWidth(f, s.name)
-            if runBits > 0:
+            if runBits > 0 and runBits + width <= BITFIELD_UNIT_BITS:
                 runBits += width
-                if runBits > BITFIELD_UNIT_BITS:
-                    raise ValueError(f"Bitfields of {s.name} up to {f.name} exceed {BITFIELD_UNIT_BITS} bits in one uint")
                 lines.append(f"    public {fieldToSlang(f)};")
                 continue
             runBits = width

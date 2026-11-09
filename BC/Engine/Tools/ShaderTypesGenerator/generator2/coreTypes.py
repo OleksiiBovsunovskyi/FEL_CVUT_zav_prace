@@ -13,6 +13,7 @@ SimpleTypeList:dict[str, tuple[str, int, int]] = {
     "glm::uvec2": ("uint2", 8, 4),
     "glm::uvec3": ("uint3", 12, 4),
     "glm::uvec4": ("uint4", 16, 4),
+    "glm::ivec3": ("int3", 12, 4),
     "glm::mat4": ("float4x4", 64, 4),
     "int": ("int", 4, 4)
 }
