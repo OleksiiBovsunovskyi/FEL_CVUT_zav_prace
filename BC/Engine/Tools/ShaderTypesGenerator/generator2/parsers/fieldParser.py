@@ -10,6 +10,7 @@ class ParsedField(NamedTuple):
     name: str
     type: ParsedType
     array_size: str | None  # "" for an unsized array
+    bit_width: str | None = None  # width expression of a bitfield
 
 def parseTypeNode(type_node: Node) -> ParsedType:
     """
@@ -52,15 +53,21 @@ def parseFieldDeclaration(node: Node) -> List[ParsedField]:
     """
     Fields declared by one field_declaration node.
     GpuPtr<GPUVertex> v, w[2]; -> two fields.
+    uint32_t a : 16, b : 16; -> two fields with bit widths "16".
     Static members yield no fields.
     """
     if any(c.type == "storage_class_specifier" and c.text == b"static" for c in node.children):
         return []
     parsed = parseTypeNode(node.child_by_field_name("type"))
+    declarators = {d.id for d in node.children_by_field_name("declarator")}
     fields = []
-    for decl in node.children_by_field_name("declarator"):
-        field_name, suffix, array_size = unwrap(decl)
-        if field_name is None:  # method
-            continue
-        fields.append(ParsedField(field_name, parsed._replace(type=parsed.type + suffix), array_size))
+    for child in node.children:
+        if child.type == "bitfield_clause" and fields:
+            width = next(c for c in child.named_children if c.type != "comment")
+            fields[-1] = fields[-1]._replace(bit_width=width.text.decode())
+        elif child.id in declarators:
+            field_name, suffix, array_size = unwrap(child)
+            if field_name is None:  # method
+                continue
+            fields.append(ParsedField(field_name, parsed._replace(type=parsed.type + suffix), array_size))
     return fields

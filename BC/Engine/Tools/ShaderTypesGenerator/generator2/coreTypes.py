@@ -1,6 +1,8 @@
 
 #Cpp name | Slang name | Size in bytes in the slang | Alignment in bytes in the slang natural layout
 SimpleTypeList:dict[str, tuple[str, int, int]] = {
+    "uint8_t": ("uint8_t", 1, 1),
+    "uint16_t": ("uint16_t", 2, 2),
     "uint32_t": ("uint", 4, 4),
     "int32_t": ("int", 4, 4),
     "float": ("float", 4, 4),

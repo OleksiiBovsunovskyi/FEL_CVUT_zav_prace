@@ -47,7 +47,8 @@ def typeToSlang(t:ParsedType, name:str) -> str:
 
 def fieldToSlang(f:ParsedField) -> str:
     array = f"[{f.array_size}]" if f.array_size is not None else ""
-    return f"{typeToSlang(f.type, f.name)} {f.name}{array}"
+    bits = f" : {f.bit_width}" if f.bit_width is not None else ""
+    return f"{typeToSlang(f.type, f.name)} {f.name}{array}{bits}"
 
 def slangValue(c:ParsedConstant) -> str:
     value = c.value
@@ -100,6 +101,21 @@ def paddingField(index:int, byteCount:int) -> str:
     count = byteCount // 4
     return f"uint padding_{index}" + (f"[{count}]" if count > 1 else "")
 
+BITFIELD_TYPE:str = "uint32_t"
+BITFIELD_UNIT_BITS:int = 32
+
+def bitWidth(f:ParsedField, structName:str) -> int:
+    """
+    Width in bits of a bitfield.
+    @param structName struct the field belongs to, for the error message
+    """
+    if f.type.is_template or f.type.type != BITFIELD_TYPE or f.array_size is not None:
+        raise ValueError(f"Bitfield {structName}::{f.name} must be a plain {BITFIELD_TYPE}")
+    width = evaluateInteger(f.bit_width, constantValue)
+    if not 0 < width <= BITFIELD_UNIT_BITS:
+        raise ValueError(f"Bitfield {structName}::{f.name} width {width} is outside 1..{BITFIELD_UNIT_BITS}")
+    return width
+
 def structToSlang(s:ParsedStruct) -> str:
     """
     Slang declaration of the struct, with padding fields wherever the natural layout leaves a gap.
@@ -109,7 +125,19 @@ def structToSlang(s:ParsedStruct) -> str:
     structAlignment = 1
     lines:List[str] = []
     paddingCount = 0
+    runBits = 0  # bits used in the uint of the current bitfield run, 0 outside a run
     for f in s.fields:
+        if f.bit_width is not None:
+            width = bitWidth(f, s.name)
+            if runBits > 0:
+                runBits += width
+                if runBits > BITFIELD_UNIT_BITS:
+                    raise ValueError(f"Bitfields of {s.name} up to {f.name} exceed {BITFIELD_UNIT_BITS} bits in one uint")
+                lines.append(f"    public {fieldToSlang(f)};")
+                continue
+            runBits = width
+        else:
+            runBits = 0
         size, alignment = fieldLayout(f)
         start = alignUp(offset, alignment)
         if start > offset:
