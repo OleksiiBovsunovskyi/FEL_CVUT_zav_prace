@@ -7,7 +7,7 @@ module;
 
 #include <glm/glm.hpp>
 
-export module Mesh;
+export module VK_Mesh;
 
 import vulkan;
 export import MeshData;
@@ -21,18 +21,18 @@ import BufferManager;
  * or replacing it retires them through BufferManager. Transforms, visibility and
  * scene hierarchy live in render/transform components.
  */
-export class Mesh {
+export class VK_Mesh {
 public:
     /// Creates an empty, not-yet-uploaded mesh.
-    Mesh() = default;
+    VK_Mesh() = default;
 
     /// GPU allocations are uniquely owned.
-    Mesh(const Mesh&) = delete;
-    Mesh& operator=(const Mesh&) = delete;
+    VK_Mesh(const VK_Mesh&) = delete;
+    VK_Mesh& operator=(const VK_Mesh&) = delete;
 
     /// Transfers ownership of all GPU allocations.
-    Mesh(Mesh&&) noexcept = default;
-    Mesh& operator=(Mesh&&) noexcept = default;
+    VK_Mesh(VK_Mesh&&) noexcept = default;
+    VK_Mesh& operator=(VK_Mesh&&) noexcept = default;
 
     /**
      * Allocates the mesh's MeshData blob and records the copy into it.

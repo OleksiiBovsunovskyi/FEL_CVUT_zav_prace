@@ -10,7 +10,7 @@ module;
 
 #include <glm/glm.hpp>
 
-module Mesh;
+module VK_Mesh;
 
 import vulkan;
 import Logger;
@@ -70,7 +70,7 @@ void writeSection(std::byte* blob, vk::DeviceSize offset,
 
 } // namespace
 
-MeshDataPointer Mesh::header() const {
+MeshDataPointer VK_Mesh::header() const {
     if (!blob_) {
         logError("Mesh::header called before the mesh was uploaded");
         return {};
@@ -79,7 +79,7 @@ MeshDataPointer Mesh::header() const {
     return MeshDataPointer{blob_.span().gpu.data.address};
 }
 
-bool Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
+bool VK_Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
                   const MeshUploadData& data,
                   std::shared_ptr<Material> material) {
 
