@@ -102,7 +102,7 @@ std::shared_ptr<MultiMesh> ModelLoader::upload(const AssetModel& model) {
     /* Primitives with no material share this one. */
     std::shared_ptr<Material> defaultMaterial;
 
-    std::vector<std::shared_ptr<Mesh>> meshes;
+    std::vector<std::shared_ptr<VK_Mesh>> meshes;
     meshes.reserve(model.meshes.size());
     for (const AssetMesh& source : model.meshes) {
         std::shared_ptr<Material> material;
@@ -116,7 +116,7 @@ std::shared_ptr<MultiMesh> ModelLoader::upload(const AssetModel& model) {
         const vk::CommandBuffer cmd = batch.begin();
         if (!cmd) return nullptr;
 
-        auto       mesh     = std::make_shared<Mesh>();
+        auto       mesh     = std::make_shared<VK_Mesh>();
         const bool uploaded = mesh->upload(buffers, cmd, source.geometry,
                                            std::move(material));
 
@@ -133,7 +133,7 @@ std::shared_ptr<MultiMesh> ModelLoader::upload(const AssetModel& model) {
 
     auto result = std::make_shared<MultiMesh>();
     for (const AssetPart& part : model.parts) {
-        if (const std::shared_ptr<Mesh>& mesh = meshes[part.mesh.value])
+        if (const std::shared_ptr<VK_Mesh>& mesh = meshes[part.mesh.value])
             result->add(mesh, part.transform);
     }
 

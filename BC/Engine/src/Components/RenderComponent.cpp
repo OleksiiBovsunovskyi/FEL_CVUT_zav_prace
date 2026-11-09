@@ -14,7 +14,7 @@ void RenderComponent::registerParts() {
 
     parts_.reserve(multiMesh_->size());
     for (const MultiMeshPart& part : multiMesh_->parts()) {
-        const Mesh& mesh = *part.mesh;
+        const VK_Mesh& mesh = *part.mesh;
         if (!mesh.uploaded() || mesh.meshletCount() == 0) continue;
 
         GPUMeshInstance instance{};

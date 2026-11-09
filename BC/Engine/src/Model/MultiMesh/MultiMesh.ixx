@@ -8,17 +8,17 @@ module;
 
 export module MultiMesh;
 
-export import Mesh;
+export import VK_Mesh;
 
 export struct MultiMeshPart {
-    std::shared_ptr<Mesh> mesh;
+    std::shared_ptr<VK_Mesh> mesh;
     glm::mat4 localTransform{1.0f};
 };
 
 /// Owns group of meshes, allowing for logical multimaterial objects
 export class MultiMesh {
 public:
-    void add(std::shared_ptr<Mesh> mesh,
+    void add(std::shared_ptr<VK_Mesh> mesh,
              const glm::mat4& localTransform = glm::mat4{1.0f}) {
         if (mesh)
             parts_.push_back({std::move(mesh), localTransform});
