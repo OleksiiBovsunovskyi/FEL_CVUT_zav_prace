@@ -1,0 +1,3 @@
+# Math: value types shared by assets, scene and rendering.
+name = "Math"
+depends = ["glm::glm"]
