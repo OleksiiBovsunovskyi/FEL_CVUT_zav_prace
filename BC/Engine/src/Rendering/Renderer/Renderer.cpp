@@ -118,7 +118,7 @@ void Renderer::setDrawCallback(DrawFn cb) {
 }
 
 void Renderer::render(Frame::Recording& recording,
-                      std::span<const GPUMeshInstance> instances,
+                      std::span<const Instance> instances,
                       std::span<const uint32_t> changed,
                       const glm::mat4& viewProjection,
                       const glm::vec3& cameraPosition,
@@ -156,12 +156,12 @@ void Renderer::render(Frame::Recording& recording,
     //Mesh shader samples depth pyramid, we need to transition it for the forward pass
     depthPyramid.image().use(recording.commandBuffer(), DEPTH_PYRAMID_SAMPLED_READ);
     // Start forward pass
-    deferred_.render(recording, meshDraw, frame, materials, textures_?  textures_->set():nullptr,
-                     sharedResources_, draw_, timings_, depthPyramid.sampledSlot());
-    //! forward_.render(recording, meshDraw, frame, materials,
-    //!                 textures_ ? textures_->set() : nullptr, depthAttachment, draw_,
-    //!                 timings_, depthPyramid.sampledSlot());
-    //! //Depth updated, we can update depth pyramid
+    //deferred_.render(recording, meshDraw, frame, materials, textures_?  textures_->set():nullptr,
+    //                 sharedResources_, draw_, timings_, depthPyramid.sampledSlot());
+     forward_.render(recording, meshDraw, frame, materials,
+                     textures_ ? textures_->set() : nullptr, depthAttachment, draw_,
+                     timings_, depthPyramid.sampledSlot());
+     //Depth updated, we can update depth pyramid
     if (debugFlags_.UseHIZOC)
     {
         const vk::CommandBuffer cmd = recording.commandBuffer();

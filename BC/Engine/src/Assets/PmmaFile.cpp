@@ -21,7 +21,7 @@ namespace {
 
 /// "PMMA" as little-endian bytes.
 constexpr uint32_t PMMA_MAGIC   = 0x414d4d50;
-constexpr uint32_t PMMA_VERSION = 2;
+constexpr uint32_t PMMA_VERSION = 3;
     
 constexpr uint64_t SECTION_ALIGNMENT = 16;
 
@@ -50,10 +50,8 @@ struct PmmaHeader {
 struct PmmaMesh {
     PmmaRange vertices;
     PmmaRange meshlets;
-    PmmaRange meshletVertices;
-    PmmaRange meshletTriangles;
-    PmmaRange clusters;
-    PmmaRange clusterGroups;
+    PmmaRange triangles;
+    PositionGrid grid;
     /// center.xyz, radius.
     glm::vec4 bounds{};
     uint32_t  material = AssetMaterialIndex::NONE;
@@ -70,17 +68,17 @@ struct PmmaTexture {
 };
 
 struct PmmaPart {
-    glm::mat4 transform{1.0f};
+    Transform transform{};
     uint32_t  mesh = 0;
-    uint32_t  _padding[3]{};
+    uint32_t  _padding = 0;
 };
 
 
 static_assert(sizeof(PmmaHeader) == 40);
 static_assert(sizeof(PmmaRange) == 16);
-static_assert(sizeof(PmmaMesh) == 128);
+static_assert(sizeof(PmmaMesh) == 96);
 static_assert(sizeof(PmmaTexture) == 32);
-static_assert(sizeof(PmmaPart) == 80);
+static_assert(sizeof(PmmaPart) == 48);
 static_assert(sizeof(AssetMaterial) == 72);
 static_assert(std::is_trivially_copyable_v<AssetMaterial>);
 
@@ -156,10 +154,8 @@ bool writePmma(const fs::path& path, const AssetModel& model) {
         PmmaMesh record{};
         record.vertices             = appendSection(blob, geometry.vertices);
         record.meshlets             = appendSection(blob, geometry.meshlets);
-        record.meshletVertices      = appendSection(blob, geometry.meshletVertices);
-        record.meshletTriangles     = appendSection(blob, geometry.meshletTriangles);
-        record.clusters             = appendSection(blob, geometry.clusters);
-        record.clusterGroups        = appendSection(blob, geometry.clusterGroups);
+        record.triangles            = appendSection(blob, geometry.triangles);
+        record.grid                 = geometry.grid;
         record.bounds   = glm::vec4(geometry.bounds.center, geometry.bounds.radius);
         record.material = mesh.material.value;
         meshTable.push_back(record);
@@ -183,7 +179,7 @@ bool writePmma(const fs::path& path, const AssetModel& model) {
     std::vector<PmmaPart> partTable;
     partTable.reserve(model.parts.size());
     for (const AssetPart& part : model.parts)
-        partTable.push_back(PmmaPart{part.transform, part.mesh.value, {}});
+        partTable.push_back(PmmaPart{part.transform, part.mesh.value, 0});
 
     const std::vector<AssetMaterial> materialTable(model.materials.begin(),
                                                    model.materials.end());
@@ -199,6 +195,7 @@ bool writePmma(const fs::path& path, const AssetModel& model) {
                                    textureTable.size() * sizeof(PmmaTexture) +
                                    partTable.size() * sizeof(PmmaPart));
     header.blobBytes     = blob.size();
+    header.version = PMMA_VERSION;
 
     std::vector<std::byte> file;
     file.reserve(header.blobOffset + blob.size());
@@ -261,7 +258,7 @@ bool PmmaAsset::read(const fs::path& path) {
         return false;
     }
     if (header.version != PMMA_VERSION) {
-        logError("PmmaAsset: " + path.string() + " is version " +
+        logError("PmmaAsset: " + absolute(path).string() + " is version " +
                  std::to_string(header.version) + ", this build reads version " +
                  std::to_string(PMMA_VERSION) + ". Rebake it.");
         return false;
@@ -299,19 +296,14 @@ bool PmmaAsset::read(const fs::path& path) {
         }
 
         MeshUploadData geometry{};
-        geometry.vertices = sectionOf<GPUVertex>(blob, record.vertices, "vertices");
-        geometry.meshlets = sectionOf<GPUMeshlet>(blob, record.meshlets, "meshlets");
-        geometry.meshletVertices = sectionOf<uint32_t>(
-            blob, record.meshletVertices, "meshlet vertices");
-        geometry.meshletTriangles =
-            sectionOf<uint32_t>(blob, record.meshletTriangles, "meshlet triangles");
-        geometry.clusters = sectionOf<GPUCluster>(blob, record.clusters, "clusters");
-        geometry.clusterGroups =
-            sectionOf<GPUClusterGroup>(blob, record.clusterGroups, "cluster groups");
-        geometry.bounds = MeshBounds{glm::vec3(record.bounds), record.bounds.w};
+        geometry.vertices  = sectionOf<Vertex>(blob, record.vertices, "vertices");
+        geometry.meshlets  = sectionOf<Meshlet>(blob, record.meshlets, "meshlets");
+        geometry.triangles = sectionOf<Triangle>(blob, record.triangles, "triangles");
+        geometry.grid      = record.grid;
+        geometry.bounds    = MeshBounds{glm::vec3(record.bounds), record.bounds.w};
 
         if (geometry.vertices.empty() || geometry.meshlets.empty() ||
-            geometry.meshletVertices.empty() || geometry.meshletTriangles.empty())
+            geometry.triangles.empty())
             return false;
 
         meshes_.push_back(AssetMesh{geometry, AssetMaterialIndex{record.material}});

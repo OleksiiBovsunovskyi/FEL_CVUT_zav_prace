@@ -3,7 +3,7 @@ module;
 #include <numbers>
 
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 export module MouseXYComponent;
 
@@ -49,12 +49,10 @@ public:
         pendingY_ = 0.0f;
 
         Object& owner = getOwner();
-        const glm::vec3 position{owner.getTransform()[3]};
-
-        owner.setTransform(
-            glm::translate(glm::mat4{1.0f}, position) *
-            glm::rotate(glm::mat4{1.0f}, yaw_,   glm::vec3{0.0f, 1.0f, 0.0f}) *
-            glm::rotate(glm::mat4{1.0f}, pitch_, glm::vec3{1.0f, 0.0f, 0.0f}));
+        Transform turned = owner.getTransform();
+        turned.rotation = glm::angleAxis(yaw_,   glm::vec3{0.0f, 1.0f, 0.0f}) *
+                          glm::angleAxis(pitch_, glm::vec3{1.0f, 0.0f, 0.0f});
+        owner.setTransform(turned);
     }
 
 private:

@@ -6,21 +6,22 @@
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 import vulkan;
 import DrawList;
 
 namespace {
 
-/// @return an instance whose transform's first column names it.
-GPUMeshInstance instanceNamed(float id) {
-    GPUMeshInstance instance{};
-    instance.transform[0][0] = id;
-    return instance;
+/// @return a transform whose position x names it.
+Transform transformNamed(float id) {
+    Transform transform{};
+    transform.position.x = id;
+    return transform;
 }
 
 DrawHandle addNamed(DrawList& list, float id) {
-    return list.add(instanceNamed(id), glm::vec4{0.0f, 0.0f, 0.0f, 1.0f});
+    return list.add({}, transformNamed(id), glm::vec4{0.0f, 0.0f, 0.0f, 1.0f});
 }
 
 std::vector<uint32_t> taken(DrawList& list) {
@@ -47,10 +48,10 @@ bool logsOnlyTheWrittenEntry() {
     DrawHandle third  = addNamed(list, 2.0f);
     (void)taken(list);
 
-    second.setTransform(glm::mat4{7.0f});
+    second.setTransform(transformNamed(7.0f));
 
     return taken(list) == std::vector<uint32_t>{1} &&
-           list.getItems()[1].transform[0][0] == 7.0f;
+           list.getItems()[1].position.x == 7.0f;
 }
 
 /// Removal logs the index the tail was swapped into, and the handle follows it.
@@ -66,12 +67,12 @@ bool logsTheSwappedInEntry() {
     if (taken(list) != std::vector<uint32_t>{0}) return false;
     if (list.getItemsCount() != 2) return false;
     /* The tail moved into index 0, so the third handle now writes there. */
-    if (list.getItems()[0].transform[0][0] != 2.0f) return false;
+    if (list.getItems()[0].position.x != 2.0f) return false;
 
-    third.setTransform(glm::mat4{9.0f});
+    third.setTransform(transformNamed(9.0f));
 
     return taken(list) == std::vector<uint32_t>{0} &&
-           list.getItems()[0].transform[0][0] == 9.0f;
+           list.getItems()[0].position.x == 9.0f;
 }
 
 /// Removing the last entry moves nothing, so it logs nothing.

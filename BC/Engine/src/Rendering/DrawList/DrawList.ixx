@@ -10,6 +10,7 @@ module;
 export module DrawList;
 
 export import GPUTypes;
+export import Transform;
 
 export class DrawList;
 
@@ -40,7 +41,7 @@ public:
      * Updates transform of the entry and marks it as changed
      * @param transform new transform to set for the entry
      */
-    void setTransform(const glm::mat4& transform);
+    void setTransform(const Transform& transform);
 
     /// @return true while this owns an entry.
     [[nodiscard]] explicit operator bool() const { return list_ != nullptr; }
@@ -82,15 +83,16 @@ public:
     DrawList& operator=(const DrawList&) = delete;
 
     /**
-     * @param instance the record the mesh-draw buffers receive.
+     * @param mesh header of the uploaded mesh to draw
+     * @param transform placement of the mesh in the world
      * @param boundingSphere xyz = center, w = radius, in mesh space.
      * @return the handle that keeps the entry alive.
      */
-    [[nodiscard]] DrawHandle add(const GPUMeshInstance& instance,
+    [[nodiscard]] DrawHandle add(GpuPtr<Mesh> mesh, const Transform& transform,
                                  const glm::vec4& boundingSphere);
 
     /// Dense, and not in registration order. Valid until the next add/remove.
-    [[nodiscard]] std::span<const GPUMeshInstance> getItems() const { return items_; }
+    [[nodiscard]] std::span<const Instance> getItems() const { return items_; }
 
     /**
      * @param index Items index in the draw list
@@ -115,12 +117,12 @@ private:
     friend class DrawHandle;
 
     void remove(uint32_t slot);
-    void setTransform(uint32_t slot, const glm::mat4& transform);
+    void setTransform(uint32_t slot, const Transform& transform);
 
     /* Dense storage plus a slot map: the upload stays contiguous, removal is a
      * swap with the last entry, and the map is what keeps handles valid across
      * that swap. */
-    std::vector<GPUMeshInstance> items_;
+    std::vector<Instance>        items_;
     /// Parallel to items_.
     std::vector<glm::vec4>       boundingSpheres_;
     std::vector<uint32_t>        slotToIndex_;

@@ -5,8 +5,7 @@ export module GPUTypes;
  */
 export import GPUCoreTypes;
 export import GPUMaterial;
-export import GPUMesh;
-export import GPUInstance;
+export import Geometry;
 export import GPUDraw;
 export import GPUFrame;
 export import GPUDepthPyramid;

@@ -1,4 +1,5 @@
 import GPUTypes;
+import instance_unpack;
 import AtomicAdd;
 import SphereVisibilityTest;
 import HiZOCTest;
@@ -14,20 +15,21 @@ void main(uint3 threadId : SV_DispatchThreadID) {
     const uint instanceIndex = threadId.x;
     if (instanceIndex >= pc.instanceCount) return;  // tail of the last workgroup
     
-    const GPUMeshInstance instance = pc.instances[instanceIndex];
-    const GPUMeshHeader mesh   = instance.mesh[0];
+    const Instance instance = pc.instances[instanceIndex];
+    const Mesh mesh   = instance.mesh[0];
 
     if (mesh.meshletCount == 0) return;
 
     GPUDrawCounters* counters = pc.frame->drawCounters;
-    atomicAdd(&counters->trianglesSubmitted, mesh.meshTriangleCount);
+    atomicAdd(&counters->trianglesSubmitted, mesh.triangleCount);
 
+    const float4x4 model = instance.unpackTransform();
     //Culling
     //FS, takes sphere in model space
-    if (!sphereVisible(pc.frame->camera.viewProj, instance.transform, mesh.boundingSphere)) return;
+    if (!sphereVisible(pc.frame->camera.viewProj, model, mesh.boundingSphere)) return;
     //OC, takes sphere in world space
-    if(pc.frame.useHiZOC) 
-        if(isOcludedByHiZ(textures[pc.depthPyramidSlot], pc.frame->hiZViewProj, worldSphere(instance.transform, mesh.boundingSphere))) return;
+    if(pc.frame.useHiZOC)
+        if(isOcludedByHiZ(textures[pc.depthPyramidSlot], pc.frame->hiZViewProj, worldSphere(model, mesh.boundingSphere))) return;
     // Claims this draw's slot and counts it in one operation.
     const uint slot = atomicAdd(&pc.commandCount->commandCount, 1);
     atomicAdd(&counters->instancesDrawn, 1);

@@ -64,7 +64,7 @@ public:
      *       `changed` never reaches the frame-in-flight slots that owe it.
      */
     void render(Frame::Recording& recording,
-                std::span<const GPUMeshInstance> instances,
+                std::span<const Instance> instances,
                 std::span<const uint32_t> changed,
                 const glm::mat4& viewProjection,
                 const glm::vec3& cameraPosition,

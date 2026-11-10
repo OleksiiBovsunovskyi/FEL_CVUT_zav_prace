@@ -1,6 +1,6 @@
 module visibility_buffer_vertex;
 import GPURendererConstants;
-import Vertex;
+import meshlet_geometry;
 
 /// Vertex output of the visibility-buffer mesh shader.
 public struct VisVertex {
@@ -17,14 +17,14 @@ public struct VisTriangle {
     public uint triangleIndex : SV_PrimitiveID;
 };
 
-public extension Triangle {
+public extension TriangleId {
     /// @return false for a visibility-buffer texel no triangle covers.
     public bool isValid() {
         return drawIndex != VISIBILITY_CLEAR;
     }
 
     /// @return triangle stored in a visibility-buffer texel.
-    public static Triangle fromTexel(uint2 texel) {
+    public static TriangleId fromTexel(uint2 texel) {
         return PackedVisPrimitive(texel).unpack();
     }
 
@@ -48,7 +48,7 @@ public struct PackedVisPrimitive {
     public nointerpolation uint meshletAndTriangleIndex : MESHLETANDTRIANGLEINDEX;
 
     /// @param triangle triangle to pack
-    public __init(Triangle triangle) {
+    public __init(TriangleId triangle) {
         static_assert(MAX_TRIANGLES <= (1u << TRIANGLE_BITS), "triangle index does not fit TRIANGLE_BITS");
         drawIndex = triangle.drawIndex;
         meshletAndTriangleIndex = (triangle.meshletIndex << TRIANGLE_BITS) | triangle.triangleIndex;
@@ -61,8 +61,8 @@ public struct PackedVisPrimitive {
     }
 
     /// @return the packed triangle.
-    public Triangle unpack() {
-        Triangle result;
+    public TriangleId unpack() {
+        TriangleId result;
         result.drawIndex = drawIndex;
         result.meshletIndex = meshletAndTriangleIndex >> TRIANGLE_BITS;
         result.triangleIndex = meshletAndTriangleIndex & TRIANGLE_MASK;

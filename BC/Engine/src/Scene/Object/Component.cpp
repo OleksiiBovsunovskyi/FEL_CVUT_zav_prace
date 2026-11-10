@@ -3,6 +3,6 @@ module;
 
 module VkScene;
 
-glm::mat4 Component::getWorldTransform() const {
+Transform Component::getWorldTransform() const {
     return getOwner().getTransform() * getTransform();
 }

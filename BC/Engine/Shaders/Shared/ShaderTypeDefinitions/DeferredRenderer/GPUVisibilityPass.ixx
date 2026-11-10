@@ -3,11 +3,10 @@
 
 export module GPUVisibilityPass;
 
-import GPUMesh;
 import GPUCoreTypes;
 import GPUFrame;
 import GPUDraw;
-import GPUInstance;
+import Instance;
 //Invalid texture index for the depth pyramid
 //(We want to do oc culling for visibility pass)
 import GPUMaterial;
@@ -18,6 +17,6 @@ export struct GPUVisibilityPassPush
     //Geometry we are going to draw
     GpuPtr<GPUDrawData> drawData;
     //Instances we are going to draw
-    GpuPtr<GPUMeshInstance>   instances;
+    GpuPtr<Instance>   instances;
     uint32_t depthPyramidSlot = INVALID_TEXTURE_INDEX;
 };

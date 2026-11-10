@@ -44,7 +44,7 @@ public:
 
     /// @return the eye, in world space.
     [[nodiscard]] glm::vec3 worldPosition() const {
-        return glm::vec3(getWorldTransform()[3]);
+        return getWorldTransform().position;
     }
 
     /**
@@ -66,7 +66,7 @@ protected:
     void onAddedToScene() override;
 
     void onWorldTransformChanged() override {
-        view_ = glm::inverse(getWorldTransform());
+        view_ = glm::inverse(getWorldTransform().toMatrix());
     }
 
 private:

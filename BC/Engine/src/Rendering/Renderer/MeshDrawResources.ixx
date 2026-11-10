@@ -28,7 +28,7 @@ import TextureManager;
  * The buffer ranges remain valid until that recording's slot is reused.
  */
 export struct PreparedMeshDraw {
-    GpuPtr<GPUMeshInstance> instances{};
+    GpuPtr<Instance> instances{};
     GpuPtr<GPUDrawData>     drawData{};
     BufferRegion            indirectCommands{};
     BufferRegion            indirectCount{};
@@ -46,7 +46,7 @@ namespace detail {
  * One slot's buffers as spans, sized to an instance count.
  */
 struct MeshDrawSpans {
-    DeviceSpan<GPUMeshInstance>    instances{};
+    DeviceSpan<Instance>    instances{};
     DeviceSpan<GPUDrawData>        drawData{};
     DeviceSpan<GPUMeshTaskCommand> commands{};
     DeviceSpan<GPUDrawCommandCount> count{};
@@ -105,8 +105,8 @@ struct MeshDrawResourceSlot {
      * @return the updates written, empty when nothing was pending.
      * @note Empties MeshDrawResourceSlot::indicesPendingUpload.
      */
-    [[nodiscard]] MappedSpan<GPUMeshInstanceUpdate> packPendingUpdates(
-        std::span<const GPUMeshInstance> instances);
+    [[nodiscard]] MappedSpan<InstanceUpdate> packPendingUpdates(
+        std::span<const Instance> instances);
 };
 
 } // namespace detail
@@ -150,7 +150,7 @@ public:
      *       empty.
      */
     [[nodiscard]] PreparedMeshDraw prepare(
-        const Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
+        const Frame::Recording& recording, std::span<const Instance> instances,
         std::span<const uint32_t> changedInstances, GpuPtr<GPUFrameData> frameData,
         vk::DescriptorSet textureSet, TextureSlot depthPyramidSlot,
         GpuPassTimings& timings);

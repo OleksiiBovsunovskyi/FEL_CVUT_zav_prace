@@ -4,6 +4,7 @@ module;
 #include <span>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 module DrawList;
 
@@ -16,8 +17,23 @@ DrawList::~DrawList() {
                  "Declare the DrawList before what registers in it.");
 }
 
-DrawHandle DrawList::add(const GPUMeshInstance& instance,
+namespace {
+
+/// Writes Instance::position, scale and rotation.
+void packTransform(Instance& instance, const Transform& transform) {
+    instance.position = transform.position;
+    instance.packScale(transform.scale);
+    instance.packRotation(transform.rotation);
+}
+
+} // namespace
+
+DrawHandle DrawList::add(GpuPtr<Mesh> mesh, const Transform& transform,
                          const glm::vec4& boundingSphere) {
+    Instance instance{};
+    instance.mesh = mesh;
+    packTransform(instance, transform);
+
     const auto index = static_cast<uint32_t>(items_.size());
 
     uint32_t slot = 0;
@@ -58,9 +74,9 @@ void DrawList::remove(uint32_t slot) {
     freeSlots_.push_back(slot);
 }
 
-void DrawList::setTransform(uint32_t slot, const glm::mat4& transform) {
+void DrawList::setTransform(uint32_t slot, const Transform& transform) {
     const uint32_t index = slotToIndex_[slot];
-    items_[index].transform = transform;
+    packTransform(items_[index], transform);
     changedIndices_.push_back(index);
 }
 
@@ -76,6 +92,6 @@ void DrawHandle::release() {
     slot_ = 0;
 }
 
-void DrawHandle::setTransform(const glm::mat4& transform) {
+void DrawHandle::setTransform(const Transform& transform) {
     if (list_) list_->setTransform(slot_, transform);
 }

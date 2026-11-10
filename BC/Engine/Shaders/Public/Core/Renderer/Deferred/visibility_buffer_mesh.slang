@@ -2,12 +2,10 @@ import GPUVisibilityPass;
 import GPURendererConstants;
 import GPUFrame;
 import GPUDraw;
-import GPUMesh;
-import GPUInstance;
 import SphereVisibilityTest;
 import visibility_buffer_vertex;
 import common_mesh;
-import Vertex;
+import meshlet_geometry;
 
 [[vk_push_constant]] GPUVisibilityPassPush pc;
 [[vk_binding(0, 0)]] Sampler2D textures[];
@@ -25,13 +23,13 @@ void meshMain( uint  groupId : SV_GroupID,
     // Slot handed out by the atomic in build_draw_commands.slang.
     const GPUDrawData draw   = pc.drawData[drawId];
 
-    const GPUMeshInstance instance = pc.instances[draw.instanceIndex];
+    const float4x4 model = pc.instances[draw.instanceIndex].unpackTransform();
     // Every section of the mesh is reached through its header.
-    const GPUMeshHeader mesh = draw.mesh[0];
+    const Mesh mesh = draw.mesh[0];
 
-    const GPUMeshlet meshlet = mesh.meshlets[groupId];
+    const Meshlet meshlet = mesh.meshlets[groupId];
 
-    const float4 meshletSphere = worldSphere(instance.transform, meshlet.boundingSphere);
+    const float4 meshletSphere = worldSphere(model, meshlet.unpackBoundingSphere(mesh.grid));
     const bool visible = isMeshletVisible(pc.frame, textures[pc.depthPyramidSlot], meshletSphere);
 
     SetMeshOutputCounts(visible ? meshlet.vertexCount  : 0,
@@ -39,10 +37,11 @@ void meshMain( uint  groupId : SV_GroupID,
 
     if (laneId == 0) incrementMetricCounters(pc.frame, meshlet, visible);
     if (!visible) return;
-    const float4x4 mvp = mul(pc.frame->camera.viewProj, instance.transform);
+    const float4x4 mvp = mul(pc.frame->camera.viewProj, model);
 
     for (uint i = laneId; i < meshlet.vertexCount; i += MESH_GROUP_SIZE) {
-        verts[i].position     = mul(mvp, float4(getMeshletVertex(mesh, meshlet, i).position.xyz, 1.0));
+        const Vertex vertex = mesh.vertices[meshlet.firstMeshletVertex + i];
+        verts[i].position     = mul(mvp, float4(vertex.unpackPosition(mesh.grid, meshlet.base), 1.0));
         verts[i].drawIndex    = drawId;
         verts[i].meshletIndex = groupId;
     }

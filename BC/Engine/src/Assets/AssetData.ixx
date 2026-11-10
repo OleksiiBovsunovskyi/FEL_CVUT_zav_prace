@@ -13,6 +13,7 @@ export module AssetData;
 
 export import MeshData;
 export import ClusterLODGenerator;
+export import Transform;
 
 /// A VkFormat, held as its number so this module needs no Vulkan header.
 export struct AssetFormat {
@@ -79,7 +80,7 @@ export struct AssetMesh {
 /// One placement of a mesh in the model's space.
 export struct AssetPart {
     AssetMeshIndex mesh;
-    glm::mat4      transform{1.0f};
+    Transform      transform{};
 };
 
 /**
@@ -116,7 +117,6 @@ export class ImportedAsset {
 public:
     /// One mesh's owned geometry, in the form generateClusterLOD produces.
     struct MeshStorage {
-        std::vector<GPUVertex> vertices;
         GeneratedClusterLOD    lod;
         MeshBounds             bounds;
         AssetMaterialIndex     material;

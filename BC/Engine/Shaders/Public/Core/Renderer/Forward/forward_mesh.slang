@@ -3,7 +3,7 @@ import mesh_vertex;
 import SphereVisibilityTest;
 import GPURendererConstants;
 import common_mesh;
-import Vertex;
+import meshlet_geometry;
 
 [[vk_push_constant]] ConstantBuffer<GPUForwardMeshDrawPush> pc;
 [[vk_binding(0, 0)]] Sampler2D textures[];
@@ -22,13 +22,13 @@ void meshMain(
     // Slot handed out by the atomic in build_draw_commands.slang.
     const GPUDrawData draw   = pc.drawData[drawId];
 
-    const GPUMeshInstance instance = pc.instances[draw.instanceIndex];
+    const float4x4 modelToWorld = pc.instances[draw.instanceIndex].unpackTransform();
     // Every section of the mesh is reached through its header.
-    const GPUMeshHeader mesh = draw.mesh[0];
+    const Mesh mesh = draw.mesh[0];
 
-    const GPUMeshlet meshlet = mesh.meshlets[groupId];
+    const Meshlet meshlet = mesh.meshlets[groupId];
 
-    const float4 meshletSphere = worldSphere(instance.transform, meshlet.boundingSphere);
+    const float4 meshletSphere = worldSphere(modelToWorld, meshlet.unpackBoundingSphere(mesh.grid));
     const bool visible = isMeshletVisible(pc.frame, textures[pc.depthPyramidSlot], meshletSphere);
 
     SetMeshOutputCounts(visible ? meshlet.vertexCount  : 0,
@@ -36,19 +36,19 @@ void meshMain(
 
     if (laneId == 0) incrementMetricCounters(pc.frame, meshlet, visible);
     if (!visible) return;
-    const float4x4 mvp = mul(pc.frame->camera.viewProj, instance.transform);
-    const float3x3 model = float3x3(instance.transform);
+    const float4x4 mvp = mul(pc.frame->camera.viewProj, modelToWorld);
+    const float3x3 model = float3x3(modelToWorld);
     // Inverse transponse 
     const float3x3 normalMatrix = float3x3(cross(model[1], model[2]),
                                            cross(model[2], model[0]),
                                            cross(model[0], model[1]));
 
     for (uint i = laneId; i < meshlet.vertexCount; i += MESH_GROUP_SIZE) {
-        const GPUVertex vertex = getMeshletVertex(mesh, meshlet, i);
+        const UnpackedVertex vertex = getMeshletVertex(mesh, meshlet, i);
 
-        verts[i].position      = mul(mvp, float4(vertex.position.xyz, 1.0));
-        verts[i].worldPosition = mul(instance.transform, float4(vertex.position.xyz, 1.0)).xyz;
-        verts[i].normal        = normalize(mul(normalMatrix, vertex.normal.xyz));
+        verts[i].position      = mul(mvp, float4(vertex.position, 1.0));
+        verts[i].worldPosition = mul(modelToWorld, float4(vertex.position, 1.0)).xyz;
+        verts[i].normal        = normalize(mul(normalMatrix, vertex.normal));
         // w is handedness and survives the transform unchanged.
         verts[i].tangent       = float4(mul(model, vertex.tangent.xyz),
                                         vertex.tangent.w);

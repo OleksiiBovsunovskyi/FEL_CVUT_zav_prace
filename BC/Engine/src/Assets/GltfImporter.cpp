@@ -14,6 +14,7 @@ module;
 #include <vector>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <fastgltf/core.hpp>
 #include <fastgltf/math.hpp>
@@ -38,23 +39,38 @@ namespace {
 /// Channels every decoded image is expanded to.
 constexpr int DECODED_CHANNELS = 4;
 
-glm::mat4 toGlm(const fastgltf::math::fmat4x4& m) {
-    glm::mat4 result{1.0f};
+/**
+ * Scale is the length of each basis column, x negated for a mirrored basis.
+ * @param m node-to-scene matrix
+ * @note Shear in m is lost.
+ */
+Transform toTransform(const fastgltf::math::fmat4x4& m) {
+    glm::mat4 matrix{1.0f};
     const float* src = m.data();
     for (int column = 0; column < 4; ++column)
         for (int row = 0; row < 4; ++row)
-            result[column][row] = src[column * 4 + row];
-    return result;
+            matrix[column][row] = src[column * 4 + row];
+
+    glm::mat3 basis{matrix};
+    glm::vec3 scale{glm::length(basis[0]), glm::length(basis[1]), glm::length(basis[2])};
+    if (glm::determinant(basis) < 0.0f) scale.x = -scale.x;
+
+    for (int axis = 0; axis < 3; ++axis) {
+        if (scale[axis] != 0.0f) basis[axis] /= scale[axis];
+        else basis[axis] = glm::mat3{1.0f}[axis];
+    }
+
+    return Transform{glm::vec3(matrix[3]), scale, glm::quat_cast(basis)};
 }
 
 /// Loose bounding sphere around the AABB centre.
-MeshBounds computeBounds(const std::vector<GPUVertex>& vertices) {
+MeshBounds computeBounds(const std::vector<ImportedVertex>& vertices) {
     if (vertices.empty()) return {};
 
     glm::vec3 min{vertices[0].position[0], vertices[0].position[1],
                   vertices[0].position[2]};
     glm::vec3 max = min;
-    for (const GPUVertex& v : vertices) {
+    for (const ImportedVertex& v : vertices) {
         const glm::vec3 p{v.position[0], v.position[1], v.position[2]};
         min = glm::min(min, p);
         max = glm::max(max, p);
@@ -62,7 +78,7 @@ MeshBounds computeBounds(const std::vector<GPUVertex>& vertices) {
 
     MeshBounds bounds{};
     bounds.center = (min + max) * 0.5f;
-    for (const GPUVertex& v : vertices) {
+    for (const ImportedVertex& v : vertices) {
         const glm::vec3 p{v.position[0], v.position[1], v.position[2]};
         bounds.radius = std::max(bounds.radius, glm::length(p - bounds.center));
     }
@@ -73,29 +89,29 @@ MeshBounds computeBounds(const std::vector<GPUVertex>& vertices) {
  * glTF renders a primitive without NORMAL flat shaded. Area-weighted: larger
  * triangles contribute more.
  */
-void generateNormals(std::vector<GPUVertex>& vertices,
+void generateNormals(std::vector<ImportedVertex>& vertices,
                      const std::vector<uint32_t>& indices) {
-    for (GPUVertex& v : vertices)
+    for (ImportedVertex& v : vertices)
         v.normal[0] = v.normal[1] = v.normal[2] = 0.0f;
 
     for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-        GPUVertex& a = vertices[indices[i + 0]];
-        GPUVertex& b = vertices[indices[i + 1]];
-        GPUVertex& c = vertices[indices[i + 2]];
+        ImportedVertex& a = vertices[indices[i + 0]];
+        ImportedVertex& b = vertices[indices[i + 1]];
+        ImportedVertex& c = vertices[indices[i + 2]];
 
         const glm::vec3 pa{a.position[0], a.position[1], a.position[2]};
         const glm::vec3 pb{b.position[0], b.position[1], b.position[2]};
         const glm::vec3 pc{c.position[0], c.position[1], c.position[2]};
 
         const glm::vec3 faceNormal = glm::cross(pb - pa, pc - pa);
-        for (GPUVertex* v : {&a, &b, &c}) {
+        for (ImportedVertex* v : {&a, &b, &c}) {
             v->normal[0] += faceNormal.x;
             v->normal[1] += faceNormal.y;
             v->normal[2] += faceNormal.z;
         }
     }
 
-    for (GPUVertex& v : vertices) {
+    for (ImportedVertex& v : vertices) {
         glm::vec3 n{v.normal[0], v.normal[1], v.normal[2]};
         const float length = glm::length(n);
         n = (length > 0.0f) ? n / length : glm::vec3{0.0f, 1.0f, 0.0f};
@@ -324,9 +340,9 @@ AssetMaterial makeMaterial(const fastgltf::Material& source) {
     return material;
 }
 
-/// Reads one primitive's attributes into the interleaved GPU layout.
+/// Reads one primitive's attributes.
 bool readVertices(const fastgltf::Asset& asset, const fastgltf::Primitive& primitive,
-                  std::vector<GPUVertex>& vertices) {
+                  std::vector<ImportedVertex>& vertices) {
     const auto* positionAttribute = primitive.findAttribute("POSITION");
     if (positionAttribute == primitive.attributes.end()) {
         logError("GltfImporter: primitive has no POSITION attribute");
@@ -336,14 +352,13 @@ bool readVertices(const fastgltf::Asset& asset, const fastgltf::Primitive& primi
     const auto& positions = asset.accessors[positionAttribute->accessorIndex];
     if (positions.count == 0) return false;
 
-    vertices.assign(positions.count, GPUVertex{});
+    vertices.assign(positions.count, ImportedVertex{});
 
     fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
         asset, positions, [&](fastgltf::math::fvec3 p, size_t i) {
             vertices[i].position[0] = p[0];
             vertices[i].position[1] = p[1];
             vertices[i].position[2] = p[2];
-            vertices[i].position[3] = 1.0f;
         });
 
     if (const auto* it = primitive.findAttribute("NORMAL");
@@ -569,7 +584,7 @@ bool importGltf(const fs::path& path, const GltfImportSettings& settings,
         return materials[index];
     };
 
-    std::vector<GPUVertex> vertices;
+    std::vector<ImportedVertex> vertices;
     std::vector<uint32_t>  indices;
 
     /// Builds one primitive, or returns the slot it already occupies.
@@ -607,7 +622,6 @@ bool importGltf(const fs::path& path, const GltfImportSettings& settings,
         }
         storage.bounds   = computeBounds(vertices);
         storage.material = materialFor(primitive);
-        storage.vertices = vertices;
 
         const AssetMeshIndex slot{static_cast<uint32_t>(out.meshes.size())};
         out.meshes.push_back(std::move(storage));
@@ -617,7 +631,7 @@ bool importGltf(const fs::path& path, const GltfImportSettings& settings,
         return slot;
     };
 
-    auto addNode = [&](size_t meshIndex, const glm::mat4& transform) {
+    auto addNode = [&](size_t meshIndex, const Transform& transform) {
         for (size_t p = 0; p < asset.meshes[meshIndex].primitives.size(); ++p) {
             if (const std::optional<AssetMeshIndex> slot = meshFor(meshIndex, p))
                 out.parts.push_back(AssetPart{*slot, transform});
@@ -627,14 +641,14 @@ bool importGltf(const fs::path& path, const GltfImportSettings& settings,
     if (asset.scenes.empty()) {
         /* An asset may carry meshes with no scene. */
         for (size_t m = 0; m < asset.meshes.size(); ++m)
-            addNode(m, glm::mat4{1.0f});
+            addNode(m, Transform{});
     } else {
         const size_t sceneIndex = asset.defaultScene.value_or(0);
         fastgltf::iterateSceneNodes(
             asset, sceneIndex, fastgltf::math::fmat4x4{},
             [&](const fastgltf::Node& node, const fastgltf::math::fmat4x4& world) {
                 if (node.meshIndex.has_value())
-                    addNode(*node.meshIndex, toGlm(world));
+                    addNode(*node.meshIndex, toTransform(world));
             });
     }
 

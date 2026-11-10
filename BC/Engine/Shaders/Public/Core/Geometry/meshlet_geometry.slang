@@ -1,63 +1,45 @@
-module Vertex;
-import GPUMesh;
+module meshlet_geometry;
 import GPUMaterial;
 import GPUDraw;
-import GPUInstance;
 import GPURendererConstants;
+__exported import vertex_unpack;
+__exported import meshlet_unpack;
+__exported import triangle_unpack;
+__exported import instance_unpack;
 
-/**
-* Vertex representation, not nessesarelly world space
-*/
-public struct Vertex {
-    public float4 location : SV_Position;
-    public float2 texCoord : TEXCOORD;
+/// Vertex with every attribute unpacked, in mesh space.
+public struct UnpackedVertex {
+    public float3 position;
+    public float3 normal;
+    /// xyz = unit tangent, w = bitangent handedness (+1 / -1).
+    public float4 tangent;
+    public float2 texCoord;
 };
-
-public struct MeshletVertexOffset {
-    public uint offset;
-}
-
-/**
-* Meshlet local triangle representation.
-*/
-public struct MeshletTriangle {
-    public uint32_t packed;
-
-    /*
-    * unpacks triangle to meshlet local vertex offsets
-    */
-    public Array<MeshletVertexOffset, 3> getUnpacked() {
-        return { { packed & 0xffu },
-                 { (packed >> 8) & 0xffu },
-                 { (packed >> 16) & 0xffu } };
-    }
-    /**Returns induvidual meshlet local vertex offsets*/
-    public __subscript(uint i) -> MeshletVertexOffset {
-        get {
-        return { (packed >> (i * 8)) & 0xffu };
-        }
-        }
-}
 
 /**
  * @param i vertex within the meshlet, 0..meshlet.vertexCount-1
  * @return vertex i of the meshlet.
  */
-public GPUVertex getMeshletVertex(GPUMeshHeader mesh, GPUMeshlet meshlet, uint i) {
-    return mesh.vertices[mesh.meshletVertices[meshlet.firstMeshletVertex + i].value];
+public UnpackedVertex getMeshletVertex(Mesh mesh, Meshlet meshlet, uint i) {
+    const Vertex packed = mesh.vertices[meshlet.firstMeshletVertex + i];
+    UnpackedVertex vertex;
+    vertex.position = packed.unpackPosition(mesh.grid, meshlet.base);
+    vertex.normal   = packed.unpackNormal();
+    vertex.tangent  = packed.unpackTangent();
+    vertex.texCoord = packed.unpackTexCoord();
+    return vertex;
 }
 
 /**
  * @param i triangle within the meshlet, 0..meshlet.triangleCount-1
  * @return meshlet-local vertex indices of triangle i.
  */
-public uint3 getMeshletTriangle(GPUMeshHeader mesh, GPUMeshlet meshlet, uint i) {
-    const MeshletTriangle triangle = { mesh.meshletTriangles[meshlet.firstMeshletTriangle + i].packedTriangle };
-    return uint3(triangle[0].offset, triangle[1].offset, triangle[2].offset);
+public uint3 getMeshletTriangle(Mesh mesh, Meshlet meshlet, uint i) {
+    return mesh.triangles[meshlet.firstMeshletTriangle + i].unpack();
 }
 
-/**Representation of the triangle in the geometry buffer*/
-public struct Triangle {
+/// Identifies one triangle of one draw, as stored in the visibility buffer.
+public struct TriangleId {
     /// Index into drawData.
     public uint drawIndex;
     /// Meshlet within the draw's mesh.
@@ -65,7 +47,7 @@ public struct Triangle {
     /// Triangle within the meshlet, 0..MAX_TRIANGLES-1.
     public uint triangleIndex;
 
-    public Ptr<GPUMeshHeader> getMeshHeader(Ptr<GPUDrawData> drawData)
+    public Ptr<Mesh> getMeshHeader(Ptr<GPUDrawData> drawData)
     {
         return drawData[drawIndex].mesh;
     }
@@ -74,9 +56,9 @@ public struct Triangle {
      * @param drawData draws of the visibility pass
      * @return vertices 0, 1, 2 of the triangle, in mesh space.
      */
-    public Array<GPUVertex, 3> getVertices(Ptr<GPUDrawData> drawData) {
-        const GPUMeshHeader mesh = *getMeshHeader(drawData);
-        const GPUMeshlet meshlet = mesh.meshlets[meshletIndex];
+    public Array<UnpackedVertex, 3> getVertices(Ptr<GPUDrawData> drawData) {
+        const Mesh mesh = *getMeshHeader(drawData);
+        const Meshlet meshlet = mesh.meshlets[meshletIndex];
         const uint3 corners = getMeshletTriangle(mesh, meshlet, triangleIndex);
         return { getMeshletVertex(mesh, meshlet, corners.x),
                  getMeshletVertex(mesh, meshlet, corners.y),
@@ -89,8 +71,8 @@ public struct Triangle {
      * @param instances instances drawData indexes
      * @return mesh space to clip space transform of the triangle.
      */
-    public float4x4 getModelViewProjection(float4x4 viewProj, Ptr<GPUDrawData> drawData, Ptr<GPUMeshInstance> instances) {
-        return mul(viewProj, instances[drawData[drawIndex].instanceIndex].transform);
+    public float4x4 getModelViewProjection(float4x4 viewProj, Ptr<GPUDrawData> drawData, Ptr<Instance> instances) {
+        return mul(viewProj, instances[drawData[drawIndex].instanceIndex].unpackTransform());
     }
 }
 
@@ -181,10 +163,10 @@ public struct TriangleBarycentrics {
      * @param pixel pixel centre in pixels, as SV_Position.xy
      * @param screenSize render target size in pixels
      */
-    public static TriangleBarycentrics fromVertices(Array<GPUVertex, 3> vertices, float4x4 modelViewProj, float2 pixel, float2 screenSize) {
-        return TriangleBarycentrics(mul(modelViewProj, float4(vertices[0].position.xyz, 1.0)),
-                                    mul(modelViewProj, float4(vertices[1].position.xyz, 1.0)),
-                                    mul(modelViewProj, float4(vertices[2].position.xyz, 1.0)),
+    public static TriangleBarycentrics fromVertices(Array<UnpackedVertex, 3> vertices, float4x4 modelViewProj, float2 pixel, float2 screenSize) {
+        return TriangleBarycentrics(mul(modelViewProj, float4(vertices[0].position, 1.0)),
+                                    mul(modelViewProj, float4(vertices[1].position, 1.0)),
+                                    mul(modelViewProj, float4(vertices[2].position, 1.0)),
                                     pixel, screenSize);
     }
 }

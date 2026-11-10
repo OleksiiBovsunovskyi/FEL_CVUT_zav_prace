@@ -6,6 +6,7 @@
 #include <memory>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 import VkScene;
 import WASDComponent;
@@ -78,7 +79,7 @@ bool inputMovesAndTurnsTheOwner() {
     scene.tick(1.0f);
 
     /* Unrotated, so forward is -Z. */
-    const glm::vec3 moved{owner.getTransform()[3]};
+    const glm::vec3 moved = owner.getTransform().position;
     if (std::abs(moved.z + SPEED) > 1e-4f) return false;
 
     scene.input({Key::W, 0.0f});
@@ -90,10 +91,10 @@ bool inputMovesAndTurnsTheOwner() {
     scene.input({Key::MouseX, -quarterTurnPixels});
     scene.tick(1.0f);
 
-    const glm::vec3 forward{-glm::vec3{owner.getTransform()[2]}};
+    const glm::vec3 forward = owner.getTransform().rotation * glm::vec3{0.0f, 0.0f, -1.0f};
     /* Yawed a quarter turn left of -Z, which is -X. */
     return std::abs(forward.x + 1.0f) < 1e-3f &&
-           std::abs(glm::vec3{owner.getTransform()[3]}.z + SPEED) < 1e-4f;
+           std::abs(owner.getTransform().position.z + SPEED) < 1e-4f;
 }
 
 [[maybe_unused]] const bool steeringChecked = [] {

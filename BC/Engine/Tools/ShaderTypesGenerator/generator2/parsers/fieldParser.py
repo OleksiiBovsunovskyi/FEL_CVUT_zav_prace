@@ -15,7 +15,7 @@ class ParsedField(NamedTuple):
 def parseTypeNode(type_node: Node) -> ParsedType:
     """
     Type named by a type node.
-    GpuPtr<GPUVertex> -> ("GpuPtr", True, "GPUVertex")
+    GpuPtr<Vertex> -> ("GpuPtr", True, "Vertex")
     float -> ("float", False, None).
     """
     if type_node.type != "template_type":
@@ -52,7 +52,7 @@ def unwrap(decl: Node) -> tuple[str | None, str, str | None]:
 def parseFieldDeclaration(node: Node) -> List[ParsedField]:
     """
     Fields declared by one field_declaration node.
-    GpuPtr<GPUVertex> v, w[2]; -> two fields.
+    GpuPtr<Vertex> v, w[2]; -> two fields.
     uint32_t a : 16, b : 16; -> two fields with bit widths "16".
     Static members yield no fields.
     """

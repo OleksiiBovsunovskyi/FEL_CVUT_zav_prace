@@ -39,10 +39,10 @@ protected:
     void onWorldTransformChanged() override;
 
 private:
-    /// One DrawList entry and the part transform its world matrix composes with.
+    /// One DrawList entry and the part transform its world transform composes with.
     struct RegisteredPart {
         DrawHandle handle;
-        glm::mat4  localTransform{1.0f};
+        Transform  localTransform{};
     };
 
     /// Adds an entry for every part whose Mesh has geometry on the GPU.

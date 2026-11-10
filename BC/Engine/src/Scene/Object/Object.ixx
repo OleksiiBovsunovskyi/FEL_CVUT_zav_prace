@@ -21,7 +21,7 @@ export class Scene;
 export class Object : public Transformable, public EventCapable {
 public:
     Object() = default;
-    explicit Object(const glm::mat4& transform) : Transformable(transform) {}
+    explicit Object(const Transform& transform) : Transformable(transform) {}
 
     /**Moving an object would invalidate pointers to that object**/
     Object(const Object&)            = delete;

@@ -9,6 +9,6 @@ void main(uint3 threadId : SV_DispatchThreadID) {
     const uint updateIndex = threadId.x;
     if (updateIndex >= pc.updateCount) return;  // tail of the last workgroup
 
-    const GPUMeshInstanceUpdate update = pc.updates[updateIndex];
+    const InstanceUpdate update = pc.updates[updateIndex];
     pc.instances[update.index] = update.instance;
 }

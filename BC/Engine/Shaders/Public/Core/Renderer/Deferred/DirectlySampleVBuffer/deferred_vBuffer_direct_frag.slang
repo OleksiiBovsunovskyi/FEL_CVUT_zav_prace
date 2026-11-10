@@ -1,8 +1,7 @@
 import GPUDeferredDrawPush;
 import visibility_buffer_vertex;
 import GPUDraw;
-import GPUMesh;
-import Vertex;
+import meshlet_geometry;
 import common_frag;
 
 [[vk_push_constant]] GPUDeferredDrawPush pc;
@@ -23,15 +22,14 @@ float4 fragMain(FullscreenVertex input) : SV_Target
     textures[pc.visibilityBufferSlot].GetDimensions(0, w, h, levels);
     int2 coord = int2(floor(input.texCoord * float2(w, h)));
     coord = clamp(coord, int2(0), int2(w - 1, h - 1));
-    Triangle prim = Triangle.fromTexel(textures[pc.visibilityBufferSlot].Load(int3(coord,0)));
+    TriangleId prim = TriangleId.fromTexel(textures[pc.visibilityBufferSlot].Load(int3(coord,0)));
     if (!prim.isValid()) //Invalid visibility texture pixels are background, no triangles are there
         return float4(1, 0, 0, 0);
     //Here we have triangle, lets find its data
     GPUDrawData drawData = pc.drawData[prim.drawIndex];
-    GPUMeshHeader mesh = drawData.mesh[0];
-    GPUMeshlet meshlet = mesh.meshlets[prim.meshletIndex];
+    Mesh mesh = drawData.mesh[0];
 
-    Array<GPUVertex, 3> triVerts = prim.getVertices(pc.drawData);
+    Array<UnpackedVertex, 3> triVerts = prim.getVertices(pc.drawData);
     //Compute barycenters and derivatives with some magic
     TriangleBarycentrics bars =
     TriangleBarycentrics.fromVertices(triVerts,
@@ -59,7 +57,7 @@ float4 fragMain(FullscreenVertex input) : SV_Target
                          triVerts[2].position.xyz);
 
     float4 interpolated_vertex_world_pos = mul(
-        pc.instances[drawData.instanceIndex].transform,
+        pc.instances[drawData.instanceIndex].unpackTransform(),
         float4(interpolated_vertex_mesh_pos, 1));
     float3 view_direction = (normalize( pc.frame.camera.position.xyz - interpolated_vertex_world_pos.xyz ));
 

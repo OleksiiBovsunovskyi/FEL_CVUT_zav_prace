@@ -13,7 +13,7 @@ import BufferTypes;
 /**
  * Static buffers, written once per asset and read every frame.
  *
- * MeshData is byte-addressed: one blob per mesh, a GPUMeshHeader first, every
+ * MeshData is byte-addressed: one blob per mesh, a Mesh header first, every
  * other section reached through a pointer in that header.
  */
 export enum class StaticBufferKind : uint8_t {
@@ -35,7 +35,7 @@ export constexpr size_t STATIC_BUFFER_COUNT =
 export template <StaticBufferKind Kind> struct StaticBufferTraits;
 
 template <> struct StaticBufferTraits<StaticBufferKind::MeshData> {
-    /// Heterogeneous: the GPUMeshHeader at the front carries the section pointers.
+    /// Heterogeneous: the Mesh header at the front carries the section pointers.
     using Record = std::byte;
     using Buffer = DeviceOnlyBuffer;
     static constexpr const char*          name       = "mesh data";

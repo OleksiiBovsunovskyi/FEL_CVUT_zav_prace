@@ -1,7 +1,7 @@
 module common_frag;
 
 import GPUMaterial;
-import Vertex;
+import meshlet_geometry;
 
 /// Bindless textures, indexed by GPUMaterial::textures. Slots are assigned only by TextureManager.
 [[vk::binding(0, 0)]] public Sampler2D materialTextures[];

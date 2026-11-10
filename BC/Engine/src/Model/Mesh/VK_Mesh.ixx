@@ -58,10 +58,10 @@ public:
 
     /**
      * Call only after uploaded().
-     * @return address of this mesh's GPUMeshHeader, or a null pointer before
+     * @return address of this mesh's Mesh header, or a null pointer before
      *         upload.
      */
-    [[nodiscard]] MeshDataPointer header() const;
+    [[nodiscard]] GpuPtr<Mesh> header() const;
 
     /// @return the mesh's local-space bounding sphere.
     [[nodiscard]] const MeshBounds& bounds() const { return bounds_; }
@@ -69,7 +69,7 @@ public:
     /// Returns the number of vertices owned by this mesh.
     [[nodiscard]] uint32_t vertexCount() const { return vertexCount_; }
 
-    /// @return meshlet count across every hierarchy depth.
+    /// @return meshlet count.
     [[nodiscard]] uint32_t meshletCount() const { return meshletCount_; }
 
     /// Returns the mesh's material. Requires uploaded() == true.
@@ -81,7 +81,7 @@ public:
     }
 
 private:
-    /// Header, meshlets, both index arrays and vertices, in one range.
+    /// Header, meshlets, triangles and vertices, in one range.
     DeviceArray<std::byte> blob_{};
 
     std::shared_ptr<Material> material_;

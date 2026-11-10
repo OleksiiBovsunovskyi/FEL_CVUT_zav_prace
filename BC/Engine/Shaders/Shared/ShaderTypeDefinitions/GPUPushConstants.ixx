@@ -5,7 +5,7 @@ module;
 export module GPUPushConstants;
 import GPUCoreTypes;
 import GPUMaterial;
-import GPUInstance;
+import Instance;
 import GPUDraw;
 import GPUFrame;
 import GPUDepthPyramid;
@@ -18,7 +18,7 @@ import GPUDepthPyramid;
  */
 export struct alignas(16) BuildDrawCommandsPush {
     GpuPtr<GPUFrameData>       frame;        //viewProj the culling test uses, draw counters
-    GpuPtr<GPUMeshInstance>    instances;      //transform + the mesh it draws
+    GpuPtr<Instance>    instances;      //transform + the mesh it draws
     GpuPtr<GPUDrawData>        drawData;     //Output. Object index and mesh, read back by the mesh shader
     GpuPtr<GPUMeshTaskCommand> commands;     //Output. Actual draw command, built here
     GpuPtr<GPUDrawCommandCount> commandCount; //Output. Hands out each command's slot
@@ -32,8 +32,8 @@ static_assert(sizeof(BuildDrawCommandsPush) == 48);
  * Arguments to scatter_instances.slang.
  */
 export struct ScatterInstancesPush {
-    GpuPtr<GPUMeshInstanceUpdate> updates;      //Instance writes to apply
-    GpuPtr<GPUMeshInstance>       instances;    //Output. The device instance array
+    GpuPtr<InstanceUpdate> updates;      //Instance writes to apply
+    GpuPtr<Instance>       instances;    //Output. The device instance array
     uint32_t                      updateCount = 0;
     uint32_t                      _padding    = 0;
 };
@@ -47,7 +47,7 @@ static_assert(sizeof(ScatterInstancesPush) == 24);
 export struct GPUForwardMeshDrawPush {
     GpuPtr<GPUFrameData> frame;
     GpuPtr<GPUDrawData> drawData;
-    GpuPtr<GPUMeshInstance>   instances;
+    GpuPtr<Instance>   instances;
     GpuPtr<GPUMaterial> materials;
     /// Sampled slot of the full depth pyramid chain.
     uint32_t depthPyramidSlot = INVALID_TEXTURE_INDEX;
@@ -70,6 +70,6 @@ static_assert(sizeof(GPUDepthPyramidPush) == 24);
 
 export struct GPUHIZOCPush {
     GpuPtr<GPUFrameData> frame;
-    GpuPtr<GPUMeshInstance> instances;
+    GpuPtr<Instance> instances;
 };
 static_assert(sizeof(GPUHIZOCPush) == 16);

@@ -31,30 +31,24 @@ constexpr vk::DeviceSize alignUp(vk::DeviceSize value) {
  * allocated, so a rejected mesh costs nothing.
  */
 struct BlobLayout {
-    vk::DeviceSize meshlets             = 0;
-    vk::DeviceSize meshletVertices      = 0;
-    vk::DeviceSize meshletTriangles     = 0;
-    vk::DeviceSize vertices             = 0;
-    vk::DeviceSize size                 = 0;
+    vk::DeviceSize meshlets  = 0;
+    vk::DeviceSize triangles = 0;
+    vk::DeviceSize vertices  = 0;
+    vk::DeviceSize size      = 0;
 };
 
 BlobLayout layoutOf(const MeshUploadData& data) {
     BlobLayout layout{};
-    vk::DeviceSize cursor = alignUp(sizeof(GPUMeshHeader));
+    vk::DeviceSize cursor = alignUp(sizeof(Mesh));
 
     layout.meshlets = cursor;
-    cursor = alignUp(cursor + data.meshlets.size() * sizeof(GPUMeshlet));
+    cursor = alignUp(cursor + data.meshlets.size() * sizeof(Meshlet));
 
-    layout.meshletVertices = cursor;
-    cursor = alignUp(cursor + data.meshletVertices.size() *
-                                  sizeof(GPUMeshVertexIndex));
-
-    layout.meshletTriangles = cursor;
-    cursor = alignUp(cursor + data.meshletTriangles.size() *
-                                  sizeof(GPUMeshletTriangle));
+    layout.triangles = cursor;
+    cursor = alignUp(cursor + data.triangles.size() * sizeof(Triangle));
 
     layout.vertices = cursor;
-    cursor = alignUp(cursor + data.vertices.size() * sizeof(GPUVertex));
+    cursor = alignUp(cursor + data.vertices.size() * sizeof(Vertex));
 
     layout.size = cursor;
     return layout;
@@ -70,13 +64,13 @@ void writeSection(std::byte* blob, vk::DeviceSize offset,
 
 } // namespace
 
-MeshDataPointer VK_Mesh::header() const {
+GpuPtr<Mesh> VK_Mesh::header() const {
     if (!blob_) {
         logError("Mesh::header called before the mesh was uploaded");
         return {};
     }
     /* The header is the first record in the blob, so the blob's address is it. */
-    return MeshDataPointer{blob_.span().gpu.data.address};
+    return GpuPtr<Mesh>{blob_.span().gpu.data.address};
 }
 
 bool VK_Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
@@ -88,8 +82,7 @@ bool VK_Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
         return false;
     }
     if (uploaded() || !material || data.vertices.empty() ||
-        data.meshlets.empty() || data.meshletVertices.empty() ||
-        data.meshletTriangles.empty()) {
+        data.meshlets.empty() || data.triangles.empty()) {
         return false;
     }
 
@@ -114,32 +107,22 @@ bool VK_Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
      * across in one copy. */
     const vk::DeviceAddress base = blob.span().gpu.data.address;
 
-    GPUMeshHeader header{};
-    header.vertices = GpuPtr<GPUVertex>{base + layout.vertices};
-    header.meshlets = GpuPtr<GPUMeshlet>{base + layout.meshlets};
-    header.meshletVertices =
-        GpuPtr<GPUMeshVertexIndex>{base + layout.meshletVertices};
-    header.meshletTriangles =
-        GpuPtr<GPUMeshletTriangle>{base + layout.meshletTriangles};
-    header.vertexCount    = static_cast<uint32_t>(data.vertices.size());
-    header.meshletCount   = static_cast<uint32_t>(data.meshlets.size());
-    header.material       = material->gpuIndex();
-    header.meshTriangleCount = static_cast<uint32_t>(data.meshletTriangles.size());
+    Mesh header{};
+    header.vertices       = GpuPtr<Vertex>{base + layout.vertices};
+    header.meshlets       = GpuPtr<Meshlet>{base + layout.meshlets};
+    header.triangles      = GpuPtr<Triangle>{base + layout.triangles};
+    header.grid           = data.grid;
     header.boundingSphere = glm::vec4(data.bounds.center, data.bounds.radius);
+    header.meshletCount   = static_cast<uint32_t>(data.meshlets.size());
+    header.triangleCount  = static_cast<uint32_t>(data.triangles.size());
+    header.material       = material->gpuIndex();
 
     std::byte* image = upload.host;
     std::memset(image, 0, layout.size);
     std::memcpy(image, &header, sizeof(header));
     writeSection(image, layout.meshlets, data.meshlets);
+    writeSection(image, layout.triangles, data.triangles);
     writeSection(image, layout.vertices, data.vertices);
-
-    /* The two index arrays are single-field records over the generator's
-     * uint32 output, so they copy as raw bytes. */
-    std::memcpy(image + layout.meshletVertices,
-                data.meshletVertices.data(),
-                data.meshletVertices.size() * sizeof(uint32_t));
-    std::memcpy(image + layout.meshletTriangles, data.meshletTriangles.data(),
-                data.meshletTriangles.size() * sizeof(uint32_t));
 
     if (uploadMaterial) material->record(commandBuffer, materialUpload);
 
@@ -157,7 +140,7 @@ bool VK_Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
     blob_         = std::move(blob);
     material_     = std::move(material);
     bounds_       = data.bounds;
-    vertexCount_  = header.vertexCount;
+    vertexCount_  = static_cast<uint32_t>(data.vertices.size());
     meshletCount_ = header.meshletCount;
     return true;
 }

@@ -6,7 +6,8 @@ module;
 #include <cstdint>
 
 export module GPUDraw;
-import GPUMesh;
+import GPUCoreTypes;
+import Mesh;
 /**
  * Indirect draw records written by GPU culling, and the counters read back from it.
  */
@@ -15,7 +16,7 @@ import GPUMesh;
 export struct alignas(16) GPUDrawData {
     uint32_t        instanceIndex = 0;
     uint32_t        _padding    = 0;
-    MeshDataPointer mesh{};
+    GpuPtr<Mesh>    mesh{};
 };
 
 static_assert(sizeof(GPUDrawData) == 16);

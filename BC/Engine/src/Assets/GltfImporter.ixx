@@ -7,10 +7,7 @@ export module GltfImporter;
 export import AssetData;
 
 export struct GltfImportSettings {
-    /**
-     * Passed straight to generateClusterLOD. The default (enabled = false) builds
-     * meshlets with one terminal group; the layout matches hierarchical mode.
-     */
+    /// Meshlet size limits passed to generateClusterLOD.
     ClusterLODSettings clusterLod{};
 };
 
@@ -27,7 +24,7 @@ export struct GltfImportSettings {
  * Mip chains are built here, so nothing downstream generates them.
  *
  * @param path a .gltf or .glb.
- * @param settings meshlet and CLOD generation.
+ * @param settings meshlet generation.
  * @param out filled on success, left partially filled on failure.
  * @return false after logging on a parse error or an unsupported primitive.
  */

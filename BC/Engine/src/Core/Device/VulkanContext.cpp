@@ -146,6 +146,9 @@ bool VulkanContext::selectAndCreateDevice() {
     // uint8_t fields of Triangle read through buffer pointers.
     features12.storageBuffer8BitAccess = VK_TRUE;
     features12.shaderInt8              = VK_TRUE;
+    features12.storagePushConstant8    = VK_TRUE;
+    // Half-float texture coordinates of Vertex.
+    features12.shaderFloat16           = VK_TRUE;
     // Draw count sourced from a GPU buffer - the culling compute pass writes it.
     features12.drawIndirectCount   = VK_TRUE;
 

@@ -31,7 +31,7 @@ public:
     [[nodiscard]] Object& getOwner() const { return *owner_; }
 
     /// Model-to-world: the owner's transform with this component's on top.
-    [[nodiscard]] glm::mat4 getWorldTransform() const;
+    [[nodiscard]] Transform getWorldTransform() const;
 
 protected:
     /**

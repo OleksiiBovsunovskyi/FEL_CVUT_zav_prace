@@ -3,7 +3,7 @@ import mesh_vertex;
 import draw_meshlets;
 import draw_meshlets_visibility_sphere;
 import common_frag;
-import Vertex;
+import meshlet_geometry;
 
 [[vk::push_constant]] ConstantBuffer<GPUForwardMeshDrawPush> pc;
 

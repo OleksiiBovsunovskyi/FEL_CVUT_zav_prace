@@ -16,18 +16,13 @@ export struct MeshBounds {
 
 
 export struct MeshUploadData {
-    /// Vertex data referenced by meshletVertices.
-    std::span<const GPUVertex> vertices;
-    /// Every generated meshlet across all hierarchy levels.
-    std::span<const GPUMeshlet> meshlets;
-    /// Flattened global vertex indices used by meshlets.
-    std::span<const uint32_t> meshletVertices;
-    /// One triangle per uint32: i0 | (i1 << 8) | (i2 << 16).
-    std::span<const uint32_t> meshletTriangles;
-    /// One DAG record per meshlet.
-    std::span<const GPUCluster> clusters;
-    /// CLOD groups;
-    std::span<const GPUClusterGroup> clusterGroups;
+    /// Indexed by Meshlet::firstMeshletVertex.
+    std::span<const Vertex> vertices;
+    std::span<const Meshlet> meshlets;
+    /// Indexed by Meshlet::firstMeshletTriangle.
+    std::span<const Triangle> triangles;
+    /// Grid the vertices and meshlets are packed on.
+    PositionGrid grid{};
     /// Local-space bounds of the complete mesh.
     MeshBounds bounds{};
 };

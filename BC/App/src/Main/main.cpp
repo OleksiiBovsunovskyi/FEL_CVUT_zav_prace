@@ -24,7 +24,6 @@ int main(int argc, char** argv) {
     
         VulkanApp app{0};
         app.init();
-
         /* What the world contains is decided here; the app only renders it. */
     
         const std::filesystem::path modelPath = std::filesystem::path{"Assets"} / "san-miguel.pmma";

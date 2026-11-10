@@ -1,6 +1,6 @@
 module;
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 export module WASDComponent;
 
@@ -40,18 +40,15 @@ public:
         if (axes == glm::vec3{0.0f} || deltaSeconds <= 0.0f) return;
 
         Object&          owner     = getOwner();
-        const glm::mat4& transform = owner.getTransform();
+        Transform        moved     = owner.getTransform();
 
-        /* lookAt puts the view direction on -Z, so the owner's forward is the
-         * negated third column. */
+        /// The owner's forward is its -Z axis.
         const glm::vec3 direction =
-            glm::vec3{transform[0]} * axes.x +
-            WORLD_UP                * axes.y -
-            glm::vec3{transform[2]} * axes.z;
+            moved.rotation * glm::vec3{1.0f, 0.0f, 0.0f} * axes.x +
+            WORLD_UP                                      * axes.y -
+            moved.rotation * glm::vec3{0.0f, 0.0f, 1.0f} * axes.z;
 
-        glm::mat4 moved = transform;
-        moved[3] += glm::vec4{
-            glm::normalize(direction) * metresPerSecond_ * deltaSeconds, 0.0f};
+        moved.position += glm::normalize(direction) * metresPerSecond_ * deltaSeconds;
         owner.setTransform(moved);
     }
 

@@ -3,6 +3,8 @@ module;
 
 export module VkScene:Transformable;
 
+export import Transform;
+
 /**
  * Anything that has transforms
  *
@@ -11,7 +13,7 @@ export module VkScene:Transformable;
 export class Transformable {
 public:
     Transformable() = default;
-    explicit Transformable(const glm::mat4& transform) : transform_(transform) {}
+    explicit Transformable(const Transform& transform) : transform_(transform) {}
 
     /* Declared, so the implicit move operations are not suppressed by the
      * destructor below. */
@@ -20,9 +22,9 @@ public:
     Transformable(Transformable&&) noexcept            = default;
     Transformable& operator=(Transformable&&) noexcept = default;
 
-    [[nodiscard]] const glm::mat4& getTransform() const { return transform_; }
+    [[nodiscard]] const Transform& getTransform() const { return transform_; }
 
-    void setTransform(const glm::mat4& transform) {
+    void setTransform(const Transform& transform) {
         transform_ = transform;
         onTransformChanged();
     }
@@ -34,5 +36,5 @@ protected:
     virtual void onTransformChanged() {}
 
 private:
-    glm::mat4 transform_{1.0f};
+    Transform transform_{};
 };

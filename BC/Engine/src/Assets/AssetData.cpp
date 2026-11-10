@@ -33,7 +33,7 @@ AssetModel ImportedAsset::view() {
     meshViews_.reserve(meshes.size());
     for (const MeshStorage& mesh : meshes)
         meshViews_.push_back(
-            AssetMesh{mesh.lod.uploadData(mesh.vertices, mesh.bounds), mesh.material});
+            AssetMesh{mesh.lod.uploadData(mesh.bounds), mesh.material});
 
     textureViews_.clear();
     textureViews_.reserve(textures.size());

@@ -3,6 +3,8 @@ module;
 #include <span>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 export module ClusterLODGenerator;
 
 export import MeshData;
@@ -15,47 +17,46 @@ export constexpr uint32_t MESHLET_MAX_VERTICES  = 64;
 export constexpr uint32_t MESHLET_MAX_TRIANGLES = 64;
 
 export struct ClusterLODSettings {
-    /// False generates one terminal group; true requests a deeper CLOD DAG.
-    bool enabled = false;
-
     uint32_t maxVerticesPerCluster  = 64;
     uint32_t maxTrianglesPerCluster = 64;
-    float simplifyRatio             = 0.5f;
-    float simplifyThreshold         = 0.85f;
+};
+
+/// Unpacked vertex of an imported primitive, in mesh space.
+export struct ImportedVertex {
+    glm::vec3 position{};
+    glm::vec3 normal{};
+    glm::vec4 tangent{}; // xyz = tangent, w = bitangent handedness
+    glm::vec2 texCoord{};
 };
 
 export struct GeneratedClusterLOD {
-    std::vector<GPUMeshlet> meshlets;
-    std::vector<uint32_t> meshletVertices;
-    std::vector<uint32_t> meshletTriangles;
-    std::vector<GPUCluster> clusters;
-    std::vector<GPUClusterGroup> groups;
+    /// Each meshlet's vertices are contiguous, in meshlet order.
+    std::vector<Vertex>   vertices;
+    std::vector<Meshlet>  meshlets;
+    /// Each meshlet's triangles are contiguous, in meshlet order.
+    std::vector<Triangle> triangles;
+    /// Grid the vertices and meshlets are packed on.
+    PositionGrid grid{};
 
-    [[nodiscard]] bool empty() const { return clusters.empty(); }
+    [[nodiscard]] bool empty() const { return meshlets.empty(); }
 
-    [[nodiscard]] MeshUploadData uploadData(
-        std::span<const GPUVertex> vertices, MeshBounds bounds) const {
-        return MeshUploadData{
-            vertices,
-            meshlets,
-            meshletVertices,
-            meshletTriangles,
-            clusters,
-            groups,
-            bounds,
-        };
+    [[nodiscard]] MeshUploadData uploadData(MeshBounds bounds) const {
+        return MeshUploadData{vertices, meshlets, triangles, grid, bounds};
     }
 };
 
 /**
- * Always builds meshlets. With CLOD disabled, output contains one terminal
- * group at depth 0. Otherwise it builds all hierarchy levels at load time.
+ * Builds meshlets and packs their vertices and triangles.
+ * A vertex shared by several meshlets is written once per meshlet.
  *
- * Input indices reference GPUVertex entries. Generated triangle indices are
- * packed as i0 | i1<<8 | i2<<16, ready for the mesh shader.
+ * @param vertices vertices of one primitive
+ * @param indices triangle list indexing vertices
+ * @param settings meshlet size limits
+ * @param output replaced with the packed geometry
+ * @return false after logging on bad input or a meshlet that fails validation.
  */
 export [[nodiscard]] bool generateClusterLOD(
-    std::span<const GPUVertex> vertices,
+    std::span<const ImportedVertex> vertices,
     std::span<const uint32_t> indices,
     const ClusterLODSettings& settings,
     GeneratedClusterLOD& output);

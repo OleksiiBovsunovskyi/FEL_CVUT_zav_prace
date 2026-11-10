@@ -44,9 +44,9 @@ constexpr vk::DeviceSize MESH_TASK_COMMAND_COUNT_CAPACITY = 4ull << 10;
 
 /// Device bytes one instance costs across instances, drawData and commands.
 constexpr vk::DeviceSize DEVICE_BYTES_PER_INSTANCE =
-    sizeof(GPUMeshInstance) + sizeof(GPUDrawData) + sizeof(GPUMeshTaskCommand);
+    sizeof(Instance) + sizeof(GPUDrawData) + sizeof(GPUMeshTaskCommand);
 /// Host bytes one instance costs in instanceUpdates.
-constexpr vk::DeviceSize HOST_BYTES_PER_INSTANCE = sizeof(GPUMeshInstanceUpdate);
+constexpr vk::DeviceSize HOST_BYTES_PER_INSTANCE = sizeof(InstanceUpdate);
 
 /// @return the capacity holding count, or 0 when count is past MAX_INSTANCE_CAPACITY.
 uint32_t capacityFor(uint32_t count) {
@@ -73,11 +73,11 @@ bool detail::MeshDrawResourceSlot::reserve(VulkanContext& ctx,
     destroy();
 
     const vk::DeviceSize instanceBytes =
-        vk::DeviceSize{capacity} * sizeof(GPUMeshInstance);
+        vk::DeviceSize{capacity} * sizeof(Instance);
     if (!instances.init(ctx, instanceBytes, MESH_INSTANCES_USAGE,
                         "mesh instances") ||
         !instanceUpdates.init(ctx,
-                              vk::DeviceSize{capacity} * sizeof(GPUMeshInstanceUpdate),
+                              vk::DeviceSize{capacity} * sizeof(InstanceUpdate),
                               MESH_INSTANCE_UPDATE_USAGE, "mesh instance updates") ||
         !drawData.init(ctx, vk::DeviceSize{capacity} * sizeof(GPUDrawData),
                        DRAW_DATA_USAGE, "draw data") ||
@@ -116,7 +116,7 @@ void detail::MeshDrawResourceSlot::destroy() {
 
 detail::MeshDrawSpans detail::MeshDrawResourceSlot::spans(
     uint32_t instanceCount) const {
-    const MeshDrawSpans result{instances.span<GPUMeshInstance>(instanceCount),
+    const MeshDrawSpans result{instances.span<Instance>(instanceCount),
                                drawData.span<GPUDrawData>(instanceCount),
                                commands.span<GPUMeshTaskCommand>(instanceCount),
                                count.span<GPUDrawCommandCount>(1)};
@@ -152,14 +152,14 @@ void MeshDrawResources::destroy() {
     ctx_ = nullptr;
 }
 
-MappedSpan<GPUMeshInstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdates(
-    const std::span<const GPUMeshInstance> instances) {
+MappedSpan<InstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdates(
+    const std::span<const Instance> instances) {
     const auto instanceCount = static_cast<uint32_t>(instances.size());
     const auto pendingCount  = static_cast<uint32_t>(indicesPendingUpload.size());
 
     
-    const MappedSpan<GPUMeshInstanceUpdate> updates =                   //Pending may contain duplicates, or invalid instances 
-        instanceUpdates.span<GPUMeshInstanceUpdate>(                    //at its tail (See draw list), therefore it may be bigger than instance count
+    const MappedSpan<InstanceUpdate> updates =                   //Pending may contain duplicates, or invalid instances 
+        instanceUpdates.span<InstanceUpdate>(                    //at its tail (See draw list), therefore it may be bigger than instance count
             std::min(pendingCount, instanceCount));  
 
     uint32_t written = 0;
@@ -167,21 +167,21 @@ MappedSpan<GPUMeshInstanceUpdate> detail::MeshDrawResourceSlot::packPendingUpdat
         /* Repeats make the pending list longer than the update buffer holds.*/
         for (uint32_t index = 0; index < instanceCount; ++index)
             updates.host[written++] =
-                GPUMeshInstanceUpdate{.index = index, ._padding = {}, .instance = instances[index]};
+                InstanceUpdate{.index = index, .reserved = 0, .instance = instances[index]};
     } else {
         for (const uint32_t index : indicesPendingUpload) {
             if (index >= instanceCount) continue; //Skip invalid (deleted) instances, see draw list 
             updates.host[written++] =
-                GPUMeshInstanceUpdate{.index = index, ._padding = {}, .instance = instances[index]};
+                InstanceUpdate{.index = index, .reserved = 0, .instance = instances[index]};
         }
     }
     indicesPendingUpload.clear();
 
-    return instanceUpdates.span<GPUMeshInstanceUpdate>(written);
+    return instanceUpdates.span<InstanceUpdate>(written);
 }
 
 PreparedMeshDraw MeshDrawResources::prepare(
-    const Frame::Recording& recording, std::span<const GPUMeshInstance> instances,
+    const Frame::Recording& recording, std::span<const Instance> instances,
     std::span<const uint32_t> changedInstances, GpuPtr<GPUFrameData> frameData,
     vk::DescriptorSet textureSet, TextureSlot depthPyramidSlot,
     GpuPassTimings& timings) {
@@ -203,7 +203,7 @@ PreparedMeshDraw MeshDrawResources::prepare(
     const detail::MeshDrawSpans spans = slot.spans(instanceCount);
     if (!spans) return {};
 
-    const MappedSpan<GPUMeshInstanceUpdate> updates =
+    const MappedSpan<InstanceUpdate> updates =
         slot.packPendingUpdates(instances);
 
     const vk::CommandBuffer commandBuffer = recording.commandBuffer();

@@ -6,7 +6,7 @@ import GPUCoreTypes;
 import GPUMaterial;
 import GPUFrame;
 import GPUDraw;
-import GPUInstance;
+import Instance;
 #include <cstdint>
 
 
@@ -14,7 +14,7 @@ export struct GPUDeferredDrawPush
 {
     GpuPtr<GPUFrameData> frame;
     GpuPtr<GPUDrawData> drawData;
-    GpuPtr<GPUMeshInstance>   instances;
+    GpuPtr<Instance>   instances;
     GpuPtr<GPUMaterial> materials;
 
     /// Sampled slot of the full depth pyramid chain.
