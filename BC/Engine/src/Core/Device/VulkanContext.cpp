@@ -1,8 +1,15 @@
 module;
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#define VK_USE_PLATFORM_WIN32_KHR
+#include <windows.h>
+#endif
 #include <vulkan/vulkan.h>
 #include <VkBootstrap.h>
 
-#include <functional>
+#include <cstring>
+#include <span>
 #include <string>
 
 module VulkanContext;
@@ -21,14 +28,11 @@ bool ok(vk::Result r, const char* what) {
 
 } // namespace
 
-bool VulkanContext::init(const AppWindow& window, const char* appName) {
+bool VulkanContext::init(const char* appName, std::span<const uint8_t> preferredDeviceUuid) {
     if (!createInstance(appName))
         return false;
 
-    if (!window.createSurface(vkbInstance_.instance, &surface_))
-        return false;
-
-    if (!selectAndCreateDevice())
+    if (!selectAndCreateDevice(preferredDeviceUuid))
         return false;
 
     if (!loadDeviceExtensionFunctions())
@@ -54,31 +58,53 @@ bool VulkanContext::loadDeviceExtensionFunctions() {
                  "although VK_EXT_mesh_shader was required");
         return false;
     }
+
+#ifdef _WIN32
+    getMemoryWin32Handle_ =
+        reinterpret_cast<PFN_vkGetMemoryWin32HandleKHR>(
+            vkGetDeviceProcAddr(vkbDevice_.device, "vkGetMemoryWin32HandleKHR"));
+    if (!getMemoryWin32Handle_) {
+        logError("vkGetDeviceProcAddr: vkGetMemoryWin32HandleKHR not found");
+        return false;
+    }
+
+    getSemaphoreWin32Handle_ =
+        reinterpret_cast<PFN_vkGetSemaphoreWin32HandleKHR>(
+            vkGetDeviceProcAddr(vkbDevice_.device, "vkGetSemaphoreWin32HandleKHR"));
+    if (!getSemaphoreWin32Handle_) {
+        logError("vkGetDeviceProcAddr: vkGetSemaphoreWin32HandleKHR not found");
+        return false;
+    }
+#else
+    throw std::logic_error("This OS support is not implemented");
+#endif
     return true;
 }
 
 namespace {
 
-/**
- * INFO carries debugPrintfEXT output; anything more severe is a real
- * validation message.
- */
 VKAPI_ATTR VkBool32 VKAPI_CALL debugMessengerCB(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     VkDebugUtilsMessageTypeFlagsEXT,
     const VkDebugUtilsMessengerCallbackDataEXT* data,
-    void* userData) {
+    void*) {
 
     if (!data || !data->pMessage) return VK_FALSE;
 
-    if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        logError(data->pMessage);
-        return VK_FALSE;
+    switch (severity) {
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+            logError(data->pMessage);
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+            logWarning(data->pMessage);
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+            logMessage(data->pMessage);
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+        default:
+            break;
     }
-
-    if (auto* sink = static_cast<std::function<void(const std::string&)>*>(userData);
-        sink && *sink)
-        (*sink)(data->pMessage);
 
     return VK_FALSE;
 }
@@ -88,26 +114,11 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugMessengerCB(
 bool VulkanContext::createInstance(const char* appName) {
     vkb::InstanceBuilder builder;
     builder.set_app_name(appName)
+           .set_headless(true)
            .require_api_version(1, 3, 0);
 #ifndef NDEBUG
-    static constexpr VkBool32 printfToStdout = VK_FALSE;
-
-    const VkLayerSettingEXT printfSetting{
-        .pLayerName   = "VK_LAYER_KHRONOS_validation",
-        .pSettingName = "printf_to_stdout",
-        .type         = VK_LAYER_SETTING_TYPE_BOOL32_EXT,
-        .valueCount   = 1,
-        .pValues      = &printfToStdout,
-    };
-
-    /* INFO severity: the layer reports shader printf output at that level, and
-       only reaches debugMessengerCB with printf_to_stdout off. */
     builder.request_validation_layers(true)
-           .add_validation_feature_enable(VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT)
-           .add_layer_setting(printfSetting)
-           .add_debug_messenger_severity(VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT)
-           .set_debug_callback(debugMessengerCB)
-           .set_debug_callback_user_data_pointer(&debugSink_);
+           .set_debug_callback(debugMessengerCB);
 #endif
 
     auto instRet = builder.build();
@@ -119,7 +130,7 @@ bool VulkanContext::createInstance(const char* appName) {
     return true;
 }
 
-bool VulkanContext::selectAndCreateDevice() {
+bool VulkanContext::selectAndCreateDevice(std::span<const uint8_t> preferredDeviceUuid) {
     VkPhysicalDeviceFeatures features10{};
     features10.multiDrawIndirect        = VK_TRUE;  // >1 draw per indirect call
     features10.drawIndirectFirstInstance = VK_TRUE; // per-draw instance offset
@@ -181,24 +192,56 @@ bool VulkanContext::selectAndCreateDevice() {
     meshFeatures.meshShader = VK_TRUE;
 
     vkb::PhysicalDeviceSelector selector{vkbInstance_};
-    auto physRet = selector.set_surface(surface_)
-                           .set_minimum_version(1, 3)
-                           .add_required_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME)
-                           .set_required_features(features10)
-                           .set_required_features_11(features11)
-                           .set_required_features_12(features12)
-                           .set_required_features_13(features13)
-                           .add_required_extension_features(meshFeatures)
-                           .select();
-    if (!physRet) {
-        logError("vkb physical device: " + physRet.error().message());
-        return false;
+    selector.set_minimum_version(1, 3)
+            .add_required_extension(VK_EXT_MESH_SHADER_EXTENSION_NAME)
+#ifdef _WIN32
+            .add_required_extension(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME)
+            .add_required_extension(VK_KHR_EXTERNAL_SEMAPHORE_WIN32_EXTENSION_NAME)
+#endif
+            .set_required_features(features10)
+            .set_required_features_11(features11)
+            .set_required_features_12(features12)
+            .set_required_features_13(features13)
+            .add_required_extension_features(meshFeatures);
+
+    vkb::PhysicalDevice chosen{};
+    if (preferredDeviceUuid.size() == VK_UUID_SIZE) {
+        auto devicesRet = selector.select_devices();
+        if (!devicesRet || devicesRet.value().empty()) {
+            logError("vkb physical device: " + devicesRet.error().message());
+            return false;
+        }
+        bool matched = false;
+        for (const vkb::PhysicalDevice& candidate : devicesRet.value()) {
+            VkPhysicalDeviceIDProperties idProps{};
+            idProps.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES;
+            VkPhysicalDeviceProperties2 props2{};
+            props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+            props2.pNext = &idProps;
+            vkGetPhysicalDeviceProperties2(candidate.physical_device, &props2);
+            if (std::memcmp(idProps.deviceUUID, preferredDeviceUuid.data(), VK_UUID_SIZE) == 0) {
+                chosen = candidate;
+                matched = true;
+                break;
+            }
+        }
+        if (!matched) {
+            logError("VulkanContext: preferred host GPU UUID not found; using first compatible GPU");
+            chosen = devicesRet.value().front();
+        }
+    } else {
+        auto physRet = selector.select();
+        if (!physRet) {
+            logError("vkb physical device: " + physRet.error().message());
+            return false;
+        }
+        chosen = physRet.value();
     }
 
-    gpuName_ = physRet.value().properties.deviceName;
+    gpuName_ = chosen.properties.deviceName;
     logMessage("GPU: " + gpuName_);
 
-    auto devRet = vkb::DeviceBuilder{physRet.value()}.build();
+    auto devRet = vkb::DeviceBuilder{chosen}.build();
     if (!devRet) {
         logError("vkb device: " + devRet.error().message());
         return false;
@@ -235,10 +278,6 @@ void VulkanContext::shutdown() {
     if (vkbDevice_.device) {
         vkb::destroy_device(vkbDevice_);
         vkbDevice_ = {};
-    }
-    if (surface_) {
-        vkb::destroy_surface(vkbInstance_, surface_);
-        surface_ = VK_NULL_HANDLE;
     }
     if (vkbInstance_.instance) {
         vkb::destroy_instance(vkbInstance_);

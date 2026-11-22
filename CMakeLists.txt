@@ -11,18 +11,6 @@ endif ()
 #Thirdparty
 include(FetchContent)
 
-#GLFW
-set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
-
-FetchContent_Declare(glfw
-        GIT_REPOSITORY https://github.com/glfw/glfw.git
-        GIT_TAG        3.4
-        GIT_SHALLOW    TRUE
-)
-
 # ImGui 
 FetchContent_Declare(imgui
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -30,7 +18,7 @@ FetchContent_Declare(imgui
         GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(glfw imgui)
+FetchContent_MakeAvailable(imgui)
 
 #VK
 find_package(Vulkan QUIET)

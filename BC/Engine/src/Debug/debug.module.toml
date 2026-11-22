@@ -1,3 +1,3 @@
-# Debug: GPU timings, draw stats, shader printf, metrics.
+# Debug: GPU timings, draw stats, metrics.
 name = "Debug"
 depends = ["Core", "imgui-vk"]

@@ -2,21 +2,14 @@ module;
 
 #include <cstdint>
 #include <filesystem>
-#include <vector>
-
-#include <glm/glm.hpp>
+#include <span>
 
 export module VulkanApp;
 
 import vulkan;
-/**
- * Owns the window, Vulkan application state, scene, camera, and application-level frame input.
- * Renderer owns mesh-draw preparation and concrete rendering.
- */
-
-import VkWindow;
 import VulkanContext;
-import VkSwapchain;
+import PresentationBridge;
+import ExternalTarget;
 import FrameRunner;
 import Renderer;
 import VkUtil;
@@ -28,39 +21,33 @@ import RenderComponent;
 import VkScene;
 import InputHandler;
 import GPUTypes;
-import ShaderPrint;
-import Metrics;
 import TextureManager;
 import Releaser;
 
 /**
- * The renderer: owns the window, the Vulkan objects, the scene and the two
- * passes, and drives them from AppWindow's draw callback.
+ * Owns the Vulkan objects, the scene, the renderer, and the render loop.
+ * Frames are drawn into ExternalTarget and presented through PresentationBridge.
  */
 export class VulkanApp {
 public:
-    /**
-     * @param maxFrames close after this many frames, or 0 to run until closed.
-     *        A frame budget lets a script wait for a clean exit, which flushes
-     *        stdout; killing the process loses it.
-     */
-    explicit VulkanApp(uint32_t maxFrames);
-
+    VulkanApp() = default;
     ~VulkanApp();
 
     VulkanApp(const VulkanApp&)            = delete;
     VulkanApp& operator=(const VulkanApp&) = delete;
 
     /**
-     * Brings up the window, the device and both pipelines. Throws on failure.
-     *
-     * Nothing is in the scene yet: what to place there is the caller's, and
-     * getLoader() is only usable after this returns.
+     * Brings up the device, the external present target and the pipelines. Throws on failure.
+     * @param bridge host bridge providing input, resize, and GPU presentation callbacks.
+     * @param extent initial frame size in texels.
+     * @param dataRoot folder holding the Shaders folder.
+     * @param preferredDeviceUuid 16-byte GPU UUID to match when non-empty.
+     * @note Nothing is in the scene yet; getLoader() is usable after this returns.
      */
-    void init();
-    
+    void init(PresentationBridge& bridge, vk::Extent2D extent, const std::filesystem::path& dataRoot,
+              std::span<const uint8_t> preferredDeviceUuid = {});
 
-    /// Runs the main loop until the window closes or the frame budget is spent.
+    /// Runs the render loop until the bridge requests stop or the device is lost.
     void run();
 
     /// The world to fill. Valid for the app's lifetime.
@@ -70,10 +57,10 @@ public:
     [[nodiscard]] ModelLoader& getLoader() { return loader_; }
 
 private:
-    AppWindow     window_;
+    PresentationBridge* bridge_ = nullptr;
     InputHandler  input_;
     VulkanContext ctx_;
-    Swapchain     swapchain_;
+    ExternalTarget target_;
     FrameRunner   frames_;
     Renderer      renderer_;
     Releaser              releaser_;
@@ -82,33 +69,16 @@ private:
     BufferManager         buffers_;
     BlockingTransferBatch transfers_;
     ModelLoader           loader_;
-    ShaderPrint           shaderPrint_;
 
     /// A gap longer than this is a stall, not a frame; the tick gets 0 instead.
     static constexpr int MAX_FRAME_MS = 250;
 
-    uint32_t              maxFrames_   = 0;
-    uint32_t              framesDrawn_ = 0;
     int                   lastFrameMs_ = 0;
     Scene                 scene_;
 
     vk::Device device_ = nullptr;
 
-    vk::DescriptorPool imguiPool_ = nullptr;
-    bool               imguiVulkanInitialized_ = false;
-
-    /**
-     * Renderer half of the ImGui setup; AppWindow already created the context
-     * and the GLFW platform backend. !TODO:Move from here
-     */
-    void initImGuiVulkan();
-
-    void drawUI();
-
-    /// Records this frame's rates and totals and ends the Metrics row.
-    void publishFrameMetrics();
-
-    /// Broadcasts everything the window reported since the previous frame.
+    /// Broadcasts everything reported since the previous frame.
     void dispatchInput();
 
     /**
@@ -122,9 +92,6 @@ private:
      * the view-projection matrix.
      */
     void recordFrame(Frame::Recording& recording);
-
-    /// Records ImGui inside ForwardRenderer's dynamic-rendering pass.
-    void recordImGui(vk::CommandBuffer cmd, vk::Extent2D extent);
 
     void cleanup();
 };

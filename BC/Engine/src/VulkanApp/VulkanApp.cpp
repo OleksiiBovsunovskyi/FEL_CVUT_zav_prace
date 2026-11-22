@@ -1,19 +1,11 @@
 module;
 #include <vulkan/vulkan.h>
 
-#include "imgui.h"
-#include "imgui_impl_vulkan.h"
-
 #include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstdint>
-#include <limits>
+#include <chrono>
 #include <span>
 #include <stdexcept>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -28,65 +20,46 @@ import DebugFlags;
 
 namespace {
 
-constexpr int  WIN_WIDTH  = 1280;
-constexpr int  WIN_HEIGHT = 720;
-constexpr char WIN_TITLE[] = "VK";
+constexpr char APP_NAME[] = "VK";
 
 static_assert(DEPTH_CLEAR == 0.0f,
               "CameraComponent::viewProjection swaps near and far, so the far "
               "plane is 0 and DEPTH_CLEAR must clear to it; VkUtil's "
               "DEPTH_COMPARE_OP has to be a GREATER one to match");
 
-void check(vk::Result r, const char* what) {
-    if (r != vk::Result::eSuccess)
-        throw std::runtime_error(std::string(what) + " failed: " + vk::to_string(r));
-}
-
 } // namespace
 
-VulkanApp::VulkanApp(uint32_t maxFrames) : maxFrames_(maxFrames) {}
-
 VulkanApp::~VulkanApp() {
-    /**
-     * run() can throw: FrameRunner throws mid-frame, and a failed model
-     * load throws before the loop starts.
-     */
     cleanup();
-    window_.shutdown();
 }
 
-void VulkanApp::init() {
-    if (!window_.init(WIN_WIDTH, WIN_HEIGHT, WIN_TITLE))
-        throw std::runtime_error("AppWindow::init failed");
+void VulkanApp::init(PresentationBridge& bridge, vk::Extent2D extent,
+                     const std::filesystem::path& dataRoot,
+                     std::span<const uint8_t> preferredDeviceUuid) {
+    bridge_ = &bridge;
 
-    ctx_.setDebugMessageSink(
-        [this](const std::string& message) { shaderPrint_.push(message); });
-
-    if (!ctx_.init(window_, WIN_TITLE))
+    if (!ctx_.init(APP_NAME, preferredDeviceUuid))
         throw std::runtime_error("VulkanContext::init failed");
     device_ = ctx_.device();
 
-    if (!swapchain_.init(ctx_, window_))
-        throw std::runtime_error("Swapchain::init failed");
+    if (!target_.init(ctx_, bridge, extent))
+        throw std::runtime_error("ExternalTarget::init failed");
 
-    if (!frames_.init(ctx_, swapchain_))
+    if (!frames_.init(ctx_, target_))
         throw std::runtime_error("FrameRunner::init failed");
 
-    if (!shaders_.init(device_, "Shaders"))
+    if (!shaders_.init(device_, dataRoot / "Shaders"))
         throw std::runtime_error("ShaderLoader::init failed");
 
     /* Before the Renderer: the mesh pipeline layout names its set layout. */
     if (!textures_.init(ctx_, releaser_))
         throw std::runtime_error("TextureManager::init failed");
 
-    if (!renderer_.init(ctx_, shaders_, swapchain_.format(), swapchain_.extent(),
+    if (!renderer_.init(ctx_, shaders_, target_.format(), target_.extent(),
                         textures_))
         throw std::runtime_error("Renderer::init failed");
-    renderer_.setDrawCallback(
-        [this](vk::CommandBuffer cmd, vk::Extent2D extent) { recordImGui(cmd, extent); });
 
-    /* Swapchain::recreate has waited the device idle by the time this fires. */
-    frames_.setSwapchainRecreatedCallback([this](vk::Extent2D extent, vk::Format) {
+    frames_.setTargetRecreatedCallback([this](vk::Extent2D extent, vk::Format) {
         if (!renderer_.resize(extent))
             throw std::runtime_error("Renderer::resize failed");
     });
@@ -97,116 +70,29 @@ void VulkanApp::init() {
         throw std::runtime_error("BlockingTransferBatch::init failed");
     if (!loader_.init(buffers_, transfers_, textures_))
         throw std::runtime_error("ModelLoader::init failed");
-
-    initImGuiVulkan();
-
-    static_cast<void>(Metrics::get().open("metrics"));
 }
 
 void VulkanApp::run() {
-    input_.setupWindowInputCallbacks(window_);
-    window_.setResizeCallback([this](int, int) { frames_.notifyResized(); });
-    window_.setUICallback([this] { drawUI(); });
-    window_.setDrawCallback([this] {
+    //Input presentation layer forwards
+    std::vector<KeyReport> keys;
+    while (!bridge_->stopRequested() && !frames_.deviceLost()) {
         releaser_.setLastSubmittedFrameSerial(frames_.submittedSerial());
         releaser_.releaseCompleted(frames_.getCompletedSerial());
+
+        MouseDelta mouse{};
+        bridge_->takeInput(keys, mouse);
+        for (const KeyReport& key : keys) input_.pushKey(key.ascii, key.down);
+        if (mouse.dx != 0.0f || mouse.dy != 0.0f) input_.pushMouseMove(mouse.dx, mouse.dy);
+        keys.clear();
 
         dispatchInput();
         scene_.tick(elapseFrame());
         frames_.drawFrame([this](Frame::Recording& recording) {
             recordFrame(recording);
         });
-        //Lost device is not recoverable
-        if (frames_.deviceLost()) window_.requestClose();
-
-        ++framesDrawn_;
-        publishFrameMetrics();
-
-        if (maxFrames_ != 0 && framesDrawn_ >= maxFrames_)
-            window_.requestClose();
-    });
-
-    window_.mainLoop();
-}
-
-void VulkanApp::initImGuiVulkan() {
-    /* One combined image sampler per texture; only the font atlas so far. */
-    const vk::DescriptorPoolSize poolSize{ vk::DescriptorType::eCombinedImageSampler, 16 };
-
-    vk::DescriptorPoolCreateInfo poolInfo{};
-    poolInfo.flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
-    poolInfo.maxSets       = 16;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes    = &poolSize;
-    check(device_.createDescriptorPool(&poolInfo, nullptr, &imguiPool_),
-          "vkCreateDescriptorPool (ImGui)");
-
-    const vk::Format colorFormat = swapchain_.format();
-    vk::PipelineRenderingCreateInfo renderingInfo{};
-    renderingInfo.colorAttachmentCount    = 1;
-    renderingInfo.pColorAttachmentFormats = &colorFormat;
-    /**
-     * ImGui does not depth test, but its pipeline must declare the same
-     * attachments as the vk::RenderingInfo it is recorded into.
-     */
-    renderingInfo.depthAttachmentFormat   = DEPTH_FORMAT;
-
-    ImGui_ImplVulkan_InitInfo info{};
-    info.Instance        = static_cast<VkInstance>(ctx_.instance());
-    info.PhysicalDevice  = static_cast<VkPhysicalDevice>(ctx_.physicalDevice());
-    info.Device          = static_cast<VkDevice>(device_);
-    info.QueueFamily     = ctx_.graphicsQueueFamily();
-    info.Queue           = static_cast<VkQueue>(ctx_.graphicsQueue());
-    info.DescriptorPool  = static_cast<VkDescriptorPool>(imguiPool_);
-    info.MinImageCount   = swapchain_.minImageCount();
-    info.ImageCount      = swapchain_.imageCount();
-    info.MSAASamples     = VK_SAMPLE_COUNT_1_BIT;
-    info.UseDynamicRendering       = true;
-    info.PipelineRenderingCreateInfo = static_cast<VkPipelineRenderingCreateInfo>(renderingInfo);
-    info.CheckVkResultFn = [](VkResult r) { check(static_cast<vk::Result>(r), "ImGui Vulkan backend"); };
-
-    if (!ImGui_ImplVulkan_Init(&info))
-        throw std::runtime_error("ImGui_ImplVulkan_Init failed");
-    imguiVulkanInitialized_ = true;
-}
-
-void VulkanApp::drawUI() {
-    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("VK")) {
-        ImGui::Text("GPU: %s", ctx_.gpuName().c_str());
-        ImGui::Text("%d x %d", window_.getWidth(), window_.getHeight());
-        ImGui::Text("%.1f FPS (%.2f ms)", ImGui::GetIO().Framerate,
-                    1000.0f / ImGui::GetIO().Framerate);
-        ImGui::Separator();
-        for (const GpuPassTimings::Timing& timing : renderer_.timings())
-            ImGui::Text("%-20s %7.3f ms", timing.name, timing.milliseconds);
-        ImGui::Separator();
-        renderer_.drawStats().drawUI();
-        ImGui::Separator();
-        DebugFlags debugFlags = renderer_.getDebugFlags();
-        ImGui::Checkbox("Show meshlets", &debugFlags.ShowMeshlets);
-        ImGui::Checkbox("Show meshlet spheres", &debugFlags.ShowMeshletSpheres);
-        ImGui::Checkbox("Draw normals", &debugFlags.DrawNormals);
-        ImGui::Checkbox("Use HiZ OC", &debugFlags.UseHIZOC);
-        renderer_.setDebugFlags(debugFlags);
-        ImGui::Separator();
-        ImGui::TextUnformatted(window_.getCursorMode() == ECursorMode::UI ? "UI mode  (Tab to capture the mouse)"
-                                                  : "Mouse captured  (Tab for UI)");
-        ImGui::TextUnformatted("WASD moves, E/Q rise and fall, Esc quits");
     }
-    ImGui::End();
-
-    shaderPrint_.drawUI();
-}
-
-void VulkanApp::publishFrameMetrics() {
-    const ImGuiIO& io = ImGui::GetIO();
-
-    Metrics& metrics = Metrics::get();
-    metrics.set("frame", framesDrawn_);
-    metrics.set("fps", io.Framerate);
-    metrics.set("frame_ms", io.DeltaTime * 1000.0f);
-    metrics.endFrame();
+    if (frames_.deviceLost())
+        bridge_->notifyError("device lost");
 }
 
 void VulkanApp::dispatchInput() {
@@ -215,7 +101,9 @@ void VulkanApp::dispatchInput() {
 }
 
 float VulkanApp::elapseFrame() {
-    const int now = window_.getElapsedMs();
+    static const auto start = std::chrono::steady_clock::now();
+    const int now = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count());
     const int delta = now - lastFrameMs_;
     lastFrameMs_ = now;
 
@@ -247,26 +135,10 @@ void VulkanApp::recordFrame(Frame::Recording& recording) {
                      materials);
 }
 
-void VulkanApp::recordImGui(vk::CommandBuffer cmd, vk::Extent2D) {
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(cmd));
-}
-
 void VulkanApp::cleanup() {
-    Metrics::get().close();
-
-    /* Reachable from the destructor after a failed init. */
     if (!device_) return;
 
     ctx_.waitIdle();
-
-    if (imguiVulkanInitialized_) {
-        ImGui_ImplVulkan_Shutdown();
-        imguiVulkanInitialized_ = false;
-    }
-    if (imguiPool_) {
-        device_.destroyDescriptorPool(imguiPool_);
-        imguiPool_ = nullptr;
-    }
 
     /* Meshes and render targets retire ranges and slots on destruction; must precede releaseAll. */
     scene_.clearObjects();
@@ -277,6 +149,6 @@ void VulkanApp::cleanup() {
     buffers_.shutdown();
     frames_.destroy();
 
-    swapchain_.destroy();
+    target_.destroy();
     ctx_.shutdown();
 }

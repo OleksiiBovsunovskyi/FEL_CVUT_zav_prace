@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:pgr="using:AppView"
+        x:Class="AppHost.MainWindow"
+        Title="Render" Width="1280" Height="720">
+  <DockPanel>
+    <Grid>
+      <pgr:RendererView x:Name="Renderer" />
+      <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Padding="8,4"
+              Background="#99000000" CornerRadius="4" IsHitTestVisible="False">
+        <TextBlock Name="InputState" Text="Input state (TAB): __NO INPUT STATE SET__" />
+      </Border>
+    </Grid>
+  </DockPanel>
+</Window>

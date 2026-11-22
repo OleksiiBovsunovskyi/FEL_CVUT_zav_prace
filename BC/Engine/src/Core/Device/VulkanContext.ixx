@@ -1,18 +1,23 @@
 module;
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#define VK_USE_PLATFORM_WIN32_KHR
+#include <windows.h>
+#endif
 #include <vulkan/vulkan.h>
 #include <VkBootstrap.h>
 
-#include <functional>
+#include <span>
 #include <string>
 
 export module VulkanContext;
 
 import vulkan;
 import vk_mem_alloc;
-import VkWindow;
 
 /**
- * Instance, surface, device, queues and the VMA allocator.
+ * Instance, device, queues and the VMA allocator, with no surface and no presentation support required.
  */
 export class VulkanContext {
 public:
@@ -22,21 +27,13 @@ public:
     VulkanContext(const VulkanContext&)            = delete;
     VulkanContext& operator=(const VulkanContext&) = delete;
 
-    /**Builds the instance, creates the window surface, selects a GPU that
-    supports the GPU-driven feature set below, and creates the device.**/
-    bool init(const AppWindow& window, const char* appName);
-
     /**
-     * Routes validation messages of INFO severity - which is what
-     * debugPrintfEXT output arrives as - to `sink`. Warnings and errors keep
-     * going to the log. Must be called before init().
-     *
-     * @param sink receives one whole message per call, from the submitting
-     *        thread.
+     * Builds the instance, selects a GPU that supports the required feature set, and creates the device.
+     * @param appName Vulkan application name.
+     * @param preferredDeviceUuid 16-byte GPU UUID to match when non-empty.
      */
-    void setDebugMessageSink(std::function<void(const std::string&)> sink) {
-        debugSink_ = std::move(sink);
-    }
+    bool init(const char* appName, std::span<const uint8_t> preferredDeviceUuid = {});
+
     void shutdown();
 
     vk::Instance       instance()            const { return vkbInstance_.instance; }
@@ -45,14 +42,10 @@ public:
         return static_cast<VkPhysicalDevice>(vkbDevice_.physical_device);
     }
     vk::Device         device()              const { return vkbDevice_.device; }
-    vk::SurfaceKHR     surface()             const { return surface_; }
     vk::Queue          graphicsQueue()       const { return graphicsQueue_; }
     uint32_t           graphicsQueueFamily() const { return graphicsQueueFamily_; }
     vma::Allocator     allocator()           const { return allocator_; }
     const std::string& gpuName()             const { return gpuName_; }
-
-    /// vkb::SwapchainBuilder takes a vkb::Device.
-    const vkb::Device& vkbDevice() const { return vkbDevice_; }
 
     /// VK_EXT_mesh_shader entry points, resolved during init().
     PFN_vkCmdDrawMeshTasksEXT cmdDrawMeshTasks() const {
@@ -62,12 +55,21 @@ public:
         return cmdDrawMeshTasksIndirectCount_;
     }
 
+#ifdef _WIN32
+    /// VK_KHR_external_memory_win32 / VK_KHR_external_semaphore_win32 entry points, resolved during init().
+    PFN_vkGetMemoryWin32HandleKHR getMemoryWin32Handle() const {
+        return getMemoryWin32Handle_;
+    }
+    PFN_vkGetSemaphoreWin32HandleKHR getSemaphoreWin32Handle() const {
+        return getSemaphoreWin32Handle_;
+    }
+#endif
+
     void waitIdle() const { vkDeviceWaitIdle(vkbDevice_.device); }
 
 private:
     vkb::Instance vkbInstance_{};
     vkb::Device   vkbDevice_{};
-    VkSurfaceKHR  surface_ = VK_NULL_HANDLE;
 
     VkQueue        graphicsQueue_       = VK_NULL_HANDLE;
     uint32_t       graphicsQueueFamily_ = 0;
@@ -77,11 +79,13 @@ private:
 
     PFN_vkCmdDrawMeshTasksEXT              cmdDrawMeshTasks_             = nullptr;
     PFN_vkCmdDrawMeshTasksIndirectCountEXT cmdDrawMeshTasksIndirectCount_ = nullptr;
-
-    std::function<void(const std::string&)> debugSink_;
+#ifdef _WIN32
+    PFN_vkGetMemoryWin32HandleKHR    getMemoryWin32Handle_    = nullptr;
+    PFN_vkGetSemaphoreWin32HandleKHR getSemaphoreWin32Handle_ = nullptr;
+#endif
 
     bool createInstance(const char* appName);
-    bool selectAndCreateDevice();
+    bool selectAndCreateDevice(std::span<const uint8_t> preferredDeviceUuid);
     bool createAllocator();
     bool loadDeviceExtensionFunctions();
 };

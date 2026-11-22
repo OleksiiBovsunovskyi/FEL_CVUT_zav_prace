@@ -31,15 +31,15 @@ bool FrameRunner::checkFatal(vk::Result result, const char* operation) {
 }
 
 bool FrameRunner::checkImageCount() const {
-    if (swapchain_->imageCount() < FRAMES_IN_FLIGHT) {
-        logError("FrameRunner: swapchain image count is below FRAMES_IN_FLIGHT");
+    if (target_->imageCount() < FRAMES_IN_FLIGHT) {
+        logError("FrameRunner: present target image count is below FRAMES_IN_FLIGHT");
         return false;
     }
     return true;
 }
 
-bool FrameRunner::init(VulkanContext& ctx, Swapchain& swapchain) {
-    swapchain_ = &swapchain;
+bool FrameRunner::init(VulkanContext& ctx, PresentTarget& target) {
+    target_ = &target;
     device_ = ctx.device();
     return checkImageCount() && createSyncObjects();
 }
@@ -78,12 +78,12 @@ bool FrameRunner::waitForSerial(SubmissionSerial serial, uint64_t timeoutNs) con
     return device_.waitSemaphores(&wait, timeoutNs) == vk::Result::eSuccess;
 }
 
-bool FrameRunner::recreateSwapchain() const
+bool FrameRunner::recreateTarget() const
 {
-    if (!swapchain_->recreate() || !checkImageCount())
-        throw std::runtime_error("FrameRunner: swapchain recreation failed");
-    if (onSwapchainRecreated_)
-        onSwapchainRecreated_(swapchain_->extent(), swapchain_->format());
+    if (!target_->recreate() || !checkImageCount())
+        throw std::runtime_error("FrameRunner: present target recreation failed");
+    if (onTargetRecreated_)
+        onTargetRecreated_(target_->extent(), target_->format());
     return true;
 }
 
@@ -100,20 +100,25 @@ void FrameRunner::drawFrame(const RecordFn& record) {
     if (!checkFatal(device_.waitSemaphores(&wait, UINT64_MAX), "wait for per-frame resources"))
         return;
 
-    const Swapchain::Acquisition acquired = swapchain_->acquire(imageAvailable);
+    const PresentTarget::Acquisition acquired = target_->acquire(imageAvailable);
     if (acquired.result == vk::Result::eErrorOutOfDateKHR) {
-        recreateSwapchain();
+        if (!recreateTarget())
+        {
+            logError("Failed to recreate target");
+            throw new std::runtime_error("Failed to recreate target");
+        }
         framebufferResized_ = false;
         return;
     }
+    if (acquired.result == vk::Result::eNotReady)
+        return;
     if (acquired.result != vk::Result::eSuccess && acquired.result != vk::Result::eSuboptimalKHR) {
         checkFatal(acquired.result, "acquire image");
         return;
     }
 
     const SubmissionSerial serial = submittedSerial_ + 1;
-    constexpr Frame::ImageUse finalImageUse{vk::ImageLayout::ePresentSrcKHR,
-                                        vk::PipelineStageFlagBits2::eNone, {}};
+    const Frame::ImageUse finalImageUse = target_->finalImageUse();
     if (!checkFatal(acquired.frame->recordAndSubmit(
                         record, currentFrame_, {timeline_, serial, finalImageUse}),
                     "record and submit Frame"))
@@ -121,7 +126,7 @@ void FrameRunner::drawFrame(const RecordFn& record) {
     submittedSerial_ = serial;
     frameSubmission = serial;
 
-    const vk::Result present = swapchain_->present(*acquired.frame);
+    const vk::Result present = target_->present(*acquired.frame);
     if (present != vk::Result::eSuccess && present != vk::Result::eSuboptimalKHR &&
         present != vk::Result::eErrorOutOfDateKHR) {
         checkFatal(present, "present Frame");
@@ -129,8 +134,8 @@ void FrameRunner::drawFrame(const RecordFn& record) {
     }
     if (present == vk::Result::eErrorOutOfDateKHR || present == vk::Result::eSuboptimalKHR ||
         acquired.result == vk::Result::eSuboptimalKHR || framebufferResized_) {
-        if (!recreateSwapchain())
-            throw std::runtime_error("FrameRunner: swapchain recreation failed");
+        if (!recreateTarget())
+            throw std::runtime_error("FrameRunner: present target recreation failed");
         framebufferResized_ = false;
     }
     currentFrame_ = currentFrame_.next();
@@ -151,5 +156,5 @@ void FrameRunner::destroy() {
     framebufferResized_ = false;
     deviceLost_ = false;
     device_ = nullptr;
-    swapchain_ = nullptr;
+    target_ = nullptr;
 }

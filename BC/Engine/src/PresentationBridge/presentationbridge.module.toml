@@ -1,0 +1,4 @@
+# PresentationBridge: C ABI and GPU-shared PresentTarget for an external UI host.
+name = "PresentationBridge"
+object = true
+depends = ["Core"]

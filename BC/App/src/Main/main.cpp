@@ -1,50 +1,81 @@
+#include <array>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <memory>
+#include <span>
+#include <string>
+#include <thread>
 #include <utility>
-#include <array>
-#include <format>
-#include <random>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 
+//Makes entry available in dll
+#define APP_API extern "C" __declspec(dllexport)
 
-import Logger;
+import vulkan;
+import PresentationBridge;
 import VulkanApp;
 import VkScene;
 import RenderComponent;
 import MultiMesh;
 import Player;
 
-int main(int argc, char** argv) {
-  
-    
-        VulkanApp app{0};
-        app.init();
-        /* What the world contains is decided here; the app only renders it. */
-    
-        const std::filesystem::path modelPath = std::filesystem::path{"Assets"} / "san-miguel.pmma";
-        std::shared_ptr<MultiMesh> model = app.getLoader().loadModel(modelPath);
-    
-        if (!model) {
-            std::fprintf(stderr, "fatal: failed to load %s\n",
-                         modelPath.string().c_str());
-            return EXIT_FAILURE;
-        }
-        
-        // Create scene object
-        std::unique_ptr<Object> scene_obj = std::make_unique<Object>();
-        scene_obj->addComponent(RenderComponent(model));
-        Object& scene = app.getScene().addObject(std::move(scene_obj));
-    
-        //Put player in the world
-        Player& player = app.getScene().addObject(std::make_unique<Player>());
-        player.getMovement().setSpeed( 1);
+/**
+ * Starts the engine and scene on a dedicated native thread.
+ * @param config startup paths, initial extent, optional GPU UUID, and host callbacks.
+ * @return running app handle.
+ */
+APP_API AppHandle* app_start(const PgrStartConfig* config) {
+    if (!config || !config->dataRoot || config->width == 0 || config->height == 0) {
+        PresentationBridge::setLastError("pgr_start: invalid configuration");
+        return nullptr;
+    }
 
-        app.run();
+    try {
+        const std::filesystem::path root(reinterpret_cast<const char8_t*>(config->dataRoot));
+        const vk::Extent2D initialExtent{config->width, config->height};
 
-    return EXIT_SUCCESS;
+        std::array<uint8_t, 16> deviceUuid{};
+        const bool hasUuid = config->deviceUuid != nullptr;
+        if (hasUuid) std::memcpy(deviceUuid.data(), config->deviceUuid, deviceUuid.size());
+
+        auto handle = std::make_unique<AppHandle>(config->callbacks);
+        AppHandle* raw = handle.get();
+
+        raw->worker = std::thread([raw, root, initialExtent, deviceUuid, hasUuid] {
+            try {
+                VulkanApp app;
+                const std::span<const uint8_t> uuid =
+                    hasUuid ? std::span<const uint8_t>{deviceUuid} : std::span<const uint8_t>{};
+                app.init(raw->bridge, initialExtent, root, uuid);
+
+                const std::filesystem::path modelPath = root / "Assets" / "san-miguel.pmma";
+                std::shared_ptr<MultiMesh> model = app.getLoader().loadModel(modelPath);
+                if (!model) {
+                    raw->bridge.notifyError("failed to load " + modelPath.string());
+                    return;
+                }
+
+                auto sceneObject = std::make_unique<Object>();
+                sceneObject->addComponent(RenderComponent(model));
+                app.getScene().addObject(std::move(sceneObject));
+
+                Player& player = app.getScene().addObject(std::make_unique<Player>());
+                player.getMovement().setSpeed(1);
+
+                app.run();
+            } catch (const std::exception& e) {
+                raw->bridge.notifyError(e.what());
+            } catch (...) {
+                raw->bridge.notifyError("unknown exception");
+            }
+        });
+
+        return handle.release();
+    } catch (const std::exception& e) {
+        PresentationBridge::setLastError(e.what());
+    } catch (...) {
+        PresentationBridge::setLastError("unknown exception");
+    }
+    return nullptr;
 }

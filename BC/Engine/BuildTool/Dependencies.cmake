@@ -12,17 +12,6 @@ find_package(Vulkan REQUIRED)
 
 include(FetchContent)
 
-#GLFW
-set(GLFW_BUILD_DOCS     OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(GLFW_INSTALL        OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(glfw
-        GIT_REPOSITORY https://github.com/glfw/glfw.git
-        GIT_TAG        3.4
-        GIT_SHALLOW    TRUE
-)
-
 #imgui
 FetchContent_Declare(imgui
         GIT_REPOSITORY https://github.com/ocornut/imgui.git
@@ -88,7 +77,7 @@ FetchContent_Declare(meshoptimizer
         GIT_SHALLOW    TRUE
 )
 
-FetchContent_MakeAvailable(glfw imgui vk-bootstrap vma fastgltf meshoptimizer stb bc7enc)
+FetchContent_MakeAvailable(imgui vk-bootstrap vma fastgltf meshoptimizer stb bc7enc)
 
 # glm 1.0.1 asks for CMake 3.6; CMake 4 deprecates anything below 3.10.
 set(CMAKE_POLICY_VERSION_MINIMUM 3.10)

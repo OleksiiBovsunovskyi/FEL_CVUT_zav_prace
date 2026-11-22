@@ -1,6 +1,6 @@
 name = "Core"
 depends = [
-    "assets", "VK_Window",
+    "assets",
     "VulkanHppModule", "VmaHppModule",
     "vk-bootstrap::vk-bootstrap",
     "GPUOpen::VulkanMemoryAllocator",

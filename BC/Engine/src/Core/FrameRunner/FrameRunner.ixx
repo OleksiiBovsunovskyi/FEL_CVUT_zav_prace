@@ -9,7 +9,7 @@ export module FrameRunner;
 
 import vulkan;
 import VulkanContext;
-import VkSwapchain;
+import PresentTarget;
 import VkUtil;
 import FrameInFlightIndex;
 export import Frame;
@@ -25,9 +25,9 @@ public:
     using SubmissionSerial = Frame::SubmissionSerial;
 
     /**
-     * Fired after the swapchain and its Frames are rebuilt.
+     * Fired after the present target and its Frames are rebuilt.
      */
-    using SwapchainRecreatedFn = std::function<void(vk::Extent2D, vk::Format)>;
+    using TargetRecreatedFn = std::function<void(vk::Extent2D, vk::Format)>;
 
     FrameRunner() = default;
     ~FrameRunner() = default;
@@ -35,11 +35,11 @@ public:
     FrameRunner(const FrameRunner&) = delete;
     FrameRunner& operator=(const FrameRunner&) = delete;
 
-    bool init(VulkanContext& ctx, Swapchain& swapchain);
+    bool init(VulkanContext& ctx, PresentTarget& target);
     void destroy();
 
-    void setSwapchainRecreatedCallback(SwapchainRecreatedFn cb) {
-        onSwapchainRecreated_ = std::move(cb);
+    void setTargetRecreatedCallback(TargetRecreatedFn cb) {
+        onTargetRecreated_ = std::move(cb);
     }
 
     void notifyResized() { framebufferResized_ = true; }
@@ -54,7 +54,7 @@ public:
     bool deviceLost() const { return deviceLost_; }
 
 private:
-    Swapchain* swapchain_ = nullptr;
+    PresentTarget* target_ = nullptr;
     vk::Device device_ = nullptr;
 
     std::array<vk::Semaphore, FRAMES_IN_FLIGHT> imageAvailable_{};
@@ -65,11 +65,11 @@ private:
     FrameInFlightIndex currentFrame_ = FrameInFlightIndex::first();
     bool framebufferResized_ = false;
     bool deviceLost_ = false;
-    SwapchainRecreatedFn onSwapchainRecreated_;
+    TargetRecreatedFn onTargetRecreated_;
 
     bool checkResult(vk::Result result, const char* operation);
     bool checkFatal(vk::Result result, const char* operation);
     bool createSyncObjects();
     bool checkImageCount() const;
-    bool recreateSwapchain() const;
+    bool recreateTarget() const;
 };
