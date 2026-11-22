@@ -92,7 +92,7 @@ bool ExternalTarget::build() {
     semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     semInfo.pNext = &exportSemInfo;
 
-    std::vector<PgrExternalSlotHandles> exportedHandles;
+    std::vector<EngineExternalSlotHandles> exportedHandles;
     exportedHandles.reserve(IMAGE_COUNT);
     slots_.reserve(IMAGE_COUNT);
 
@@ -182,7 +182,7 @@ bool ExternalTarget::build() {
 
         slot.frame = std::make_unique<Frame>(*ctx_, slot.image, VIEW_FORMAT, extent_);
 
-        exportedHandles.push_back(PgrExternalSlotHandles{
+        exportedHandles.push_back(EngineExternalSlotHandles{
             .memoryHandle                = slot.memoryHandle,
             .memorySize                  = static_cast<uint64_t>(slot.memorySize),
             .memoryOffset                = 0,
@@ -193,7 +193,7 @@ bool ExternalTarget::build() {
     }
 
     bridge_->resetSlots(IMAGE_COUNT);
-    const PgrTargetSet targetSet{
+    const EngineTargetSet targetSet{
         .slotCount = IMAGE_COUNT,
         .width     = extent_.width,
         .height    = extent_.height,

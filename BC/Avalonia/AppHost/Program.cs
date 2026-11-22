@@ -5,7 +5,7 @@ namespace AppHost;
 
 internal static class Program
 {
-    /// <param name="args"> first argument: folder holding pgr_embed.dll, Shaders and Assets.</param>
+    /// <param name="args"> first argument: folder holding app.dll, Shaders and Assets.</param>
     [STAThread]
     public static int Main(string[] args)
     {

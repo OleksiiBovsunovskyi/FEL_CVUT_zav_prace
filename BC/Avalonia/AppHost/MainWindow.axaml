@@ -1,15 +1,21 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:pgr="using:AppView"
+        xmlns:appView="using:AppView"
         x:Class="AppHost.MainWindow"
         Title="Render" Width="1280" Height="720">
   <DockPanel>
     <Grid>
-      <pgr:RendererView x:Name="Renderer" />
-      <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8" Padding="8,4"
+      <appView:RendererView x:Name="Renderer" />
+      <StackPanel Spacing="5" Margin="10,10,0,0">
+        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0" Padding="0,0"
               Background="#99000000" CornerRadius="4" IsHitTestVisible="False">
-        <TextBlock Name="InputState" Text="Input state (TAB): __NO INPUT STATE SET__" />
-      </Border>
-    </Grid>
+          <TextBlock Name="InputState" Text="Input state (TAB): __NO INPUT STATE SET__" />
+        </Border> <!-- Input state -->
+        <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0" Padding="0,0"
+              Background="#99000000" CornerRadius="4" IsHitTestVisible="False">
+          <TextBlock Name="RendererStatus" Text="Starting renderer... (Field not wired in yet)"/>
+        </Border> <!-- Renderer state -->
+      </StackPanel>
+    </Grid> 
   </DockPanel>
 </Window>

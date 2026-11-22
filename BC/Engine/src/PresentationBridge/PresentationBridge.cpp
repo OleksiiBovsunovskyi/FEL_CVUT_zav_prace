@@ -102,7 +102,7 @@ void PresentationBridge::releaseSlot(uint32_t slotIndex) {
     slotCv_.notify_one();
 }
 
-void PresentationBridge::notifyTargetsCreated(const PgrTargetSet& targets) const {
+void PresentationBridge::notifyTargetsCreated(const EngineTargetSet& targets) const {
     if (callbacks_.onTargetsCreated)
         callbacks_.onTargetsCreated(callbacks_.userData, &targets);
 }

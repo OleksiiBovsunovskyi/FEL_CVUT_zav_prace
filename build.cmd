@@ -14,7 +14,7 @@ set "PATH=%TOOLCHAIN%;%USERPROFILE%\.cmake-deps\ninja\win\x64;%PATH%"
 set "BUILD_DIR=%~1"
 if "%BUILD_DIR%"=="" set "BUILD_DIR=cmake-build-mingw"
 set "TARGET=%~2"
-if "%TARGET%"=="" set "TARGET=pgr_embed"
+if "%TARGET%"=="" set "TARGET=app"
 
 if not exist "%~dp0%BUILD_DIR%\CMakeCache.txt" (
   if /i "%BUILD_DIR%"=="cmake-build-release" (set "CFG=Release") else (set "CFG=Debug")

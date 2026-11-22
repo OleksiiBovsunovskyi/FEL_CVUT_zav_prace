@@ -52,7 +52,7 @@ public sealed class RendererView : Control
         ClipToBounds = true;
     }
 
-    /// <summary>Folder holding pgr_embed.dll, Shaders and Assets. Set before the first view is shown.</summary>
+    /// <summary>Folder holding app.dll, Shaders and Assets. Set before the first view is shown.</summary>
     public static string? DataRoot { get; set; }
 
     /// <summary>Text of the failure that stopped the renderer, null while it runs.</summary>
@@ -65,7 +65,7 @@ public sealed class RendererView : Control
     public event Action<bool>? CursorCapturedChanged;
 
     internal static string ResolveDataRoot() =>
-        DataRoot ?? Environment.GetEnvironmentVariable("PGR_DATA_ROOT") ?? AppContext.BaseDirectory;
+        DataRoot ?? Environment.GetEnvironmentVariable("APP_DATA_ROOT") ?? AppContext.BaseDirectory;
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {

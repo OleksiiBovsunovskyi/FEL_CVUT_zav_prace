@@ -25,9 +25,9 @@ import Player;
  * @param config startup paths, initial extent, optional GPU UUID, and host callbacks.
  * @return running app handle.
  */
-APP_API AppHandle* app_start(const PgrStartConfig* config) {
+APP_API AppHandle* app_start(const AppStartConfig* config) {
     if (!config || !config->dataRoot || config->width == 0 || config->height == 0) {
-        PresentationBridge::setLastError("pgr_start: invalid configuration");
+        PresentationBridge::setLastError("app_start: invalid configuration");
         return nullptr;
     }
 

@@ -10,11 +10,11 @@ internal readonly record struct ExternalSlotHandles(
     IntPtr AvaloniaDoneSemaphoreHandle);
 
 /// <summary>
-/// Manages one native pgr_embed app thread and its Presentation Bridge C ABI callbacks.
+/// Manages one native app thread and its Presentation Bridge C ABI callbacks.
 /// </summary>
 internal sealed class NativeRenderer : IDisposable
 {
-    private const string Library = "pgr_embed";
+    private const string Library = "app";
 
     private IntPtr _handle;
 
@@ -27,7 +27,7 @@ internal sealed class NativeRenderer : IDisposable
     static NativeRenderer()
     {
         NativeLibrary.SetDllImportResolver(typeof(NativeRenderer).Assembly, (name, _, _) =>
-            name == Library ? NativeLibrary.Load(Path.Combine(RendererView.ResolveDataRoot(), "pgr_embed.dll")) : IntPtr.Zero);
+            name == Library ? NativeLibrary.Load(Path.Combine(RendererView.ResolveDataRoot(), Library+".dll")) : IntPtr.Zero);
     }
 
     public unsafe NativeRenderer(
@@ -43,12 +43,12 @@ internal sealed class NativeRenderer : IDisposable
         _onTargetsCreated = (_, targetsPtr) =>
         {
             if (targetsPtr == IntPtr.Zero) return;
-            PgrTargetSet targetSet = *(PgrTargetSet*)targetsPtr;
+            EngineTargetSet targetSet = *(EngineTargetSet*)targetsPtr;
             var slots = new ExternalSlotHandles[targetSet.SlotCount];
-            var nativeSlots = (PgrExternalSlotHandles*)targetSet.Slots;
+            var nativeSlots = (EngineExternalSlotHandles*)targetSet.Slots;
             for (int i = 0; i < slots.Length; i++)
             {
-                PgrExternalSlotHandles s = nativeSlots[i];
+                EngineExternalSlotHandles s = nativeSlots[i];
                 slots[i] = new ExternalSlotHandles(
                     s.MemoryHandle,
                     s.MemorySize,
@@ -67,13 +67,13 @@ internal sealed class NativeRenderer : IDisposable
         {
             fixed (byte* uuidPtr = deviceUuid)
             {
-                var config = new PgrStartConfig
+                var config = new AppStartConfig
                 {
                     DataRoot = rootUtf8,
                     Width = width,
                     Height = height,
                     DeviceUuid = deviceUuid is { Length: 16 } ? (IntPtr)uuidPtr : IntPtr.Zero,
-                    Callbacks = new PgrHostCallbacks
+                    Callbacks = new EngineHostCallbacks
                     {
                         UserData = IntPtr.Zero,
                         OnTargetsCreated = Marshal.GetFunctionPointerForDelegate(_onTargetsCreated),
@@ -140,7 +140,7 @@ internal sealed class NativeRenderer : IDisposable
     private delegate void ErrorCallback(IntPtr userData, IntPtr message);
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct PgrExternalSlotHandles
+    private struct EngineExternalSlotHandles
     {
         public IntPtr MemoryHandle;
         public ulong MemorySize;
@@ -150,7 +150,7 @@ internal sealed class NativeRenderer : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct PgrTargetSet
+    private struct EngineTargetSet
     {
         public uint SlotCount;
         public uint Width;
@@ -159,7 +159,7 @@ internal sealed class NativeRenderer : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct PgrHostCallbacks
+    private struct EngineHostCallbacks
     {
         public IntPtr UserData;
         public IntPtr OnTargetsCreated;
@@ -169,33 +169,33 @@ internal sealed class NativeRenderer : IDisposable
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct PgrStartConfig
+    private struct AppStartConfig
     {
         public IntPtr DataRoot;
         public uint Width;
         public uint Height;
         public IntPtr DeviceUuid;
-        public PgrHostCallbacks Callbacks;
+        public EngineHostCallbacks Callbacks;
     }
 
-    [DllImport(Library, EntryPoint = "pgr_start", CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr Start(ref PgrStartConfig config);
+    [DllImport(Library, EntryPoint = "app_start", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr Start(ref AppStartConfig config);
 
-    [DllImport(Library, EntryPoint = "pgr_stop", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport(Library, EntryPoint = "engine_stop", CallingConvention = CallingConvention.Cdecl)]
     private static extern void Stop(IntPtr app);
 
-    [DllImport(Library, EntryPoint = "pgr_release_slot", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport(Library, EntryPoint = "engine_release_slot", CallingConvention = CallingConvention.Cdecl)]
     private static extern void ReleaseSlot(IntPtr app, uint slotIndex);
 
-    [DllImport(Library, EntryPoint = "pgr_resize", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport(Library, EntryPoint = "engine_resize", CallingConvention = CallingConvention.Cdecl)]
     private static extern void Resize(IntPtr app, uint width, uint height);
 
-    [DllImport(Library, EntryPoint = "pgr_key", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport(Library, EntryPoint = "engine_key", CallingConvention = CallingConvention.Cdecl)]
     private static extern void Key(IntPtr app, byte ascii, int down);
 
-    [DllImport(Library, EntryPoint = "pgr_mouse_move", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport(Library, EntryPoint = "engine_mouse_move", CallingConvention = CallingConvention.Cdecl)]
     private static extern void MouseMove(IntPtr app, float dx, float dy);
 
-    [DllImport(Library, EntryPoint = "pgr_last_error", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport(Library, EntryPoint = "engine_last_error", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr LastErrorPtr();
 }

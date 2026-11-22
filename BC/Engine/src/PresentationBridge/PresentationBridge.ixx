@@ -13,7 +13,7 @@ export module PresentationBridge;
 import vulkan;
 
 /// Exported Win32 NT handles for one GPU-shared render target slot.
-export struct PgrExternalSlotHandles {
+export struct EngineExternalSlotHandles {
     void*    memoryHandle;
     uint64_t memorySize;
     uint64_t memoryOffset;
@@ -22,29 +22,29 @@ export struct PgrExternalSlotHandles {
 };
 
 /// Set of GPU-shared target slots created for one viewport extent.
-export struct PgrTargetSet {
-    uint32_t                      slotCount;
-    uint32_t                      width;
-    uint32_t                      height;
-    const PgrExternalSlotHandles* slots;
+export struct EngineTargetSet {
+    uint32_t                         slotCount;
+    uint32_t                         width;
+    uint32_t                         height;
+    const EngineExternalSlotHandles* slots;
 };
 
 /// Host-supplied callbacks invoked from the native render thread.
-export struct PgrHostCallbacks {
+export struct EngineHostCallbacks {
     void* userData;
-    void (*onTargetsCreated)(void* userData, const PgrTargetSet* targets);
+    void (*onTargetsCreated)(void* userData, const EngineTargetSet* targets);
     void (*onTargetsDestroyed)(void* userData);
     void (*onPresent)(void* userData, uint32_t slotIndex);
     void (*onError)(void* userData, const char* message);
 };
 
-/// Startup parameters passed across the C ABI into pgr_start().
-export struct PgrStartConfig {
-    const char*      dataRoot;
-    uint32_t         width;
-    uint32_t         height;
-    const uint8_t*   deviceUuid;
-    PgrHostCallbacks callbacks;
+/// Startup parameters passed across the C ABI into app_start().
+export struct AppStartConfig {
+    const char*         dataRoot;
+    uint32_t            width;
+    uint32_t            height;
+    const uint8_t*      deviceUuid;
+    EngineHostCallbacks callbacks;
 };
 
 export struct KeyReport {
@@ -68,7 +68,7 @@ export struct AcquiredSlot {
  */
 export class PresentationBridge {
 public:
-    explicit PresentationBridge(PgrHostCallbacks callbacks) : callbacks_(callbacks) {}
+    explicit PresentationBridge(EngineHostCallbacks callbacks) : callbacks_(callbacks) {}
 
     PresentationBridge(const PresentationBridge&)            = delete;
     PresentationBridge& operator=(const PresentationBridge&) = delete;
@@ -88,7 +88,7 @@ public:
     void presentSlot(uint32_t slotIndex);
     void releaseSlot(uint32_t slotIndex);
 
-    void notifyTargetsCreated(const PgrTargetSet& targets) const;
+    void notifyTargetsCreated(const EngineTargetSet& targets) const;
     void notifyTargetsDestroyed() const;
     void notifyError(const std::string& message) const;
 
@@ -96,7 +96,7 @@ public:
     [[nodiscard]] static const char* lastError();
 
 private:
-    PgrHostCallbacks callbacks_{};
+    EngineHostCallbacks callbacks_{};
 
     mutable std::mutex     inputMutex_;
     std::vector<KeyReport> pendingKeys_;
@@ -111,10 +111,10 @@ private:
     bool                    stopRequested_ = false;
 };
 
-/// Opaque handle returned by pgr_start() and destroyed by pgr_stop().
+/// Opaque handle returned by app_start() and destroyed by engine_stop().
 export struct AppHandle {
     PresentationBridge bridge;
     std::thread        worker;
 
-    explicit AppHandle(PgrHostCallbacks callbacks) : bridge(callbacks) {}
+    explicit AppHandle(EngineHostCallbacks callbacks) : bridge(callbacks) {}
 };
