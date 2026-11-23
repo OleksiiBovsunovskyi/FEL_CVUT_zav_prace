@@ -44,6 +44,6 @@ public float decodeQuaternionComponent(uint q) {
 public extension PositionGrid {
     /// @return mesh space position of the grid point.
     public float3 dequantize(GridPoint point) {
-        return origin + float3(point) * step;
+        return float3(point) * step;
     }
 };

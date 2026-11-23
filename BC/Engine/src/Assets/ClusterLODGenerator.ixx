@@ -19,6 +19,8 @@ export constexpr uint32_t MESHLET_MAX_TRIANGLES = 64;
 export struct ClusterLODSettings {
     uint32_t maxVerticesPerCluster  = 64;
     uint32_t maxTrianglesPerCluster = 64;
+    /// Largest meshlet position step, as a fraction of the meshlet's shortest edge.
+    float positionStepPerEdge = 1.0f / 8.0f;
 };
 
 /// Unpacked vertex of an imported primitive, in mesh space.
@@ -32,6 +34,8 @@ export struct ImportedVertex {
 export struct GeneratedClusterLOD {
     /// Each meshlet's vertices are contiguous, in meshlet order.
     std::vector<Vertex>   vertices;
+    /// Each meshlet's positions are contiguous, in meshlet order; ends with one word past the last meshlet's words.
+    std::vector<PositionWord> positions;
     std::vector<Meshlet>  meshlets;
     /// Each meshlet's triangles are contiguous, in meshlet order.
     std::vector<Triangle> triangles;
@@ -41,13 +45,15 @@ export struct GeneratedClusterLOD {
     [[nodiscard]] bool empty() const { return meshlets.empty(); }
 
     [[nodiscard]] MeshUploadData uploadData(MeshBounds bounds) const {
-        return MeshUploadData{vertices, meshlets, triangles, grid, bounds};
+        return MeshUploadData{vertices, positions, meshlets, triangles, grid, bounds};
     }
 };
 
 /**
- * Builds meshlets and packs their vertices and triangles.
+ * Builds meshlets and packs their vertices, positions and triangles.
  * A vertex shared by several meshlets is written once per meshlet.
+ * Each meshlet gets its own position step, 2^n grid steps, from its shortest edge.
+ * A position shared by several meshlets is snapped to the coarsest of their steps and decodes identically in each.
  *
  * @param vertices vertices of one primitive
  * @param indices triangle list indexing vertices

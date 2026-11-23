@@ -11,11 +11,12 @@ export import Meshlet;
 
 /**
  * Mesh header
- * Each meshlet owns a contiguous range of vertices and triangles.
- * Vertex and Meshlet positions are decoded with grid.
+ * Each meshlet owns a contiguous range of vertices, triangles and position words.
+ * Meshlet positions and bounding spheres are decoded with grid.
  ***/
 export struct Mesh {
     GpuPtr<Vertex> vertices{};
+    GpuPtr<PositionWord> positions{};
     GpuPtr<Meshlet> meshlets{};
     GpuPtr<Triangle> triangles{};
     PositionGrid grid{};
@@ -25,4 +26,4 @@ export struct Mesh {
     GPUMaterialIndex material{};
 };
 
-static_assert(sizeof(Mesh) == 72);
+static_assert(sizeof(Mesh) == 64);
