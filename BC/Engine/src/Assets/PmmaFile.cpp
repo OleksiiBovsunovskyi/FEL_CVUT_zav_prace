@@ -21,7 +21,7 @@ namespace {
 
 /// "PMMA" as little-endian bytes.
 constexpr uint32_t PMMA_MAGIC   = 0x414d4d50;
-constexpr uint32_t PMMA_VERSION = 3;
+constexpr uint32_t PMMA_VERSION = 4;
     
 constexpr uint64_t SECTION_ALIGNMENT = 16;
 
@@ -49,13 +49,14 @@ struct PmmaHeader {
 
 struct PmmaMesh {
     PmmaRange vertices;
+    PmmaRange positions;
     PmmaRange meshlets;
     PmmaRange triangles;
     PositionGrid grid;
     /// center.xyz, radius.
     glm::vec4 bounds{};
     uint32_t  material = AssetMaterialIndex::NONE;
-    uint32_t  _padding[3]{};
+    uint32_t  _padding[2]{};
 };
 
 struct PmmaTexture {
@@ -153,6 +154,7 @@ bool writePmma(const fs::path& path, const AssetModel& model) {
         const MeshUploadData& geometry = mesh.geometry;
         PmmaMesh record{};
         record.vertices             = appendSection(blob, geometry.vertices);
+        record.positions            = appendSection(blob, geometry.positions);
         record.meshlets             = appendSection(blob, geometry.meshlets);
         record.triangles            = appendSection(blob, geometry.triangles);
         record.grid                 = geometry.grid;
@@ -297,12 +299,13 @@ bool PmmaAsset::read(const fs::path& path) {
 
         MeshUploadData geometry{};
         geometry.vertices  = sectionOf<Vertex>(blob, record.vertices, "vertices");
+        geometry.positions = sectionOf<PositionWord>(blob, record.positions, "positions");
         geometry.meshlets  = sectionOf<Meshlet>(blob, record.meshlets, "meshlets");
         geometry.triangles = sectionOf<Triangle>(blob, record.triangles, "triangles");
         geometry.grid      = record.grid;
         geometry.bounds    = MeshBounds{glm::vec3(record.bounds), record.bounds.w};
 
-        if (geometry.vertices.empty() || geometry.meshlets.empty() ||
+        if (geometry.vertices.empty() || geometry.positions.empty() || geometry.meshlets.empty() ||
             geometry.triangles.empty())
             return false;
 

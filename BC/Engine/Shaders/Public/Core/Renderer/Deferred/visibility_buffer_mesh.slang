@@ -40,8 +40,7 @@ void meshMain( uint  groupId : SV_GroupID,
     const float4x4 mvp = mul(pc.frame->camera.viewProj, model);
 
     for (uint i = laneId; i < meshlet.vertexCount; i += MESH_GROUP_SIZE) {
-        const Vertex vertex = mesh.vertices[meshlet.firstMeshletVertex + i];
-        verts[i].position     = mul(mvp, float4(vertex.unpackPosition(mesh.grid, meshlet.base), 1.0));
+        verts[i].position     = mul(mvp, float4(meshlet.unpackPosition(mesh.positions, mesh.grid, i), 1.0));
         verts[i].drawIndex    = drawId;
         verts[i].meshletIndex = groupId;
     }

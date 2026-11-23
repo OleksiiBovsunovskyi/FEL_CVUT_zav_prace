@@ -23,7 +23,7 @@ public struct UnpackedVertex {
 public UnpackedVertex getMeshletVertex(Mesh mesh, Meshlet meshlet, uint i) {
     const Vertex packed = mesh.vertices[meshlet.firstMeshletVertex + i];
     UnpackedVertex vertex;
-    vertex.position = packed.unpackPosition(mesh.grid, meshlet.base);
+    vertex.position = meshlet.unpackPosition(mesh.positions, mesh.grid, i);
     vertex.normal   = packed.unpackNormal();
     vertex.tangent  = packed.unpackTangent();
     vertex.texCoord = packed.unpackTexCoord();

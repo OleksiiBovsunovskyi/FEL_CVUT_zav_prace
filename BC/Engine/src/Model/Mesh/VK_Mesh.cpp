@@ -27,13 +27,13 @@ constexpr vk::DeviceSize alignUp(vk::DeviceSize value) {
 }
 
 /**
- * Byte offsets of one mesh's sections inside its blob. Built before anything is
- * allocated, so a rejected mesh costs nothing.
+ * Byte offsets of one mesh's sections inside its blob.
  */
 struct BlobLayout {
     vk::DeviceSize meshlets  = 0;
     vk::DeviceSize triangles = 0;
     vk::DeviceSize vertices  = 0;
+    vk::DeviceSize positions = 0;
     vk::DeviceSize size      = 0;
 };
 
@@ -49,6 +49,9 @@ BlobLayout layoutOf(const MeshUploadData& data) {
 
     layout.vertices = cursor;
     cursor = alignUp(cursor + data.vertices.size() * sizeof(Vertex));
+
+    layout.positions = cursor;
+    cursor = alignUp(cursor + data.positions.size() * sizeof(PositionWord));
 
     layout.size = cursor;
     return layout;
@@ -81,7 +84,7 @@ bool VK_Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
         logError("Mesh::upload called before BufferManager::init");
         return false;
     }
-    if (uploaded() || !material || data.vertices.empty() ||
+    if (uploaded() || !material || data.vertices.empty() || data.positions.empty() ||
         data.meshlets.empty() || data.triangles.empty()) {
         return false;
     }
@@ -109,6 +112,7 @@ bool VK_Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
 
     Mesh header{};
     header.vertices       = GpuPtr<Vertex>{base + layout.vertices};
+    header.positions      = GpuPtr<PositionWord>{base + layout.positions};
     header.meshlets       = GpuPtr<Meshlet>{base + layout.meshlets};
     header.triangles      = GpuPtr<Triangle>{base + layout.triangles};
     header.grid           = data.grid;
@@ -123,6 +127,7 @@ bool VK_Mesh::upload(BufferManager& buffers, vk::CommandBuffer commandBuffer,
     writeSection(image, layout.meshlets, data.meshlets);
     writeSection(image, layout.triangles, data.triangles);
     writeSection(image, layout.vertices, data.vertices);
+    writeSection(image, layout.positions, data.positions);
 
     if (uploadMaterial) material->record(commandBuffer, materialUpload);
 

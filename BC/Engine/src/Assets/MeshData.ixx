@@ -18,6 +18,8 @@ export struct MeshBounds {
 export struct MeshUploadData {
     /// Indexed by Meshlet::firstMeshletVertex.
     std::span<const Vertex> vertices;
+    /// Indexed by Meshlet::firstPositionWord; ends with one word past the last meshlet's words.
+    std::span<const PositionWord> positions;
     std::span<const Meshlet> meshlets;
     /// Indexed by Meshlet::firstMeshletTriangle.
     std::span<const Triangle> triangles;

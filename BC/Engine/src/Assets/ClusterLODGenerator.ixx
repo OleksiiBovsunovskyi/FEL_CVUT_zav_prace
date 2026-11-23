@@ -15,6 +15,8 @@ export import MeshData;
  */
 export constexpr uint32_t MESHLET_MAX_VERTICES  = 64;
 export constexpr uint32_t MESHLET_MAX_TRIANGLES = 64;
+static_assert(MESHLET_MAX_VERTICES <= MESHLET_MAX_COUNT && MESHLET_MAX_TRIANGLES <= MESHLET_MAX_COUNT,
+              "Meshlet::vertexCount and Meshlet::triangleCount must hold the largest meshlet");
 
 export struct ClusterLODSettings {
     uint32_t maxVerticesPerCluster  = 64;

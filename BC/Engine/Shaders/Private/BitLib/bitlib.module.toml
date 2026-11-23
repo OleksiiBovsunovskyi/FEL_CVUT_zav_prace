@@ -1,0 +1,2 @@
+# BitLib: bit masks and bit fields packed across 32-bit word streams; Shaders/Public/Utils/BitLib.slang is its Slang twin.
+name = "BitLib"

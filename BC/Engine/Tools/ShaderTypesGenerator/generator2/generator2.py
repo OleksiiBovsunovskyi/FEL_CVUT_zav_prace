@@ -47,7 +47,8 @@ def typeToSlang(t:ParsedType, name:str) -> str:
 
 def fieldToSlang(f:ParsedField) -> str:
     array = f"[{f.array_size}]" if f.array_size is not None else ""
-    bits = f" : {f.bit_width}" if f.bit_width is not None else ""
+    # Slang reads a name after ':' as a semantic, so the width is written as a number.
+    bits = f" : {evaluateInteger(f.bit_width, constantValue)}" if f.bit_width is not None else ""
     return f"{typeToSlang(f.type, f.name)} {f.name}{array}{bits}"
 
 def slangValue(c:ParsedConstant) -> str:
