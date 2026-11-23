@@ -39,6 +39,7 @@ public sealed class RendererView : Control
     private NativeRenderer? _renderer;
     private PixelSize _requested;
     private string? _error;
+    private IReadOnlyList<FrameMetric> _latestMetrics = [];
     private volatile bool _attached;
     private volatile bool _detaching;
     private bool _cursorCaptured;
@@ -63,6 +64,12 @@ public sealed class RendererView : Control
 
     /// <summary>Raised on the UI thread whenever <see cref="IsCursorCaptured"/> changes.</summary>
     public event Action<bool>? CursorCapturedChanged;
+
+    /// <summary>Measurements of the most recently completed frame.</summary>
+    public IReadOnlyList<FrameMetric> LatestMetrics => _latestMetrics;
+
+    /// <summary>Raised on the UI thread when a completed frame's metrics arrive from the native renderer.</summary>
+    public event Action<IReadOnlyList<FrameMetric>>? FrameMetricsReceived;
 
     internal static string ResolveDataRoot() =>
         DataRoot ?? Environment.GetEnvironmentVariable("APP_DATA_ROOT") ?? AppContext.BaseDirectory;
@@ -154,7 +161,8 @@ public sealed class RendererView : Control
                 OnTargetsCreated,
                 OnTargetsDestroyed,
                 OnPresent,
-                OnNativeError);
+                OnNativeError,
+                OnFrameMetrics);
         }
         catch (Exception ex)
         {
@@ -296,6 +304,17 @@ public sealed class RendererView : Control
         _error = message;
         Console.Error.WriteLine($"Native renderer error: {message}");
         Dispatcher.UIThread.Post(InvalidateVisual);
+    }
+
+    private void OnFrameMetrics(FrameMetric[] metrics)
+    {
+        if (_detaching) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_detaching) return;
+            _latestMetrics = metrics;
+            FrameMetricsReceived?.Invoke(metrics);
+        });
     }
 
     private void OnWindowDeactivated(object? sender, EventArgs e) => ReleaseCursor();

@@ -2,6 +2,9 @@ using System.Runtime.InteropServices;
 
 namespace AppView;
 
+/// <summary>One named per-frame measurement published by the engine.</summary>
+public readonly record struct FrameMetric(string Name, double Value);
+
 internal readonly record struct ExternalSlotHandles(
     IntPtr MemoryHandle,
     ulong MemorySize,
@@ -23,6 +26,7 @@ internal sealed class NativeRenderer : IDisposable
     private readonly TargetsDestroyedCallback _onTargetsDestroyed;
     private readonly PresentCallback _onPresent;
     private readonly ErrorCallback _onError;
+    private readonly MetricsCallback _onMetrics;
 
     static NativeRenderer()
     {
@@ -38,7 +42,8 @@ internal sealed class NativeRenderer : IDisposable
         Action<ExternalSlotHandles[], int, int> onTargetsCreated,
         Action onTargetsDestroyed,
         Action<uint> onPresent,
-        Action<string> onError)
+        Action<string> onError,
+        Action<FrameMetric[]> onMetrics)
     {
         _onTargetsCreated = (_, targetsPtr) =>
         {
@@ -61,6 +66,22 @@ internal sealed class NativeRenderer : IDisposable
         _onTargetsDestroyed = _ => onTargetsDestroyed();
         _onPresent = (_, slotIndex) => onPresent(slotIndex);
         _onError = (_, messagePtr) => onError(Marshal.PtrToStringUTF8(messagePtr) ?? "unknown native error");
+        _onMetrics = (_, metricsPtr) =>
+        {
+            if (metricsPtr == IntPtr.Zero) return;
+            EngineFrameMetrics frame = *(EngineFrameMetrics*)metricsPtr;
+            if (frame.Count == 0 || frame.Entries == IntPtr.Zero) return;
+            var entries = new FrameMetric[frame.Count];
+            var nativeEntries = (EngineMetricEntry*)frame.Entries;
+            for (int i = 0; i < entries.Length; i++)
+            {
+                EngineMetricEntry entry = nativeEntries[i];
+                entries[i] = new FrameMetric(
+                    Marshal.PtrToStringUTF8(entry.Name) ?? string.Empty,
+                    entry.Value);
+            }
+            onMetrics(entries);
+        };
 
         IntPtr rootUtf8 = Marshal.StringToCoTaskMemUTF8(dataRoot);
         try
@@ -80,6 +101,7 @@ internal sealed class NativeRenderer : IDisposable
                         OnTargetsDestroyed = Marshal.GetFunctionPointerForDelegate(_onTargetsDestroyed),
                         OnPresent = Marshal.GetFunctionPointerForDelegate(_onPresent),
                         OnError = Marshal.GetFunctionPointerForDelegate(_onError),
+                        OnMetrics = Marshal.GetFunctionPointerForDelegate(_onMetrics),
                     }
                 };
 
@@ -139,6 +161,23 @@ internal sealed class NativeRenderer : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void ErrorCallback(IntPtr userData, IntPtr message);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void MetricsCallback(IntPtr userData, IntPtr metrics);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct EngineMetricEntry
+    {
+        public IntPtr Name;
+        public double Value;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct EngineFrameMetrics
+    {
+        public uint Count;
+        public IntPtr Entries;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     private struct EngineExternalSlotHandles
     {
@@ -166,6 +205,7 @@ internal sealed class NativeRenderer : IDisposable
         public IntPtr OnTargetsDestroyed;
         public IntPtr OnPresent;
         public IntPtr OnError;
+        public IntPtr OnMetrics;
     }
 
     [StructLayout(LayoutKind.Sequential)]

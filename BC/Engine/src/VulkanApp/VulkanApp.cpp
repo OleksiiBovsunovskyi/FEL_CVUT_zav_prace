@@ -17,6 +17,7 @@ import vulkan;
 import RendererConfig;
 import Logger;
 import DebugFlags;
+import Metrics;
 
 namespace {
 
@@ -37,6 +38,15 @@ void VulkanApp::init(PresentationBridge& bridge, vk::Extent2D extent,
                      const std::filesystem::path& dataRoot,
                      std::span<const uint8_t> preferredDeviceUuid) {
     bridge_ = &bridge;
+
+    Metrics::get().setFrameCallback([this, buffer = std::vector<EngineMetricEntry>{}](
+                                        std::span<const Metrics::Entry> entries) mutable {
+        buffer.clear();
+        buffer.reserve(entries.size());
+        for (const Metrics::Entry& entry : entries)
+            buffer.push_back(EngineMetricEntry{entry.name, entry.value});
+        bridge_->notifyMetrics(buffer);
+    });
 
     if (!ctx_.init(APP_NAME, preferredDeviceUuid))
         throw std::runtime_error("VulkanContext::init failed");
@@ -90,6 +100,7 @@ void VulkanApp::run() {
         frames_.drawFrame([this](Frame::Recording& recording) {
             recordFrame(recording);
         });
+        Metrics::get().endFrame();
     }
     if (frames_.deviceLost())
         bridge_->notifyError("device lost");
@@ -136,6 +147,7 @@ void VulkanApp::recordFrame(Frame::Recording& recording) {
 }
 
 void VulkanApp::cleanup() {
+    Metrics::get().setFrameCallback({});
     if (!device_) return;
 
     ctx_.waitIdle();

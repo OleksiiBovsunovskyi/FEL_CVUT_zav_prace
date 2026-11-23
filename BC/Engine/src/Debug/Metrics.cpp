@@ -20,7 +20,7 @@ bool same(const char* a, const char* b) {
 /// @return the entry named `name`, or the end of `row`.
 auto findEntry(auto& row, const char* name) {
     return std::ranges::find_if(
-        row, [name](const auto& entry) { return same(entry.first, name); });
+        row, [name](const auto& entry) { return same(entry.name, name); });
 }
 
 } // namespace
@@ -60,19 +60,27 @@ void Metrics::close() {
     file_.close();
 }
 
+void Metrics::setFrameCallback(FrameCallback callback) {
+    onFrame_ = std::move(callback);
+}
+
 void Metrics::set(const char* name, double value) {
-    if (!name || !file_.is_open()) return;
+    if (!name || (!file_.is_open() && !onFrame_)) return;
 
     const auto existing = findEntry(row_, name);
     if (existing != row_.end()) {
-        existing->second = value;
+        existing->value = value;
         return;
     }
-    row_.emplace_back(name, value);
+    row_.push_back(Entry{name, value});
 }
 
 void Metrics::endFrame() {
-    if (!file_.is_open() || row_.empty()) {
+    if (row_.empty()) return;
+
+    if (onFrame_) onFrame_(row_);
+
+    if (!file_.is_open()) {
         row_.clear();
         return;
     }
@@ -83,11 +91,11 @@ void Metrics::endFrame() {
         return;
     }
 
-    for (const auto& [name, value] : row_)
-        if (std::ranges::none_of(columns_, [n = name](const char* c) {
+    for (const Entry& entry : row_)
+        if (std::ranges::none_of(columns_, [n = entry.name](const char* c) {
                 return same(c, n);
             }))
-            columns_.push_back(name);
+            columns_.push_back(entry.name);
 
     heldRows_.push_back(std::move(row_));
     row_.clear();
@@ -110,7 +118,7 @@ void Metrics::writeRow(const Row& row) {
         if (column != 0) file_ << ',';
 
         const auto entry = findEntry(row, columns_[column]);
-        if (entry != row.end()) file_ << std::format("{}", entry->second);
+        if (entry != row.end()) file_ << std::format("{}", entry->value);
     }
     file_ << '\n';
 }

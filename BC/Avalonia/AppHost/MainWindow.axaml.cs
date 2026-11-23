@@ -14,24 +14,58 @@ public partial class MainWindow : Window
         InitializeComponent();
         Renderer.CursorCapturedChanged += UpdateInputState;
         UpdateInputState(Renderer.IsCursorCaptured);
-
-        _graphTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
-        _graphTimer.Tick += (_, _) => AppendRandomColumn();
-        _graphTimer.Start();
-        Closed += (_, _) => _graphTimer.Stop();
+        Renderer.FrameMetricsReceived += AppendStatsColumn;
+        TestGraph.ValueMax = 16; //16ms frame budget, probably will expose setting to control this.
     }
-
-    private void AppendRandomColumn()
+    
+    private void AppendStatsColumn(IReadOnlyList<AppView.FrameMetric> metric)
     {
-        var rng = Random.Shared;
-        var segments = new List<ColumnSegment>
+        var segments = new List<ColumnSegment> { };
+        double total = 0;
+        foreach (var frameMetric in metric)
         {
-            new(Colors.ForestGreen, rng.Next(5, 100)),
-            new(Color.Parse("#FF5733"), rng.Next(5, 100)),
-            new(Color.FromRgb(40, 120, 220), rng.Next(5, 100))
-        };
-        double value = rng.Next(0, 125);
-        TestGraph.AppendColumn(segments, value);
+            switch (frameMetric.Name)
+            {
+                case "scatter_instances":
+                    segments.Add(new(Colors.Red, frameMetric.Value));
+                    total += frameMetric.Value;
+                    break;
+                case "build_draw_commands":
+                    segments.Add(new(Colors.Orange, frameMetric.Value));
+                    total += frameMetric.Value;
+                    break;
+                case "mesh draw":
+                    segments.Add(new(Colors.ForestGreen, frameMetric.Value));
+                    total += frameMetric.Value;
+                    break;
+                case "draw callback":
+                    segments.Add(new(Colors.DodgerBlue, frameMetric.Value));
+                    total += frameMetric.Value;
+                    break;
+                case "build depth pyramid end":
+                    segments.Add(new(Colors.MediumPurple, frameMetric.Value));
+                    total += frameMetric.Value;
+                    break;
+                case "Deferred renderer: Visibility pass":
+                    segments.Add(new(Colors.Gold, frameMetric.Value));
+                    total += frameMetric.Value;
+                    break;
+                case "Deferred renderer: Draw pass":
+                    segments.Add(new(Colors.DeepSkyBlue, frameMetric.Value));
+                    total += frameMetric.Value;
+                    break;
+                case "instances":           //Probably will go into separate graph or just as numbers 
+                case "instances_drawn":     //Probably will go into separate graph or just as numbers       
+                case "instances_culled":    //Probably will go into separate graph or just as numbers        
+                case "meshlets_drawn":      //Probably will go into separate graph or just as numbers      
+                case "meshlets_culled":     //Probably will go into separate graph or just as numbers       
+                case "triangles_submitted": //Probably will go into separate graph or just as numbers           
+                case "triangles_drawn":     //Probably will go into separate graph or just as numbers       
+                    break;
+            }
+        }
+        
+        TestGraph.AppendColumn(segments, total);
     }
 
     private void UpdateInputState(bool captured) =>

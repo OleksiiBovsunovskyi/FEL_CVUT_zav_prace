@@ -3,6 +3,7 @@ module;
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -118,6 +119,15 @@ void PresentationBridge::notifyError(const std::string& message) const {
         callbacks_.onError(callbacks_.userData, message.c_str());
 }
 
+void PresentationBridge::notifyMetrics(std::span<const EngineMetricEntry> entries) const {
+    if (!callbacks_.onMetrics || entries.empty()) return;
+    const EngineFrameMetrics frame{
+        .count   = static_cast<uint32_t>(entries.size()),
+        .entries = entries.data(),
+    };
+    callbacks_.onMetrics(callbacks_.userData, &frame);
+}
+
 void PresentationBridge::setLastError(std::string message) {
     tlsLastError = std::move(message);
 }
@@ -157,3 +167,4 @@ ENGINE_API void engine_mouse_move(AppHandle* app, float dx, float dy) {
 ENGINE_API const char* engine_last_error() {
     return PresentationBridge::lastError();
 }
+

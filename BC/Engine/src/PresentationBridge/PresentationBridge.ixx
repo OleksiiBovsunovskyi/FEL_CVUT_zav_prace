@@ -4,6 +4,7 @@ module;
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -29,6 +30,18 @@ export struct EngineTargetSet {
     const EngineExternalSlotHandles* slots;
 };
 
+/// One named per-frame measurement transferred across the C ABI.
+export struct EngineMetricEntry {
+    const char* name;
+    double      value;
+};
+
+/// Completed frame's measurements passed to EngineHostCallbacks::onMetrics.
+export struct EngineFrameMetrics {
+    uint32_t                 count;
+    const EngineMetricEntry* entries;
+};
+
 /// Host-supplied callbacks invoked from the native render thread.
 export struct EngineHostCallbacks {
     void* userData;
@@ -36,6 +49,7 @@ export struct EngineHostCallbacks {
     void (*onTargetsDestroyed)(void* userData);
     void (*onPresent)(void* userData, uint32_t slotIndex);
     void (*onError)(void* userData, const char* message);
+    void (*onMetrics)(void* userData, const EngineFrameMetrics* metrics);
 };
 
 /// Startup parameters passed across the C ABI into app_start().
@@ -91,6 +105,7 @@ public:
     void notifyTargetsCreated(const EngineTargetSet& targets) const;
     void notifyTargetsDestroyed() const;
     void notifyError(const std::string& message) const;
+    void notifyMetrics(std::span<const EngineMetricEntry> entries) const;
 
     static void setLastError(std::string message);
     [[nodiscard]] static const char* lastError();

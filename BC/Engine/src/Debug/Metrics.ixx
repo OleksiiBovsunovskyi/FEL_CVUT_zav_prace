@@ -3,16 +3,25 @@ module;
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <span>
 #include <string>
 #include <vector>
 
 export module Metrics;
 
 /**
- * Per-frame measurements collected by name and written as one CSV row a frame.
+ * Per-frame measurements collected by name, optionally streamed to CSV and a frame callback.
  */
 export class Metrics {
 public:
+    struct Entry {
+        const char* name;
+        double      value;
+    };
+
+    using FrameCallback = std::function<void(std::span<const Entry>)>;
+
     static Metrics& get();
 
     Metrics(const Metrics&)            = delete;
@@ -21,12 +30,18 @@ public:
     /**
      * Opens a CSV of this run, named after the local date and time.
      * @param directory folder the file is created in; created when missing.
-     * @return false when the file could not be opened; set() then does nothing.
+     * @return false when the file could not be opened.
      */
     [[nodiscard]] bool open(const std::filesystem::path& directory);
 
     /// Writes the rows still held and closes the file.
     void close();
+
+    /**
+     * Registers a callback with the completed frame's entries.
+     * @param callback consumer invoked before the row is cleared;
+     */
+    void setFrameCallback(FrameCallback callback);
 
     /**
      * Records one value of the frame being collected.
@@ -46,7 +61,7 @@ private:
     ~Metrics() { close(); }
 
     /// One frame's measurements, in the order they were set.
-    using Row = std::vector<std::pair<const char*, double>>;
+    using Row = std::vector<Entry>;
 
     /// Frames held before the columns are fixed and rows start streaming.
     static constexpr size_t HEADER_FRAMES = 8;
@@ -55,6 +70,7 @@ private:
     void writeRow(const Row& row);
 
     std::ofstream            file_;
+    FrameCallback            onFrame_;
     Row                      row_;
     std::vector<Row>         heldRows_;
     std::vector<const char*> columns_;
