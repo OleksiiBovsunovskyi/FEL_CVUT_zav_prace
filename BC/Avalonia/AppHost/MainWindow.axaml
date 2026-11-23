@@ -1,6 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:appView="using:AppView"
+        xmlns:global="clr-namespace:;assembly=AppView"
+        xmlns:collumGraph="clr-namespace:AppView.CustomControlls.CollumGraph;assembly=AppView"
         x:Class="AppHost.MainWindow"
         Title="Render" Width="1280" Height="720">
   <DockPanel>
@@ -15,6 +17,7 @@
               Background="#99000000" CornerRadius="4" IsHitTestVisible="False">
           <TextBlock Name="RendererStatus" Text="Starting renderer... (Field not wired in yet)"/>
         </Border> <!-- Renderer state -->
+        <collumGraph:MultiColumnGraph Width="300" Height="60" ColumnWidth="6" ValueMax="100" HorizontalAlignment="Left" Name="TestGraph" />
       </StackPanel>
     </Grid> 
   </DockPanel>
