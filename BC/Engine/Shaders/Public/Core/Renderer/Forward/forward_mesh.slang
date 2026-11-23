@@ -42,10 +42,9 @@ void meshMain(
     const float3x3 normalMatrix = float3x3(cross(model[1], model[2]),
                                            cross(model[2], model[0]),
                                            cross(model[0], model[1]));
-
+    
     for (uint i = laneId; i < meshlet.vertexCount; i += MESH_GROUP_SIZE) {
         const UnpackedVertex vertex = getMeshletVertex(mesh, meshlet, i);
-
         verts[i].position      = mul(mvp, float4(vertex.position, 1.0));
         verts[i].worldPosition = mul(modelToWorld, float4(vertex.position, 1.0)).xyz;
         verts[i].normal        = normalize(mul(normalMatrix, vertex.normal));
@@ -56,6 +55,9 @@ void meshMain(
         verts[i].materialIndex = mesh.material.value;
         verts[i].meshletId     = groupId ^ (draw.instanceIndex * 0x9E3779B9u);
         verts[i].meshletSphere = meshletSphere;
+        //DEBUG: VertSize
+        const uint3 bits = meshlet.positionBits();
+        verts[i].positionBits  = bits.x + bits.y + bits.z;
     }
 
     for (uint i = laneId; i < meshlet.triangleCount; i += MESH_GROUP_SIZE)

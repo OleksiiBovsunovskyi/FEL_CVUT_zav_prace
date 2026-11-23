@@ -18,6 +18,20 @@
           <TextBlock Name="RendererStatus" Text="Starting renderer... (Field not wired in yet)"/>
         </Border> <!-- Renderer state -->
         <collumGraph:MultiColumnGraph Width="300" Height="60" ColumnWidth="6" ValueMax="100" HorizontalAlignment="Left" Name="TestGraph" />
+        
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+          <TextBlock Text="Show vertex pos bits"></TextBlock>
+          <CheckBox Name="ShowVertPosBits"></CheckBox>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+          <TextBlock Text="Show meshlets"></TextBlock>
+          <CheckBox Name="ShowMeshlets"></CheckBox>
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left">
+          <TextBlock Text="Show meshlet bounds"></TextBlock>
+          <CheckBox Name="ShowMeshletsBounds"></CheckBox>
+        </StackPanel>
+        
       </StackPanel>
     </Grid> 
   </DockPanel>

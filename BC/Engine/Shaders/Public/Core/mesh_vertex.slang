@@ -13,4 +13,6 @@ public struct MeshVertex {
     public nointerpolation uint meshletId : MESHLETID;
     /// Sphere the meshlet is culled by: xyz = centre in world space, w = radius.
     public nointerpolation float4 meshletSphere : MESHLETSPHERE;
+    /// DEBUG: bits of one vertex position in the meshlet, 3..48.
+    public nointerpolation uint positionBits : POSITIONBITS;
 };

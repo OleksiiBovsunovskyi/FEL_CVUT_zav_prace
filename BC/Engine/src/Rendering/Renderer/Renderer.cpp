@@ -142,6 +142,7 @@ void Renderer::render(Frame::Recording& recording,
             .debugShowMeshletSpheres = debugFlags_.ShowMeshletSpheres,
             .debugDrawNormals = debugFlags_.DrawNormals,
             .useHiZOC = debugFlags_.UseHIZOC && depthPyramidBuiltLastFrame_,
+            .debugShowVertexPositionSize = debugFlags_.ShowVertexPositionSize,
             .hiZViewProj = depthPyramidViewProjection_,
         });
     //Push changed instances to gpu

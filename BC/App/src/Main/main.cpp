@@ -49,7 +49,7 @@ APP_API AppHandle* app_start(const AppStartConfig* config) {
                     hasUuid ? std::span<const uint8_t>{deviceUuid} : std::span<const uint8_t>{};
                 app.init(raw->bridge, initialExtent, root, uuid);
 
-                const std::filesystem::path modelPath = root / "Assets" / "san-miguel.pmma";
+                const std::filesystem::path modelPath = root / "Assets" / "FatMonkey8b.pmma";
                 std::shared_ptr<MultiMesh> model = app.getLoader().loadModel(modelPath);
                 if (!model) {
                     raw->bridge.notifyError("failed to load " + modelPath.string());

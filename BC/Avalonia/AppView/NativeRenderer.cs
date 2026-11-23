@@ -5,6 +5,18 @@ namespace AppView;
 /// <summary>One named per-frame measurement published by the engine.</summary>
 public readonly record struct FrameMetric(string Name, double Value);
 
+/// <summary>Renderer debug toggles; bit values match EngineDebugFlagBit in PresentationBridge.ixx.</summary>
+[Flags]
+public enum EngineDebugFlags : uint
+{
+    None = 0,
+    ShowMeshlets = 1u << 0,
+    ShowMeshletSpheres = 1u << 1,
+    DrawNormals = 1u << 2,
+    UseHiZOcclusionCulling = 1u << 3,
+    ShowVertexPositionSize = 1u << 4,
+}
+
 internal readonly record struct ExternalSlotHandles(
     IntPtr MemoryHandle,
     ulong MemorySize,
@@ -140,6 +152,13 @@ internal sealed class NativeRenderer : IDisposable
         if (handle != IntPtr.Zero) MouseMove(handle, dx, dy);
     }
 
+    /// <summary>Replaces every renderer debug toggle; applied before the next frame.</summary>
+    public void SetDebugFlags(EngineDebugFlags flags)
+    {
+        IntPtr handle = _handle;
+        if (handle != IntPtr.Zero) SetDebugFlags(handle, (uint)flags);
+    }
+
     public void Dispose()
     {
         IntPtr handle = Interlocked.Exchange(ref _handle, IntPtr.Zero);
@@ -236,6 +255,9 @@ internal sealed class NativeRenderer : IDisposable
     [DllImport(Library, EntryPoint = "engine_mouse_move", CallingConvention = CallingConvention.Cdecl)]
     private static extern void MouseMove(IntPtr app, float dx, float dy);
 
-    [DllImport(Library, EntryPoint = "engine_last_error", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport(Library, EntryPoint = "engine_set_debug_flags", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void SetDebugFlags(IntPtr app, uint bits);
+
+    [DllImport(Library, EntryPoint = "engine_last_error",CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr LastErrorPtr();
 }

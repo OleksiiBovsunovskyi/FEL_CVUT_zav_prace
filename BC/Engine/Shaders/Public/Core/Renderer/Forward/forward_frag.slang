@@ -9,6 +9,13 @@ import meshlet_geometry;
 
 [shader("fragment")]
 float4 fragMain(MeshVertex input) : SV_Target {
+    // Green = 3 bits per vertex position, red = 48.
+    if (pc.frame->debugShowVertexPositionSize) {
+        const float t = saturate((float(input.positionBits) - 3.0) / 45.0);
+        const float shade = 0.4 + 0.6 * max(dot(normalize(input.normal), LIGHT_DIRECTION), 0.0);
+        return float4(lerp(float3(0.0, 1.0, 0.0), float3(1.0, 0.0, 0.0), t) * shade, 1.0);
+    }
+
     if (pc.frame->debugShowMeshletSpheres)
         return float4(sphereTightness(input.worldPosition, input.meshletSphere), 1.0);
 

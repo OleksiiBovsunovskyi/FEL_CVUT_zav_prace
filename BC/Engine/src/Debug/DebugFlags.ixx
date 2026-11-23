@@ -7,6 +7,7 @@ export struct DebugFlags
     bool ShowMeshlets       = false;
     bool ShowMeshletSpheres = false;
     bool DrawNormals        = false;
+    bool ShowVertexPositionSize = false;
     bool UseHIZOC   = false;
     bool UseDeferedRenderer = false;
 };

@@ -46,6 +46,7 @@ public sealed class RendererView : Control
     private PixelPoint _captureCenter;
     private Window? _window;
     private readonly HashSet<byte> _keysDown = new();
+    private EngineDebugFlags _debugFlags;
 
     public RendererView()
     {
@@ -70,6 +71,17 @@ public sealed class RendererView : Control
 
     /// <summary>Raised on the UI thread when a completed frame's metrics arrive from the native renderer.</summary>
     public event Action<IReadOnlyList<FrameMetric>>? FrameMetricsReceived;
+
+    /// <summary>Renderer debug toggles; applied before the next frame, and on renderer start.</summary>
+    public EngineDebugFlags DebugFlags
+    {
+        get => _debugFlags;
+        set
+        {
+            _debugFlags = value;
+            _renderer?.SetDebugFlags(value);
+        }
+    }
 
     internal static string ResolveDataRoot() =>
         DataRoot ?? Environment.GetEnvironmentVariable("APP_DATA_ROOT") ?? AppContext.BaseDirectory;
@@ -163,6 +175,7 @@ public sealed class RendererView : Control
                 OnPresent,
                 OnNativeError,
                 OnFrameMetrics);
+            _renderer.SetDebugFlags(_debugFlags);
         }
         catch (Exception ex)
         {

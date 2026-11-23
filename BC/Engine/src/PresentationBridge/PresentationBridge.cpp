@@ -48,6 +48,16 @@ std::optional<vk::Extent2D> PresentationBridge::requestedExtent() const {
     return requestedExtent_;
 }
 
+void PresentationBridge::requestDebugFlags(EngineDebugFlags flags) {
+    std::lock_guard lock(inputMutex_);
+    pendingDebugFlags_ = flags;
+}
+
+std::optional<EngineDebugFlags> PresentationBridge::takeDebugFlags() {
+    std::lock_guard lock(inputMutex_);
+    return std::exchange(pendingDebugFlags_, std::nullopt);
+}
+
 void PresentationBridge::requestStop() {
     {
         std::lock_guard lock(slotMutex_);
@@ -162,6 +172,10 @@ ENGINE_API void engine_key(AppHandle* app, uint8_t ascii, int down) {
 
 ENGINE_API void engine_mouse_move(AppHandle* app, float dx, float dy) {
     if (app) app->bridge.pushMouseMove(dx, dy);
+}
+
+ENGINE_API void engine_set_debug_flags(AppHandle* app, EngineDebugFlags flags) {
+    if (app) app->bridge.requestDebugFlags(flags);
 }
 
 ENGINE_API const char* engine_last_error() {

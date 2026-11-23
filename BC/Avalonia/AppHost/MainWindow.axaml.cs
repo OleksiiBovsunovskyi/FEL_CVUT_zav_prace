@@ -1,3 +1,4 @@
+using AppView;
 using AppView.CustomControlls.CollumGraph;
 using Avalonia.Controls;
 using Avalonia.Media;
@@ -16,6 +17,19 @@ public partial class MainWindow : Window
         UpdateInputState(Renderer.IsCursorCaptured);
         Renderer.FrameMetricsReceived += AppendStatsColumn;
         TestGraph.ValueMax = 16; //16ms frame budget, probably will expose setting to control this.
+
+        ShowVertPosBits.IsCheckedChanged += (_, _) => UpdateDebugFlags();
+        ShowMeshlets.IsCheckedChanged += (_, _) => UpdateDebugFlags();
+        ShowMeshletsBounds.IsCheckedChanged += (_, _) => UpdateDebugFlags();
+    }
+
+    private void UpdateDebugFlags()
+    {
+        var flags = EngineDebugFlags.None;
+        if (ShowVertPosBits.IsChecked == true) flags |= EngineDebugFlags.ShowVertexPositionSize;
+        if (ShowMeshlets.IsChecked == true) flags |= EngineDebugFlags.ShowMeshlets;
+        if (ShowMeshletsBounds.IsChecked == true) flags |= EngineDebugFlags.ShowMeshletSpheres;
+        Renderer.DebugFlags = flags;
     }
     
     private void AppendStatsColumn(IReadOnlyList<AppView.FrameMetric> metric)

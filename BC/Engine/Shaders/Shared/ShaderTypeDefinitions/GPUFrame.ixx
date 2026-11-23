@@ -32,8 +32,9 @@ export struct alignas(16) GPUFrameData {
     GpuBool                 debugShowMeshletSpheres;
     GpuBool                 debugDrawNormals;
     GpuBool                 useHiZOC;
+    GpuBool                 debugShowVertexPositionSize;
     glm::mat4               hiZViewProj;
-    uint32_t                padding[2];
+    uint32_t                padding[1];
 };
 
 static_assert(sizeof(GPUFrameData) == 176);

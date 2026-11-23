@@ -42,6 +42,22 @@ export struct EngineFrameMetrics {
     const EngineMetricEntry* entries;
 };
 
+/// Bit positions inside EngineDebugFlags::bits.
+export enum EngineDebugFlagBit : uint32_t {
+    ENGINE_DEBUG_SHOW_MESHLETS        = 1u << 0,
+    ENGINE_DEBUG_SHOW_MESHLET_SPHERES = 1u << 1,
+    ENGINE_DEBUG_DRAW_NORMALS         = 1u << 2,
+    ENGINE_DEBUG_USE_HIZ_OC           = 1u << 3,
+    ENGINE_DEBUG_SHOW_VERTEX_POSITION_SIZE = 1u << 4,
+};
+
+/// Renderer debug toggles passed across the C ABI by engine_set_debug_flags().
+export struct EngineDebugFlags {
+    uint32_t bits;
+
+    [[nodiscard]] bool has(EngineDebugFlagBit bit) const { return (bits & bit) != 0; }
+};
+
 /// Host-supplied callbacks invoked from the native render thread.
 export struct EngineHostCallbacks {
     void* userData;
@@ -107,6 +123,13 @@ public:
     void notifyError(const std::string& message) const;
     void notifyMetrics(std::span<const EngineMetricEntry> entries) const;
 
+    void requestDebugFlags(EngineDebugFlags flags);
+    /**
+     * Takes the debug flags requested since the last call.
+     * @return std::nullopt when no request arrived since the last call.
+     */
+    [[nodiscard]] std::optional<EngineDebugFlags> takeDebugFlags();
+
     static void setLastError(std::string message);
     [[nodiscard]] static const char* lastError();
 
@@ -117,6 +140,7 @@ private:
     std::vector<KeyReport> pendingKeys_;
     MouseDelta             pendingMouse_{};
     std::optional<vk::Extent2D> requestedExtent_;
+    std::optional<EngineDebugFlags> pendingDebugFlags_;
 
     mutable std::mutex      slotMutex_;
     std::condition_variable slotCv_;

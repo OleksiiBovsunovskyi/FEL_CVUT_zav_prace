@@ -3,6 +3,7 @@ module;
 
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -27,6 +28,16 @@ static_assert(DEPTH_CLEAR == 0.0f,
               "CameraComponent::viewProjection swaps near and far, so the far "
               "plane is 0 and DEPTH_CLEAR must clear to it; VkUtil's "
               "DEPTH_COMPARE_OP has to be a GREATER one to match");
+
+DebugFlags toDebugFlags(EngineDebugFlags flags) {
+    return DebugFlags{
+        .ShowMeshlets       = flags.has(ENGINE_DEBUG_SHOW_MESHLETS),
+        .ShowMeshletSpheres = flags.has(ENGINE_DEBUG_SHOW_MESHLET_SPHERES),
+        .DrawNormals        = flags.has(ENGINE_DEBUG_DRAW_NORMALS),
+        .UseHIZOC           = flags.has(ENGINE_DEBUG_USE_HIZ_OC),
+        .ShowVertexPositionSize = flags.has(ENGINE_DEBUG_SHOW_VERTEX_POSITION_SIZE),
+    };
+}
 
 } // namespace
 
@@ -94,6 +105,9 @@ void VulkanApp::run() {
         for (const KeyReport& key : keys) input_.pushKey(key.ascii, key.down);
         if (mouse.dx != 0.0f || mouse.dy != 0.0f) input_.pushMouseMove(mouse.dx, mouse.dy);
         keys.clear();
+
+        if (const std::optional<EngineDebugFlags> flags = bridge_->takeDebugFlags())
+            renderer_.setDebugFlags(toDebugFlags(*flags));
 
         dispatchInput();
         scene_.tick(elapseFrame());
