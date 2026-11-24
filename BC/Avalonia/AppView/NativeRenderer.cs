@@ -39,6 +39,7 @@ internal sealed class NativeRenderer : IDisposable
     private readonly PresentCallback _onPresent;
     private readonly ErrorCallback _onError;
     private readonly MetricsCallback _onMetrics;
+    private readonly RendererStateCallback _onRendererState;
 
     static NativeRenderer()
     {
@@ -55,7 +56,8 @@ internal sealed class NativeRenderer : IDisposable
         Action onTargetsDestroyed,
         Action<uint> onPresent,
         Action<string> onError,
-        Action<FrameMetric[]> onMetrics)
+        Action<FrameMetric[]> onMetrics,
+        Action<string> onRendererStateUpdated)
     {
         _onTargetsCreated = (_, targetsPtr) =>
         {
@@ -94,6 +96,8 @@ internal sealed class NativeRenderer : IDisposable
             }
             onMetrics(entries);
         };
+        _onRendererState = (_, statePtr) =>
+            onRendererStateUpdated(Marshal.PtrToStringUTF8(statePtr) ?? string.Empty);
 
         IntPtr rootUtf8 = Marshal.StringToCoTaskMemUTF8(dataRoot);
         try
@@ -114,6 +118,7 @@ internal sealed class NativeRenderer : IDisposable
                         OnPresent = Marshal.GetFunctionPointerForDelegate(_onPresent),
                         OnError = Marshal.GetFunctionPointerForDelegate(_onError),
                         OnMetrics = Marshal.GetFunctionPointerForDelegate(_onMetrics),
+                        OnRendererStateUpdated = Marshal.GetFunctionPointerForDelegate(_onRendererState),
                     }
                 };
 
@@ -183,6 +188,9 @@ internal sealed class NativeRenderer : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate void MetricsCallback(IntPtr userData, IntPtr metrics);
 
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void RendererStateCallback(IntPtr userData, IntPtr newState);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct EngineMetricEntry
     {
@@ -225,6 +233,7 @@ internal sealed class NativeRenderer : IDisposable
         public IntPtr OnPresent;
         public IntPtr OnError;
         public IntPtr OnMetrics;
+        public IntPtr OnRendererStateUpdated;
     }
 
     [StructLayout(LayoutKind.Sequential)]

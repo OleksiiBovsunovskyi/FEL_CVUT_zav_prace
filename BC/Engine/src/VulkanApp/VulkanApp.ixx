@@ -56,6 +56,9 @@ public:
     /// Usable only after init(): loading needs the device and the buffers.
     [[nodiscard]] ModelLoader& getLoader() { return loader_; }
 
+    void notifyAppStateUpdate(const std::string &newState) const {
+        bridge_->notifyEngineStateUpdate(newState);
+    }
 private:
     PresentationBridge* bridge_ = nullptr;
     InputHandler  input_;

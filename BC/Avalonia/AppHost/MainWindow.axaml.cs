@@ -16,6 +16,7 @@ public partial class MainWindow : Window
         Renderer.CursorCapturedChanged += UpdateInputState;
         UpdateInputState(Renderer.IsCursorCaptured);
         Renderer.FrameMetricsReceived += AppendStatsColumn;
+        Renderer.RendererStateUpdated += UpdateRendererStatus;
         TestGraph.ValueMax = 16; //16ms frame budget, probably will expose setting to control this.
 
         ShowVertPosBits.IsCheckedChanged += (_, _) => UpdateDebugFlags();
@@ -85,6 +86,6 @@ public partial class MainWindow : Window
     private void UpdateInputState(bool captured) =>
         InputState.Text = $"Input state (TAB): {(captured ? "Captured" : "Released")}";
 
-    private void UpdateRendererStatus(bool startingUp) =>
-        RendererStatus.IsVisible = startingUp;
+    private void UpdateRendererStatus(string state) =>
+        RendererStatus.Text = $"Renderer: {state}";
 }

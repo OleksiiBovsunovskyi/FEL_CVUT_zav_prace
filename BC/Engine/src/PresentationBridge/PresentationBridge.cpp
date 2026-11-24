@@ -138,6 +138,11 @@ void PresentationBridge::notifyMetrics(std::span<const EngineMetricEntry> entrie
     callbacks_.onMetrics(callbacks_.userData, &frame);
 }
 
+void PresentationBridge::notifyEngineStateUpdate(const std::string& newState) const {
+    if (!callbacks_.onRendererStateUpdated) return;
+    callbacks_.onRendererStateUpdated(callbacks_.userData, newState.c_str());
+}
+
 void PresentationBridge::setLastError(std::string message) {
     tlsLastError = std::move(message);
 }

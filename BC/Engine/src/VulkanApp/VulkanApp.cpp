@@ -91,6 +91,7 @@ void VulkanApp::init(PresentationBridge& bridge, vk::Extent2D extent,
         throw std::runtime_error("BlockingTransferBatch::init failed");
     if (!loader_.init(buffers_, transfers_, textures_))
         throw std::runtime_error("ModelLoader::init failed");
+    bridge_->notifyEngineStateUpdate("Initialized app components, awaiting loop start");
 }
 
 void VulkanApp::run() {
@@ -99,22 +100,25 @@ void VulkanApp::run() {
     while (!bridge_->stopRequested() && !frames_.deviceLost()) {
         releaser_.setLastSubmittedFrameSerial(frames_.submittedSerial());
         releaser_.releaseCompleted(frames_.getCompletedSerial());
-
+        notifyAppStateUpdate("Taking input...");
         MouseDelta mouse{};
         bridge_->takeInput(keys, mouse);
         for (const KeyReport& key : keys) input_.pushKey(key.ascii, key.down);
         if (mouse.dx != 0.0f || mouse.dy != 0.0f) input_.pushMouseMove(mouse.dx, mouse.dy);
         keys.clear();
-
+        notifyAppStateUpdate("Updating debug flags...");
         if (const std::optional<EngineDebugFlags> flags = bridge_->takeDebugFlags())
             renderer_.setDebugFlags(toDebugFlags(*flags));
 
         dispatchInput();
+        notifyAppStateUpdate("Running tick...");
         scene_.tick(elapseFrame());
+        notifyAppStateUpdate("Drawing frame...");
         frames_.drawFrame([this](Frame::Recording& recording) {
             recordFrame(recording);
         });
         Metrics::get().endFrame();
+        notifyAppStateUpdate("Finished frame...");
     }
     if (frames_.deviceLost())
         bridge_->notifyError("device lost");

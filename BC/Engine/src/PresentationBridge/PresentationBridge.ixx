@@ -66,6 +66,7 @@ export struct EngineHostCallbacks {
     void (*onPresent)(void* userData, uint32_t slotIndex);
     void (*onError)(void* userData, const char* message);
     void (*onMetrics)(void* userData, const EngineFrameMetrics* metrics);
+    void (*onRendererStateUpdated)(void* userData, const char* newState);
 };
 
 /// Startup parameters passed across the C ABI into app_start().
@@ -123,6 +124,7 @@ public:
     void notifyError(const std::string& message) const;
     void notifyMetrics(std::span<const EngineMetricEntry> entries) const;
 
+    void notifyEngineStateUpdate(const std::string& newState) const;
     void requestDebugFlags(EngineDebugFlags flags);
     /**
      * Takes the debug flags requested since the last call.

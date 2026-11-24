@@ -15,7 +15,7 @@
         </Border> <!-- Input state -->
         <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="0" Padding="0,0"
               Background="#99000000" CornerRadius="4" IsHitTestVisible="False">
-          <TextBlock Name="RendererStatus" Text="Starting renderer... (Field not wired in yet)"/>
+          <TextBlock Name="RendererStatus" Text="Renderer: starting"/>
         </Border> <!-- Renderer state -->
         <collumGraph:MultiColumnGraph Width="300" Height="60" ColumnWidth="6" ValueMax="100" HorizontalAlignment="Left" Name="TestGraph" />
         

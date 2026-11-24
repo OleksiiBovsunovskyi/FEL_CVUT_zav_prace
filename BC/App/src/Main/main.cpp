@@ -48,14 +48,14 @@ APP_API AppHandle* app_start(const AppStartConfig* config) {
                 const std::span<const uint8_t> uuid =
                     hasUuid ? std::span<const uint8_t>{deviceUuid} : std::span<const uint8_t>{};
                 app.init(raw->bridge, initialExtent, root, uuid);
-
-                const std::filesystem::path modelPath = root / "Assets" / "FatMonkey8b.pmma";
+                app.notifyAppStateUpdate("Loading scene...");
+                const std::filesystem::path modelPath = root / "Assets" / "BistroInterior.pmma";
                 std::shared_ptr<MultiMesh> model = app.getLoader().loadModel(modelPath);
                 if (!model) {
                     raw->bridge.notifyError("failed to load " + modelPath.string());
                     return;
                 }
-
+                app.notifyAppStateUpdate("Creating objects");
                 auto sceneObject = std::make_unique<Object>();
                 sceneObject->addComponent(RenderComponent(model));
                 app.getScene().addObject(std::move(sceneObject));
@@ -63,6 +63,7 @@ APP_API AppHandle* app_start(const AppStartConfig* config) {
                 Player& player = app.getScene().addObject(std::make_unique<Player>());
                 player.getMovement().setSpeed(1);
 
+                app.notifyAppStateUpdate("Running");
                 app.run();
             } catch (const std::exception& e) {
                 raw->bridge.notifyError(e.what());

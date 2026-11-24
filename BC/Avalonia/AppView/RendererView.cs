@@ -72,6 +72,9 @@ public sealed class RendererView : Control
     /// <summary>Raised on the UI thread when a completed frame's metrics arrive from the native renderer.</summary>
     public event Action<IReadOnlyList<FrameMetric>>? FrameMetricsReceived;
 
+    /// <summary>Raised on the UI thread when the native renderer reports a new state description.</summary>
+    public event Action<string>? RendererStateUpdated;
+
     /// <summary>Renderer debug toggles; applied before the next frame, and on renderer start.</summary>
     public EngineDebugFlags DebugFlags
     {
@@ -174,7 +177,8 @@ public sealed class RendererView : Control
                 OnTargetsDestroyed,
                 OnPresent,
                 OnNativeError,
-                OnFrameMetrics);
+                OnFrameMetrics,
+                OnRendererStateUpdated);
             _renderer.SetDebugFlags(_debugFlags);
         }
         catch (Exception ex)
@@ -327,6 +331,16 @@ public sealed class RendererView : Control
             if (_detaching) return;
             _latestMetrics = metrics;
             FrameMetricsReceived?.Invoke(metrics);
+        });
+    }
+
+    private void OnRendererStateUpdated(string state)
+    {
+        if (_detaching) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_detaching) return;
+            RendererStateUpdated?.Invoke(state);
         });
     }
 
